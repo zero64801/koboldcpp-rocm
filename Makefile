@@ -20,8 +20,8 @@ ifneq ($(shell grep -e "Arch Linux" -e "ID_LIKE=arch" /etc/os-release 2>/dev/nul
 ARCH_ADD = -lcblas
 endif
 
-CCV  = $(shell $(CC)  --version | head -n 1)
-CXXV = $(shell $(CXX) --version | head -n 1)
+CCV := $(shell $(CC) --version | head -n 1)
+CXXV := $(shell $(CXX) --version | head -n 1)
 
 # Mac OS + Arm can report x86_64
 # ref: https://github.com/ggerganov/whisper.cpp/issues/66#issuecomment-1282546789
