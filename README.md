@@ -1,7 +1,7 @@
 # koboldcpp-ROCM
 
-To install, run "make LLAMA_HIPBLAS=1" twice. IDK why it needs done twice. The .so files don't get made until its ran a second time          
-```make LLAMA_HIPBLAS=1 && make LLAMA_HIPBLAS=1```     
+To install, run        
+```make LLAMA_HIPBLAS=1```     
 To use ROCM, set GPU layers with --gpulayers when starting koboldcpp
 
 --------
