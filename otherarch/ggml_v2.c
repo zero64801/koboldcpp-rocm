@@ -139,7 +139,7 @@ inline static void* ggml_v2_aligned_malloc(size_t size) {
 #include <Accelerate/Accelerate.h>
 #elif defined(GGML_USE_OPENBLAS)
 #include <cblas.h>
-#elif defined(GGML_USE_CUBLAS)
+#elif defined(GGML_USE_CUBLAS) || defined(GGML_USE_HIPBLAS)
 #include "ggml_v2-cuda.h"
 #endif
 #if defined(GGML_USE_CLBLAST)
@@ -3894,7 +3894,7 @@ struct ggml_v2_context * ggml_v2_init(struct ggml_v2_init_params params) {
             GGML_V2_PRINT_DEBUG("%s: g_state initialized in %f ms\n", __func__, (t_end - t_start)/1000.0f);
         }
 
-#if defined(GGML_USE_CUBLAS)
+#if defined(GGML_USE_CUBLAS) || defined(GGML_USE_HIPBLAS)
         ggml_v2_init_cublas();
 #elif defined(GGML_USE_CLBLAST)
         if(quants_unshuffled)
@@ -9448,7 +9448,7 @@ static void ggml_v2_compute_forward_mul_mat_f32(
     // nb01 >= nb00 - src0 is not transposed
     //   compute by src0 rows
 
-#if defined(GGML_USE_CUBLAS)
+#if defined(GGML_USE_CUBLAS) || defined(GGML_USE_HIPBLAS)
     if (ggml_v2_cuda_can_mul_mat(src0, src1, dst)) {
         if (params->ith == 0 && params->type == GGML_V2_TASK_COMPUTE) {
             ggml_v2_cuda_mul_mat(src0, src1, dst, params->wdata, params->wsize);
@@ -9642,7 +9642,7 @@ static void ggml_v2_compute_forward_mul_mat_f16_f32(
     // nb01 >= nb00 - src0 is not transposed
     //   compute by src0 rows
 
-#if defined(GGML_USE_CUBLAS)
+#if defined(GGML_USE_CUBLAS) || defined(GGML_USE_HIPBLAS)
     if (ggml_v2_cuda_can_mul_mat(src0, src1, dst)) {
         if (params->ith == 0 && params->type == GGML_V2_TASK_COMPUTE) {
             ggml_v2_cuda_mul_mat(src0, src1, dst, params->wdata, params->wsize);
@@ -9881,7 +9881,7 @@ static void ggml_v2_compute_forward_mul_mat_q_f32(
     // nb01 >= nb00 - src0 is not transposed
     //   compute by src0 rows
 
-#if defined(GGML_USE_CUBLAS)
+#if defined(GGML_USE_CUBLAS) || defined(GGML_USE_HIPBLAS)
     if (ggml_v2_cuda_can_mul_mat(src0, src1, dst)) {
         if (params->ith == 0 && params->type == GGML_V2_TASK_COMPUTE) {
             ggml_v2_cuda_mul_mat(src0, src1, dst, params->wdata, params->wsize);
@@ -14061,7 +14061,7 @@ void ggml_v2_graph_compute(struct ggml_v2_context * ctx, struct ggml_v2_cgraph *
 
                         size_t cur = 0;
 
-#if defined(GGML_USE_CUBLAS)
+#if defined(GGML_USE_CUBLAS) || defined(GGML_USE_HIPBLAS)
                         if (ggml_v2_cuda_can_mul_mat(node->src0, node->src1, node)) {
                             node->n_tasks = 1; // TODO: this actually is doing nothing
                                                 //       the threads are still spinning
@@ -15559,7 +15559,7 @@ int ggml_v2_cpu_has_wasm_simd(void) {
 }
 
 int ggml_v2_cpu_has_blas(void) {
-#if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS) || defined(GGML_USE_CLBLAST)
+#if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS) || defined(GGML_USE_HIPBLAS) || defined(GGML_USE_CLBLAST)
     return 1;
 #else
     return 0;
