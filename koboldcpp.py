@@ -863,7 +863,7 @@ if __name__ == '__main__':
     parser.add_argument("--hordeconfig", help="Sets the display model name to something else, for easy use on AI Horde. Optional additional parameters set the horde max genlength and max ctxlen.",metavar=('[hordename]', '[hordelength] [hordectx]'), nargs='+')
     compatgroup = parser.add_mutually_exclusive_group()
     compatgroup.add_argument("--noblas", help="Do not use OpenBLAS for accelerated prompt ingestion", action='store_true')
-    parser.add_argument("--lowvram", help="Do not keep scratch memory in VRAM for CUDA", action='store_true')
+    parser.add_argument("--lowvram", help="Do not allocate a VRAM scratch buffer for holding temporary results. Reduces VRAM usage at the cost of performance, particularly prompt processing speed. Requires CUDA.", action='store_true')
     compatgroup.add_argument("--useclblast", help="Use CLBlast instead of OpenBLAS for prompt ingestion. Must specify exactly 2 arguments, platform ID and device ID (e.g. --useclblast 1 0).", type=int, choices=range(0,9), nargs=2)
     parser.add_argument("--gpulayers", help="Set number of layers to offload to GPU when using CLBlast. Requires CLBlast.",metavar=('[GPU layers]'), type=int, default=0)
     args = parser.parse_args()
