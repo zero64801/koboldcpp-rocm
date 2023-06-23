@@ -2,7 +2,8 @@
 
 To install, run        
 ```make LLAMA_HIPBLAS=1```     
-To use ROCM, set GPU layers with --gpulayers when starting koboldcpp
+To use ROCM, set GPU layers with --gpulayers when starting koboldcpp        
+Original [llama.cpp rocm port](https://github.com/ggerganov/llama.cpp/pull/1087) by SlyEcho, ported to koboldcpp by yellowrosecx
 
 Comparison with OpenCL using 6800xt
 | Model | Offloading Method | Time Taken - Processing 593 tokens| Time Taken - Generating 200 tokens| Total Time | Perf. Diff.
