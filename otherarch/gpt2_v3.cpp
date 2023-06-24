@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 
 #include "model_adapter.h"
 
@@ -39,6 +40,8 @@ ModelLoadResult gpt2_model_load(const std::string & fname, gpt2_model & model, g
         }
     }
 
+    int32_t origmaxctx = model.hparams.n_ctx;
+
     // load hparams
     {
         auto & hparams = model.hparams;
@@ -53,7 +56,7 @@ ModelLoadResult gpt2_model_load(const std::string & fname, gpt2_model & model, g
         const int32_t qntvr = hparams.ftype / GGML_QNT_VERSION_FACTOR;
 
         printf("%s: n_vocab = %d\n", __func__, hparams.n_vocab);
-        printf("%s: n_ctx   = %d\n", __func__, hparams.n_ctx);
+        printf("%s: n_ctx   = %d (%d)\n", __func__, hparams.n_ctx,origmaxctx);
         printf("%s: n_embd  = %d\n", __func__, hparams.n_embd);
         printf("%s: n_head  = %d\n", __func__, hparams.n_head);
         printf("%s: n_layer = %d\n", __func__, hparams.n_layer);
@@ -154,8 +157,8 @@ ModelLoadResult gpt2_model_load(const std::string & fname, gpt2_model & model, g
         ctx_size += n_layer*(4*n_embd*n_embd*ggml_type_sizef(wtype));         // c_mlp_proj_w
         ctx_size += n_layer*(         n_embd*ggml_type_sizef(GGML_TYPE_F32)); // c_mlp_proj_b
 
-        ctx_size += n_ctx*n_layer*n_embd*ggml_type_sizef(GGML_TYPE_F16); // memory_k
-        ctx_size += n_ctx*n_layer*n_embd*ggml_type_sizef(GGML_TYPE_F16); // memory_v
+        ctx_size += std::max(origmaxctx,n_ctx)*n_layer*n_embd*ggml_type_sizef(GGML_TYPE_F16); // memory_k
+        ctx_size += std::max(origmaxctx,n_ctx)*n_layer*n_embd*ggml_type_sizef(GGML_TYPE_F16); // memory_v
 
         ctx_size += (6 + 12*n_layer)*1024; // object overhead
 
@@ -256,7 +259,7 @@ ModelLoadResult gpt2_model_load(const std::string & fname, gpt2_model & model, g
         const int n_layer = hparams.n_layer;
         const int n_ctx   = hparams.n_ctx;
 
-        const int n_mem      = n_layer*n_ctx;
+        const int n_mem      = n_layer*std::max(origmaxctx,n_ctx);
         const int n_elements = n_embd*n_mem;
 
         model.memory_k = ggml_new_tensor_1d(ctx, GGML_TYPE_F16, n_elements);
@@ -386,7 +389,7 @@ bool gpt2_eval(
         const std::vector<gpt_vocab::id> & embd_inp,
               std::vector<float>         & embd_w,
               size_t                     & mem_per_token,
-              FileFormat file_format) {
+              bool use_scratch) {
     const int N = embd_inp.size();
 
     const auto & hparams = model.hparams;
@@ -402,14 +405,14 @@ bool gpt2_eval(
 
     // use 2 scratch buffers
     // TODO: very hacky solution - reimplement in a more elegant way
-    static size_t scr0_size = (n_ctx>1024?512u:256u)*1024*1024;
-    static void * scr0 = malloc(scr0_size);
+    static size_t scr0_size = (n_embd>2400?512u:256u)*1024*1024;
+    static size_t scr1_size = (n_embd>2400?512u:256u)*1024*1024;
 
-    static size_t scr1_size = (n_ctx>1024?512u:256u)*1024*1024;
+    static void * scr0 = malloc(scr0_size);
     static void * scr1 = malloc(scr1_size);
 
-    if (mem_per_token > 0 && mem_per_token*N*1.05 > buf_size) {
-        const size_t buf_size_new = 64u*1024*1024 + 1.15*(mem_per_token*N); // add 10% to account for ggml object overhead
+    if (mem_per_token > 0 && (mem_per_token*N*2 + 64u*1024*1024) > buf_size) {
+        const size_t buf_size_new = 320u*1024*1024 + 1.2*(mem_per_token*N); // add 10% to account for ggml object overhead
         //printf("\n%s: reallocating buffer from %zu to %zu bytes\n", __func__, buf_size, buf_size_new);
 
         // reallocate
@@ -419,7 +422,7 @@ bool gpt2_eval(
             buf = realloc(buf, buf_size);
             if (buf == nullptr)
             {
-                fprintf(stderr, "%s: failed to allocate %zu bytes\n", __func__, buf_size);
+                fprintf(stderr, "%s: failed to allocate %zu bytes. Try reducing batch size.\n", __func__, buf_size);
                 return false;
             }
         }
@@ -452,7 +455,9 @@ bool gpt2_eval(
     for (int il = 0; il < n_layer; ++il) {
         struct ggml_tensor * cur;
 
+        if(use_scratch){
         ggml_set_scratch(ctx0, { 0, scr0_size, scr0, });
+        }
 
         // norm
         {
@@ -600,7 +605,9 @@ bool gpt2_eval(
 
         struct ggml_tensor * inpFF = cur;
 
+        if(use_scratch){
         ggml_set_scratch(ctx0, { 0, scr1_size, scr1, });
+        }
 
         // feed-forward network
         {
@@ -658,7 +665,9 @@ bool gpt2_eval(
         inpL = ggml_add(ctx0, cur, inpFF);
     }
 
+    if(use_scratch){
     ggml_set_scratch(ctx0, { 0, scr0_size, scr0, });
+    }
 
     // norm
     {
@@ -674,7 +683,9 @@ bool gpt2_eval(
                 ggml_repeat(ctx0, model.ln_f_b, inpL));
     }
 
+    if(use_scratch){
     ggml_set_scratch(ctx0, { 0, 0, nullptr, });
+    }
 
     // inpL = WTE * inpL
     // [ 768, 50257] - model.lm_head

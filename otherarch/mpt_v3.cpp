@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 
 #include "model_adapter.h"
 
@@ -85,6 +86,16 @@ bool mpt_model_load(const std::string & fname, mpt_model & model, gpt_vocab & vo
             fin.read((char *) buf.data(), len);
             word.assign(buf.data(), len);
 
+            // Convert token from utf-8
+            // std::wstring word_multibytes = convert_to_wstring(word);
+            // if(word_multibytes!=L"")
+            // {
+            //     word.resize(word_multibytes.size());
+            //     for (int w = 0; w < word_multibytes.size(); w++) {
+            //         word[w] = uint8_t(word_multibytes[w]);
+            //     }
+            // }
+
             vocab.token_to_id[word] = i;
             vocab.id_to_token[i] = word;
         }
@@ -122,8 +133,8 @@ bool mpt_model_load(const std::string & fname, mpt_model & model, gpt_vocab & vo
         ctx_size += n_layer * (4 * n_embd * n_embd * ggml_type_sizef(wtype)); // mlp_mlp_up_weight
         ctx_size += n_layer * (n_embd * n_embd * 4 * ggml_type_sizef(wtype)); // mlp_mlp_down_weight
 
-        ctx_size += (n_ctx * n_layer * n_embd * ggml_type_sizef(GGML_TYPE_F16)); // memory_k
-        ctx_size += (n_ctx * n_layer * n_embd * ggml_type_sizef(GGML_TYPE_F16)); // memory_v
+        ctx_size += n_ctx * n_layer * n_embd * ggml_type_sizef(GGML_TYPE_F16); // memory_k
+        ctx_size += n_ctx * n_layer * n_embd * ggml_type_sizef(GGML_TYPE_F16); // memory_v
 
         ctx_size += (6 + 6 * n_layer) * 512; // object overhead
 
@@ -315,7 +326,8 @@ bool mpt_model_load(const std::string & fname, mpt_model & model, gpt_vocab & vo
 //   - embd_w:    the predicted logits for the next token
 //
 bool mpt_eval(const mpt_model & model, const int n_threads, const int n_past,
-              const std::vector<gpt_vocab::id> & embd_inp, std::vector<float> & embd_w, bool logits_all, size_t & mem_per_token) {
+              const std::vector<gpt_vocab::id> & embd_inp, std::vector<float> & embd_w,
+              bool logits_all, size_t & mem_per_token, bool use_scratch) {
     const int N = embd_inp.size();
 
     const auto & hparams = model.hparams;
@@ -331,22 +343,26 @@ bool mpt_eval(const mpt_model & model, const int n_threads, const int n_past,
 
     // use 2 scratch buffers
     // TODO: very hacky solution - reimplement in a more elegant way
-    static size_t scr0_size = (n_ctx>2048?1024u:512u)*1024*1024;
-    static void * scr0 = malloc(scr0_size);
+    //MPT 30B needs more scratch memory
+    static size_t scr0_size = (n_embd>=7168?2048u:1024u)*1024*1024;
+    static size_t scr1_size = (n_embd>=7168?2048u:1024u)*1024*1024;
 
-    static size_t scr1_size = (n_ctx>2048?1024u:512u)*1024*1024;
+    static void * scr0 = malloc(scr0_size);
     static void * scr1 = malloc(scr1_size);
 
-    if (mem_per_token > 0 && mem_per_token * N > buf_size) {
-        const size_t buf_size_new = 1.1 * (mem_per_token * N); // add 10% to account for ggml object overhead
+    if (mem_per_token > 0 && (mem_per_token*N*2 + 64u*1024*1024) > buf_size) {
+        const size_t buf_size_new = 320u*1024*1024 + 1.2*(mem_per_token*N); // add 10% to account for ggml object overhead
         // printf("\n%s: reallocating buffer from %zu to %zu bytes\n", __func__,
         // buf_size, buf_size_new);
         // reallocate
-        buf_size = buf_size_new;
-        buf = realloc(buf, buf_size);
-        if (buf == nullptr) {
-            fprintf(stderr, "%s: failed to allocate %zu bytes\n", __func__, buf_size);
-            return false;
+        if (buf_size_new > buf_size)
+        {
+            buf_size = buf_size_new;
+            buf = realloc(buf, buf_size);
+            if (buf == nullptr) {
+                fprintf(stderr, "%s: failed to allocate %zu bytes. Try reducing batch size.\n", __func__, buf_size);
+                return false;
+            }
         }
     }
 
@@ -368,7 +384,9 @@ bool mpt_eval(const mpt_model & model, const int n_threads, const int n_past,
 
         struct ggml_tensor * cur;
 
+        if(use_scratch){
         ggml_set_scratch(ctx0, { 0, scr0_size, scr0, });
+        }
 
         // a = self.ln_1(x)
         {
@@ -464,7 +482,9 @@ bool mpt_eval(const mpt_model & model, const int n_threads, const int n_past,
 
         inpL = ggml_add(ctx0, inpL, cur);
 
+        if(use_scratch){
         ggml_set_scratch(ctx0, { 0, scr1_size, scr1, });
+        }
 
         // m = self.ln_2(x)
         {
@@ -490,7 +510,9 @@ bool mpt_eval(const mpt_model & model, const int n_threads, const int n_past,
         inpL = ggml_add(ctx0, inpL, cur);
     }
 
+    if(use_scratch){
     ggml_set_scratch(ctx0, { 0, scr0_size, scr0, });
+    }
 
     // norm
     {
@@ -499,7 +521,9 @@ bool mpt_eval(const mpt_model & model, const int n_threads, const int n_past,
         inpL = ggml_mul(ctx0, ggml_repeat(ctx0, model.norm_f_weight, inpL), inpL);
     }
 
+    if(use_scratch){
     ggml_set_scratch(ctx0, { 0, 0, nullptr, });
+    }
 
     // output embedding weight tied to input embedding
     inpL = ggml_mul_mat(ctx0, model.wte_weight, inpL);
