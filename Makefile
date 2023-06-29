@@ -184,19 +184,21 @@ ifdef LLAMA_CUDA_KQUANTS_ITER
 else
 	CXXFLAGS += -DK_QUANTS_PER_ITERATION=2
 endif
-ggml-cuda.o:
-    CXXFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
-                -DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
-                -DGGML_CUDA_DMMV_Y=$(LLAMA_CUDA_DMMV_Y)
+
+ggml-cuda.o: CXXFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
+				-DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
+				-DGGML_CUDA_DMMV_Y=$(LLAMA_CUDA_DMMV_Y)
 # DGGML_CUDA_DMMV_F16 does not currently work with AMD.
 ggml-cuda.o: ggml-cuda.cu ggml-cuda.h
-    $(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
-ggml_v2-cuda.o: otherarch/ggml_v2-cuda.cu otherarch/ggml_v2-cuda.h
-    $(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
-ggml_v2-cuda-legacy.o: otherarch/ggml_v2-cuda-legacy.cu otherarch/ggml_v2-cuda-legacy.h
-    $(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
+	$(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
 
+ggml_v2-cuda.o: otherarch/ggml_v2-cuda.cu otherarch/ggml_v2-cuda.h
+	$(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
+
+ggml_v2-cuda-legacy.o: otherarch/ggml_v2-cuda-legacy.cu otherarch/ggml_v2-cuda-legacy.h
+	$(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
 endif # LLAMA_HIPBLAS
+
 
 ifdef LLAMA_METAL
 	CFLAGS   += -DGGML_USE_METAL -DGGML_METAL_NDEBUG
@@ -253,11 +255,11 @@ else
 	OPENBLAS_NOAVX2_BUILD = $(CXX) $(CXXFLAGS) $^ $(ARCH_ADD) -lopenblas -shared -o $@.so $(LDFLAGS)
 	endif
 	ifdef LLAMA_CLBLAST
-        ifeq ($(UNAME_S),Darwin)
-                CLBLAST_BUILD = $(CXX) $(CXXFLAGS) $^ -lclblast -framework OpenCL $(ARCH_ADD) -lopenblas -shared -o $@.so $(LDFLAGS)
-        else
-                CLBLAST_BUILD = $(CXX) $(CXXFLAGS) $^ -lclblast -lOpenCL $(ARCH_ADD) -lopenblas -shared -o $@.so $(LDFLAGS)
-        endif
+		ifeq ($(UNAME_S),Darwin)
+				CLBLAST_BUILD = $(CXX) $(CXXFLAGS) $^ -lclblast -framework OpenCL $(ARCH_ADD) -lopenblas -shared -o $@.so $(LDFLAGS)
+		else
+				CLBLAST_BUILD = $(CXX) $(CXXFLAGS) $^ -lclblast -lOpenCL $(ARCH_ADD) -lopenblas -shared -o $@.so $(LDFLAGS)
+		endif
 	endif
 
 ifdef LLAMA_CUBLAS
