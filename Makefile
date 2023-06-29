@@ -177,22 +177,25 @@ ifdef LLAMA_HIPBLAS
 	CFLAGS     += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
 	CXXFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
 	LDFLAGS    += -L/opt/rocm/lib -Wl,-rpath=$(ROCM_PATH)/lib -lhipblas -lamdhip64
-	OBJS       += ggml-cuda.o ggml_v2-cuda.o
-ifdef LLAMA_CUDA_DMMV_F16
-	CXXFLAGS += -DGGML_CUDA_DMMV_F16
-endif # LLAMA_CUDA_DMMV_F16
+	OBJS       += ggml-cuda.o ggml_v2-cuda.o ggml_v2-cuda-legacy.o
+
 ifdef LLAMA_CUDA_KQUANTS_ITER
 	CXXFLAGS += -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER)
 else
 	CXXFLAGS += -DK_QUANTS_PER_ITERATION=2
 endif
-ggml-cuda.o: CXXFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS))
-ggml-cuda.o: CXXFLAGS += -DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X)
-ggml-cuda.o: CXXFLAGS += -DGGML_CUDA_DMMV_Y=$(LLAMA_CUDA_DMMV_Y)
+ggml-cuda.o:
+    CXXFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
+                -DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
+                -DGGML_CUDA_DMMV_Y=$(LLAMA_CUDA_DMMV_Y)
+# DGGML_CUDA_DMMV_F16 does not currently work with AMD.
 ggml-cuda.o: ggml-cuda.cu ggml-cuda.h
-	$(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
+    $(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
 ggml_v2-cuda.o: otherarch/ggml_v2-cuda.cu otherarch/ggml_v2-cuda.h
-	$(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
+    $(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
+ggml_v2-cuda-legacy.o: otherarch/ggml_v2-cuda-legacy.cu otherarch/ggml_v2-cuda-legacy.h
+    $(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
+
 endif # LLAMA_HIPBLAS
 
 ifdef LLAMA_METAL
