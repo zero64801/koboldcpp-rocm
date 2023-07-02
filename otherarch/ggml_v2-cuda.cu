@@ -32,6 +32,7 @@
 #define cudaEventDisableTiming hipEventDisableTiming
 #define cudaEventRecord hipEventRecord
 #define cudaEvent_t hipEvent_t
+#define cudaEventDestroy hipEventDestroy
 #define cudaFree hipFree
 #define cudaFreeHost hipHostFree
 #define cudaGetDevice hipGetDevice
@@ -54,14 +55,13 @@
 #define cudaStreamCreateWithFlags hipStreamCreateWithFlags
 #define cudaStreamNonBlocking hipStreamNonBlocking
 #define cudaStreamSynchronize hipStreamSynchronize
-#define cudaStreamWaitEvent hipStreamWaitEvent
+#define cudaStreamWaitEvent(stream, event) hipStreamWaitEvent(stream, event, 0)
 #define cudaStream_t hipStream_t
 #define cudaSuccess hipSuccess
 #else
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <cuda_fp16.h>
-
 #endif
 
 #include "ggml_v2-cuda.h"
