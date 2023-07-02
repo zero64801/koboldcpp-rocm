@@ -215,6 +215,11 @@ static_assert(sizeof(block_q6_K) == sizeof(ggml_fp16_t) + 13*QK_K/16, "wrong q6_
 static_assert(K_QUANTS_PER_ITERATION == 1 || K_QUANTS_PER_ITERATION == 2, "K_QUANTS_PER_ITERATION must be 1 or 2");
 #endif
 
+struct ggml_tensor_extra_gpu {
+    void * data_device[GGML_CUDA_MAX_DEVICES]; // 1 pointer for each device for split tensors
+    cudaEvent_t events[GGML_CUDA_MAX_DEVICES]; // events for synchronizing multiple GPUs
+};
+
 static __global__ void add_f32(const float * x, const float * y, float * dst, const int k) {
     const int i = blockDim.x*blockIdx.x + threadIdx.x;
 
@@ -1996,7 +2001,6 @@ inline void ggml_cuda_op_add(
     } else {
         GGML_ASSERT(false);
     }
-    CUDA_CHECK(cudaGetLastError());
 
     (void) src1;
     (void) dst;
@@ -2028,7 +2032,6 @@ inline void ggml_cuda_op_mul(
 
         // compute
         mul_f32_cuda(src0_ddf_i01, src1_ddf_i01, dst_ddf_i01, ne00, ne10, cudaStream_main);
-        CUDA_CHECK(cudaGetLastError());
     }
 
     (void) dst;
@@ -2049,7 +2052,6 @@ inline void ggml_cuda_op_silu(
 
     // compute
     silu_f32_cuda(src0_ddf_i, dst_ddf_i, ne00*i01_diff, cudaStream_main);
-    CUDA_CHECK(cudaGetLastError());
 
     (void) src1;
     (void) dst;
@@ -2072,7 +2074,6 @@ inline void ggml_cuda_op_rms_norm(
 
     // compute
     rms_norm_f32_cuda(src0_ddf_i, dst_ddf_i, ne00, i01_diff, cudaStream_main);
-    CUDA_CHECK(cudaGetLastError());
 
     (void) src1;
     (void) dst;
@@ -2151,7 +2152,6 @@ inline void ggml_cuda_op_dequantize_mul_mat_vec(
             GGML_ASSERT(false);
             break;
     }
-    CUDA_CHECK(cudaGetLastError());
 
 #ifdef GGML_CUDA_DMMV_F16
     if (src1_convert_f16) {
@@ -2224,14 +2224,13 @@ inline void ggml_cuda_op_rope(
     const int n_ctx  = ((int32_t *) src1->data)[3];
     GGML_ASSERT(mode == 0);
 
-    const float theta_scale = powf(10000.0, -2.0f/n_dims);
+    const float theta_scale = get_theta_scale(n_dims,n_past,n_ctx);
     const float p0 = ((mode & 1) == 0 ? n_past + i02 : i02);
 
-    const float p = n_ctx <= GGML_TRAINING_CTX ? p0 : p0 * GGML_TRAINING_CTX / n_ctx;
+    const float p = p0;
 
     // compute
     rope_f32_cuda(src0_ddf_i, dst_ddf_i, ne00, i01_diff, p, theta_scale, cudaStream_main);
-    CUDA_CHECK(cudaGetLastError());
 
     (void) dst;
     (void) src0_ddq_i;
@@ -2255,7 +2254,6 @@ inline void ggml_cuda_op_diag_mask_inf(
 
     // compute
     diag_mask_inf_f32_cuda(src0_ddf_i, dst_ddf_i, ne00, i01_diff, ne01, n_past, cudaStream_main);
-    CUDA_CHECK(cudaGetLastError());
 
     (void) dst;
     (void) src0_ddq_i;
@@ -2277,7 +2275,6 @@ inline void ggml_cuda_op_soft_max(
 
     // compute
     soft_max_f32_cuda(src0_ddf_i, dst_ddf_i, ne00, i01_diff, cudaStream_main);
-    CUDA_CHECK(cudaGetLastError());
 
     (void) src1;
     (void) dst;
@@ -2373,10 +2370,11 @@ static void ggml_cuda_op(const ggml_tensor * src0, const ggml_tensor * src1, ggm
     size_t src1_asf[GGML_CUDA_MAX_DEVICES] = {0};
     size_t  dst_asf[GGML_CUDA_MAX_DEVICES] = {0};
 
-    // if multiple GPUs are used they need to wait for the main GPU to finish
+    // if multiple devices are used they need to wait for the main device
+    // here an event is recorded that signifies that the main device has finished calculating the input data
     if (split && g_device_count > 1) {
         CUDA_CHECK(cudaSetDevice(g_main_device));
-        CUDA_CHECK(cudaDeviceSynchronize());
+        CUDA_CHECK(cudaEventRecord(src0_extra->events[g_main_device], g_cudaStreams_main[g_main_device]));
     }
 
     for (int id = 0; id < g_device_count; ++id) {
@@ -2402,6 +2400,12 @@ static void ggml_cuda_op(const ggml_tensor * src0, const ggml_tensor * src1, ggm
         int64_t row_diff = row_high - row_low;
 
         cudaSetDevice(id);
+        cudaStream_t cudaStream_main = g_cudaStreams_main[id];
+
+        // wait for main GPU data if necessary
+        if (split && id != g_main_device) {
+            CUDA_CHECK(cudaStreamWaitEvent(cudaStream_main, src0_extra->events[g_main_device]));
+        }
 
         if (src0_on_device && src0_is_contiguous) {
             if (src0_is_f32) {
@@ -2477,8 +2481,6 @@ static void ggml_cuda_op(const ggml_tensor * src0, const ggml_tensor * src1, ggm
                 }
                 const int64_t i11 = i13*ne12 + i12;
 
-                cudaStream_t cudaStream_main = g_cudaStreams_main[id];
-
                 // for split tensors the data begins at i0 == i0_offset_low
                 char  * src0_ddq_i = src0_ddq[id] + (i0 - i0_offset_low)*src0_stride*src0_ts/src0_bs;
                 float * src0_ddf_i = src0_ddf[id] + (i0 - i0_offset_low)*src0_stride;
@@ -2538,6 +2540,7 @@ static void ggml_cuda_op(const ggml_tensor * src0, const ggml_tensor * src1, ggm
 
                 // do the computation
                 op(src0, src1, dst, src0_ddq_i, src0_ddf_i, src1_ddf_i, dst_ddf_i, i02, i01_low, i01_high, i11, cudaStream_main);
+                CUDA_CHECK(cudaGetLastError());
 
                 // copy dst to host or other device if necessary
                 if (!dst_on_device) {
@@ -2567,6 +2570,11 @@ static void ggml_cuda_op(const ggml_tensor * src0, const ggml_tensor * src1, ggm
                         CUDA_CHECK(cudaMemcpyAsync(dhf_dst_i, dst_ddf_i, dst_stride*sizeof(float), kind, cudaStream_main));
                     }
                 }
+
+                // signify to main device that other device is done
+                if (split && g_device_count > 1 && id != g_main_device) {
+                    CUDA_CHECK(cudaEventRecord(src0_extra->events[id], cudaStream_main));
+                }
             }
         }
     }
@@ -2578,7 +2586,6 @@ static void ggml_cuda_op(const ggml_tensor * src0, const ggml_tensor * src1, ggm
         }
 
         CUDA_CHECK(cudaSetDevice(id));
-        CUDA_CHECK(cudaDeviceSynchronize());
 
         if (src0_asq[id] > 0) {
             ggml_cuda_pool_free(src0_ddq[id], src0_asq[id]);
@@ -2592,6 +2599,21 @@ static void ggml_cuda_op(const ggml_tensor * src0, const ggml_tensor * src1, ggm
         if (dst_asf[id] > 0) {
             ggml_cuda_pool_free(dst_ddf[id], dst_asf[id]);
         }
+    }
+
+    // main device waits for all other devices to be finished
+    if (split && g_device_count > 1) {
+        CUDA_CHECK(cudaSetDevice(g_main_device));
+        for (int id = 0; id < g_device_count; ++id) {
+            if (id != g_main_device) {
+                CUDA_CHECK(cudaStreamWaitEvent(g_cudaStreams_main[g_main_device], src0_extra->events[id]));
+            }
+        }
+    }
+
+    if (dst->backend == GGML_BACKEND_CPU) {
+        CUDA_CHECK(cudaSetDevice(g_main_device));
+        CUDA_CHECK(cudaDeviceSynchronize());
     }
 }
 
@@ -2832,6 +2854,10 @@ void ggml_cuda_transform_tensor(void * data, struct ggml_tensor * tensor) {
         cudaMemcpy(buf, buf_host, size, cudaMemcpyHostToDevice);
 
         extra->data_device[id] = buf;
+
+        if (backend == GGML_BACKEND_GPU_SPLIT) {
+            CUDA_CHECK(cudaEventCreateWithFlags(&extra->events[id], cudaEventDisableTiming));
+        }
     }
 
     tensor->extra = extra;
@@ -2845,12 +2871,15 @@ void ggml_cuda_free_data(struct ggml_tensor * tensor) {
     ggml_tensor_extra_gpu * extra = (ggml_tensor_extra_gpu *) tensor->extra;
 
     for (int id = 0; id < g_device_count; ++id) {
-        if (extra->data_device[id] == nullptr) {
-            continue;
+        if (extra->data_device[id] != nullptr) {
+            CUDA_CHECK(cudaSetDevice(id));
+            CUDA_CHECK(cudaFree(extra->data_device[id]));
         }
 
-        CUDA_CHECK(cudaSetDevice(id));
-        CUDA_CHECK(cudaFree(extra->data_device[id]));
+        if (extra->events[id] != nullptr) {
+            CUDA_CHECK(cudaSetDevice(id));
+            CUDA_CHECK(cudaEventDestroy(extra->events[id]));
+        }
     }
 
     delete extra;
