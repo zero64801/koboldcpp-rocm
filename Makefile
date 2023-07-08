@@ -180,15 +180,12 @@ ifdef LLAMA_HIPBLAS
 	GPU_TARGETS = gfx803 gfx900 gfx906 gfx908 gfx90a gfx1030 gfx1100
 	LLAMA_CUDA_DMMV_X ?= 64
 	LLAMA_CUDA_DMMV_Y ?= 2
-	LLAMA_CUDA_FORCE_DMMV = false
+
 	CFLAGS     += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
 	CXXFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
 	LDFLAGS    += -L/opt/rocm/lib -Wl,-rpath=$(ROCM_PATH)/lib -lhipblas -lamdhip64
 	OBJS       += ggml-cuda.o ggml_v2-cuda.o ggml_v2-cuda-legacy.o
 
-ifdef LLAMA_CUDA_FORCE_DMMV
-    CXXFLAGS += -DGGML_CUDA_FORCE_DMMV
-endif # LLAMA_CUDA_FORCE_DMMV
 ifdef LLAMA_CUDA_DMMV_X
     CXXFLAGS += -DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X)
 else
