@@ -178,9 +178,9 @@ ifdef LLAMA_HIPBLAS
 	CC         := $(ROCM_PATH)/llvm/bin/clang
 	CXX        := $(ROCM_PATH)/llvm/bin/clang++
 	GPU_TARGETS = gfx803 gfx900 gfx906 gfx908 gfx90a gfx1030 gfx1100
-	LLAMA_CUDA_DMMV_X ?= 256
-	LLAMA_CUDA_DMMV_Y ?= 2
-
+	LLAMA_CUDA_DMMV_X ?= 64
+	LLAMA_CUDA_MMV_Y ?= 2
+	LLAMA_CUDA_FORCE_DMMV = true
 	CFLAGS     += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
 	CXXFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
 	LDFLAGS    += -L/opt/rocm/lib -Wl,-rpath=$(ROCM_PATH)/lib -lhipblas -lamdhip64
@@ -190,14 +190,17 @@ ifdef LLAMA_CUDA_DMMV_X
     CXXFLAGS += -DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X)
 else
     CXXFLAGS += -DGGML_CUDA_DMMV_X=32
-endif # LLAMA_CUDA_DMMV_X
+endif 
+ifeq ($(LLAMA_CUDA_FORCE_DMMV), true)
+    CXXFLAGS += -DGGML_CUDA_FORCE_DMMV
+endif
 ifdef LLAMA_CUDA_MMV_Y
     CXXFLAGS += -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_MMV_Y)
 else ifdef LLAMA_CUDA_DMMV_Y
     CXXFLAGS += -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_DMMV_Y) # for backwards compatibility
 else
     CXXFLAGS += -DGGML_CUDA_MMV_Y=1
-endif # LLAMA_CUDA_MMV_Y
+endif
 
 ifdef LLAMA_CUDA_KQUANTS_ITER
 	CXXFLAGS += -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER)
@@ -205,10 +208,7 @@ else
 	CXXFLAGS += -DK_QUANTS_PER_ITERATION=2
 endif
 
-ggml-cuda.o: CXXFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
-				-DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
-				-DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_DMMV_Y) \
-				-DGGML_CUDA_FORCE_DMMV
+ggml-cuda.o: CXXFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS))
 
 
 # DGGML_CUDA_DMMV_F16 does not currently work with AMD.
