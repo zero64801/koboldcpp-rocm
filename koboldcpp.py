@@ -662,7 +662,7 @@ def show_new_gui():
     blasbatchsize_values = ["-1", "32", "64", "128", "256", "512", "1024"]
     blasbatchsize_text = ["Don't Batch BLAS","32","64","128","256","512","1024"]
     contextsize_text = ["512", "1024", "2048", "3072", "4096", "6144", "8192"]
-    runopts = ["Use OpenBLAS","Use CLBlast", "Use CuBLAS", "Use No BLAS","Use OpenBLAS (Old CPU, noavx2)","Failsafe Mode (Old CPU, noavx)"]
+    runopts = ["Use OpenBLAS","Use CLBlast", "Use CuBLAS/hipBLAS", "Use No BLAS","Use OpenBLAS (Old CPU, noavx2)","Failsafe Mode (Old CPU, noavx)"]
 
     def tabbuttonaction(name):
         for t in tabcontent:
@@ -781,13 +781,13 @@ def show_new_gui():
 
     def changerunmode(a,b,c):
         index = runopts_var.get()
-        if index == "Use CLBlast" or index == "Use CuBLAS":
+        if index == "Use CLBlast" or index == "Use CuBLAS/hipBLAS":
             gpu_selector_label.grid(row=3, column=0, padx = 8, pady=1, stick="nw")
             quick_gpu_selector_label.grid(row=3, column=0, padx = 8, pady=1, stick="nw")
             if index == "Use CLBlast":
                 gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
                 quick_gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
-            elif index == "Use CuBLAS":
+            elif index == "Use CuBLAS/hipBLAS":
                 CUDA_gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
                 CUDA_quick_gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
         else:
@@ -798,14 +798,14 @@ def show_new_gui():
             quick_gpu_selector_box.grid_forget()
             CUDA_quick_gpu_selector_box.grid_forget()
 
-        if index == "Use CuBLAS":
+        if index == "Use CuBLAS/hipBLAS":
             lowvram_box.grid(row=4, column=0, padx=8, pady=1,  stick="nw")
             quick_lowvram_box.grid(row=4, column=0, padx=8, pady=1,  stick="nw")
         else:
             lowvram_box.grid_forget()
             quick_lowvram_box.grid_forget()
 
-        if index == "Use CLBlast" or index == "Use CuBLAS":
+        if index == "Use CLBlast" or index == "Use CuBLAS/hipBLAS":
             gpu_layers_label.grid(row=5, column=0, padx = 8, pady=1, stick="nw")
             gpu_layers_entry.grid(row=5, column=1, padx=8, pady=1, stick="nw")
             quick_gpu_layers_label.grid(row=5, column=0, padx = 8, pady=1, stick="nw")
@@ -1155,7 +1155,7 @@ def show_old_gui():
         blaschoice = tk.StringVar()
         blaschoice.set("BLAS = 512")
 
-        runopts = ["Use OpenBLAS","Use CLBLast GPU #1","Use CLBLast GPU #2","Use CLBLast GPU #3","Use CuBLAS GPU","Use No BLAS","Use OpenBLAS (Old CPU, noavx2)","Failsafe Mode (Old CPU, noavx)"]
+        runopts = ["Use OpenBLAS","Use CLBLast GPU #1","Use CLBLast GPU #2","Use CLBLast GPU #3","Use CuBLAS/hipBLAS GPU","Use No BLAS","Use OpenBLAS (Old CPU, noavx2)","Failsafe Mode (Old CPU, noavx)"]
         runchoice = tk.StringVar()
         runchoice.set("Use OpenBLAS")
 
@@ -1449,7 +1449,7 @@ if __name__ == '__main__':
     compatgroup = parser.add_mutually_exclusive_group()
     compatgroup.add_argument("--noblas", help="Do not use OpenBLAS for accelerated prompt ingestion", action='store_true')
     compatgroup.add_argument("--useclblast", help="Use CLBlast for GPU Acceleration. Must specify exactly 2 arguments, platform ID and device ID (e.g. --useclblast 1 0).", type=int, choices=range(0,9), nargs=2)
-    compatgroup.add_argument("--usecublas", help="Use CuBLAS for GPU Acceleration. Requires CUDA. Select lowvram to not allocate VRAM scratch buffer. Enter a number afterwards to select and use 1 GPU. Leaving no number will use all GPUs.", nargs='*',metavar=('[lowvram|normal] [main GPU ID]'), choices=['normal', 'lowvram', '0', '1', '2'])
+    compatgroup.add_argument("--usecublas", help="Use CuBLAS/hipBLAS for GPU Acceleration. Requires CUDA. Select lowvram to not allocate VRAM scratch buffer. Enter a number afterwards to select and use 1 GPU. Leaving no number will use all GPUs.", nargs='*',metavar=('[lowvram|normal] [main GPU ID]'), choices=['normal', 'lowvram', '0', '1', '2'])
     parser.add_argument("--gpulayers", help="Set number of layers to offload to GPU when using GPU. Requires GPU.",metavar=('[GPU layers]'), type=int, default=0)
     args = parser.parse_args()
     main(args)
