@@ -252,6 +252,7 @@ inline static void* ggml_aligned_malloc(size_t size) {
 #else
 #include <cblas.h>
 #endif
+#endif
 #if defined(GGML_USE_CUBLAS)
 #include "ggml-cuda.h"
 #endif
