@@ -729,14 +729,15 @@ def show_new_gui():
         button.grid(row=row+1, column=1, stick="nw")
         return
     
-    from subprocess import run
+    from subprocess import run, CalledProcessError
     def get_device_names():
         CUdevices = []
         CLdevices = []
         try: # Get OpenCL GPU names
             output = run(['clinfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
             CLdevices = [line.split(":", 1)[1].strip() for line in output.splitlines() if line.strip().startswith("Board name:")]
-        except FileNotFoundError: pass
+        except Exception as e:
+            pass
         try: # Get AMD ROCm GPU names
             output = run(['rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
             device_name = None
@@ -745,12 +746,14 @@ def show_new_gui():
                 if line.startswith("Marketing Name:"): device_name = line.split(":", 1)[1].strip()
                 elif line.startswith("Device Type:") and "GPU" in line and device_name is not None: CUdevices.append(device_name)
                 elif line.startswith("Device Type:") and "GPU" not in line: device_name = None
-        except FileNotFoundError: pass
+        except Exception as e:
+            pass
         # try: # Get NVIDIA GPU names , Couldn't test so probably not working yet.
         #     output = run(['nvidia-smi', '-L'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
         #     CUdevices = [line.split(":", 1)[1].strip() for line in output.splitlines() if line.startswith("GPU:")]
         # except FileNotFoundError: pass
-        if CUdevices: CUdevices.append('All')
+        CUdevices.append('All') if CUdevices else CUdevices.extend(['1', '2', '3', 'All'])
+        if not CLdevices: CLdevices.extend(['1', '2', '3'])
         return CUdevices, CLdevices
 
     # Vars - should be in scope to be used by multiple widgets
