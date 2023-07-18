@@ -189,48 +189,32 @@ ifdef LLAMA_HIPBLAS
 	LLAMA_CUDA_DMMV_X ?= 128 
 	LLAMA_CUDA_MMV_Y ?= 1
 	LLAMA_CUDA_KQUANTS_ITER ?= 1
-	LLAMA_CUDA_FORCE_DMMV = true
-	CFLAGS     += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
-	CXXFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
-	LDFLAGS    += -L/opt/rocm/lib -Wl,-rpath=$(ROCM_PATH)/lib -lhipblas -lamdhip64
-	OBJS       += ggml-cuda.o ggml_v2-cuda.o ggml_v2-cuda-legacy.o
-
-ifdef LLAMA_CUDA_DMMV_X
-    CXXFLAGS += -DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X)
-else
-    CXXFLAGS += -DGGML_CUDA_DMMV_X=32
-endif 
-ifeq ($(LLAMA_CUDA_FORCE_DMMV), true)
-    CXXFLAGS += -DGGML_CUDA_FORCE_DMMV
-endif
-ifdef LLAMA_CUDA_MMV_Y
-    CXXFLAGS += -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_MMV_Y)
-else ifdef LLAMA_CUDA_DMMV_Y
-    CXXFLAGS += -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_DMMV_Y) # for backwards compatibility
-else
-    CXXFLAGS += -DGGML_CUDA_MMV_Y=1
-endif
-
-ifdef LLAMA_CUDA_KQUANTS_ITER
-	CXXFLAGS += -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER)
-else
-	CXXFLAGS += -DK_QUANTS_PER_ITERATION=2
-endif
-
-ggml-cuda.o: CXXFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS))
-
-
-# DGGML_CUDA_DMMV_F16 does not currently work with AMD.
+	LLAMA_CUDA_FORCE_DMMV ?= true
+	HIPFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
+	HIPLDFLAGS    += -L/opt/rocm/lib -Wl,-rpath=$(ROCM_PATH)/lib -lhipblas -lamdhip64
+	HIP_OBJS       += ggml-cuda.o ggml_v2-cuda.o ggml_v2-cuda-legacy.o
+ggml-cuda.o: HIPFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
+						-DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
+                        -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_MMV_Y) \
+                        -DGGML_CUDA_FORCE_DMMV \
+                        -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER)
+ggml_v2-cuda.o: HIPFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
+						-DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
+                        -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_MMV_Y) \
+                        -DGGML_CUDA_FORCE_DMMV \
+                        -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER)
+ggml_v2-cuda-legacy.o: HIPFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
+						-DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
+                        -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_MMV_Y) \
+                        -DGGML_CUDA_FORCE_DMMV \
+                        -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER) # DGGML_CUDA_DMMV_F16 does not currently work with AMD.
 ggml-cuda.o: ggml-cuda.cu ggml-cuda.h
-	$(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
-
+	$(CXX) $(CXXFLAGS) $(HIPFLAGS) -x hip -c -o $@ $<
 ggml_v2-cuda.o: otherarch/ggml_v2-cuda.cu otherarch/ggml_v2-cuda.h
-	$(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
-
+	$(CXX) $(CXXFLAGS) $(HIPFLAGS) -x hip -c -o $@ $<
 ggml_v2-cuda-legacy.o: otherarch/ggml_v2-cuda-legacy.cu otherarch/ggml_v2-cuda-legacy.h
-	$(CXX) $(CXXFLAGS) -x hip -c -o $@ $<
+	$(CXX) $(CXXFLAGS) $(HIPFLAGS) -x hip -c -o $@ $<
 endif # LLAMA_HIPBLAS
-
 
 ifdef LLAMA_METAL
 	CFLAGS   += -DGGML_USE_METAL -DGGML_METAL_NDEBUG
@@ -267,6 +251,7 @@ OPENBLAS_BUILD =
 OPENBLAS_NOAVX2_BUILD =
 CLBLAST_BUILD =
 CUBLAS_BUILD =
+HIPBLAS_BUILD =
 
 ifeq ($(OS),Windows_NT)
 	DEFAULT_BUILD = $(CXX) $(CXXFLAGS)  $^ -shared -o $@.dll $(LDFLAGS)
@@ -275,10 +260,12 @@ ifeq ($(OS),Windows_NT)
 	OPENBLAS_NOAVX2_BUILD = $(CXX) $(CXXFLAGS) $^ lib/libopenblas.lib -shared -o $@.dll $(LDFLAGS)
 	CLBLAST_BUILD = $(CXX) $(CXXFLAGS) $^ lib/OpenCL.lib lib/clblast.lib -shared -o $@.dll $(LDFLAGS)
 
-ifdef LLAMA_CUBLAS
-	CUBLAS_BUILD = $(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $^ -shared -o $@.dll $(CUBLASLD_FLAGS) $(LDFLAGS)
-endif
-
+	ifdef LLAMA_CUBLAS
+		CUBLAS_BUILD = $(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $^ -shared -o $@.dll $(CUBLASLD_FLAGS) $(LDFLAGS)
+	endif
+	ifdef LLAMA_HIPBLAS
+		HIPBLAS_BUILD = $(CXX) $(CXXFLAGS) $(HIPFLAGS) $^ -shared -o $@.dll $(HIPLDFLAGS) $(LDFLAGS)
+	endif
 else
 	DEFAULT_BUILD = $(CXX) $(CXXFLAGS)  $^ -shared -o $@.so $(LDFLAGS)
 	FAILSAFE_BUILD = $(CXX) $(CXXFLAGS) $^ -shared -o $@.so $(LDFLAGS)
@@ -294,14 +281,19 @@ else
 		endif
 	endif
 
-ifdef LLAMA_CUBLAS
-	CUBLAS_BUILD = $(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $^ -shared -o $@.so $(CUBLASLD_FLAGS) $(LDFLAGS)
-endif
+	ifdef LLAMA_CUBLAS
+		CUBLAS_BUILD = $(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $^ -shared -o $@.so $(CUBLASLD_FLAGS) $(LDFLAGS)
+	endif
+	ifdef LLAMA_HIPBLAS
+		HIPBLAS_BUILD = $(CXX) $(CXXFLAGS) $(HIPFLAGS) $^ -shared -o $@.so $(HIPLDFLAGS) $(LDFLAGS)
+	endif
 
 	ifndef LLAMA_OPENBLAS
 	ifndef LLAMA_CLBLAST
 	ifndef LLAMA_CUBLAS
+	ifndef LLAMA_HIPBLAS
 	OPENBLAS_BUILD = @echo 'Your OS $(OS) does not appear to be Windows. For faster speeds, install and link a BLAS library. Set LLAMA_OPENBLAS=1 to compile with OpenBLAS support or LLAMA_CLBLAST=1 to compile with ClBlast support. This is just a reminder, not an error.'
+	endif
 	endif
 	endif
 	endif
@@ -339,7 +331,7 @@ ggml_openblas_noavx2.o: ggml.c ggml.h
 ggml_clblast.o: ggml.c ggml.h
 	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 ggml_cublas.o: ggml.c ggml.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) -c $< -o $@
+	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
 
 #quants K
 k_quants.o: k_quants.c k_quants.h ggml.h ggml-cuda.h
@@ -361,7 +353,7 @@ ggml_v2_openblas_noavx2.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
 ggml_v2_clblast.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
 	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 ggml_v2_cublas.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) -c $< -o $@
+	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
 
 #extreme old version compat
 ggml_v1.o: otherarch/ggml_v1.c otherarch/ggml_v1.h
@@ -391,7 +383,7 @@ gpttype_adapter.o: gpttype_adapter.cpp
 gpttype_adapter_clblast.o: gpttype_adapter.cpp
 	$(CXX) $(CXXFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 gpttype_adapter_cublas.o: gpttype_adapter.cpp
-	$(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
 
 clean:
 	rm -vf *.o main quantize_llama quantize_gpt2 quantize_gptj quantize_neox quantize_mpt quantize-stats perplexity embedding benchmark-matmult save-load-state main.exe quantize_llama.exe quantize_gptj.exe quantize_gpt2.exe quantize_neox.exe quantize_mpt.exe koboldcpp.dll koboldcpp_openblas.dll koboldcpp_failsafe.dll koboldcpp_openblas_noavx2.dll koboldcpp_clblast.dll koboldcpp_cublas.dll koboldcpp.so koboldcpp_openblas.so koboldcpp_failsafe.so koboldcpp_openblas_noavx2.so koboldcpp_clblast.so koboldcpp_cublas.so
@@ -413,8 +405,8 @@ koboldcpp_openblas_noavx2: ggml_openblas_noavx2.o ggml_v2_openblas_noavx2.o ggml
 	$(OPENBLAS_NOAVX2_BUILD)
 koboldcpp_clblast: ggml_clblast.o ggml_v2_clblast.o ggml_v1.o expose.o common.o gpttype_adapter_clblast.o ggml-opencl.o ggml_v2-opencl.o ggml_v2-opencl-legacy.o k_quants.o $(OBJS)
 	$(CLBLAST_BUILD)
-koboldcpp_cublas: ggml_cublas.o ggml_v2_cublas.o ggml_v1.o expose.o common.o gpttype_adapter_cublas.o k_quants.o $(CUBLAS_OBJS) $(OBJS)
-	$(CUBLAS_BUILD)
+koboldcpp_cublas: ggml_cublas.o ggml_v2_cublas.o ggml_v1.o expose.o common.o gpttype_adapter_cublas.o k_quants.o $(CUBLAS_OBJS) $(HIP_OBJS) $(OBJS)
+	$(CUBLAS_BUILD) $(HIPBLAS_BUILD)
 
 quantize_llama: examples/quantize/quantize.cpp ggml.o llama.o k_quants.o
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)

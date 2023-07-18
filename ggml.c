@@ -246,17 +246,15 @@ inline static void* ggml_aligned_malloc(size_t size) {
 #if defined(GGML_USE_CLBLAST) // allow usage of CLBlast alongside Accelerate functions
 #include "ggml-opencl.h"
 #endif
-#endif
-#if defined(GGML_USE_OPENBLAS)
-#include <cblas.h>
-#endif
+#elif defined(GGML_USE_OPENBLAS)
 #if defined(GGML_BLAS_USE_MKL)
 #include <mkl.h>
+#else
+#include <cblas.h>
 #endif
-#if defined(GGML_USE_CUBLAS)
+#elif defined(GGML_USE_CUBLAS)
 #include "ggml-cuda.h"
-#endif
-#if defined(GGML_USE_CLBLAST)
+#elif defined(GGML_USE_CLBLAST)
 #include "ggml-opencl.h"
 #endif
 
