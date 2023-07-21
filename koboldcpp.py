@@ -37,7 +37,8 @@ class load_model_inputs(ctypes.Structure):
                 ("debugmode", ctypes.c_int),
                 ("forceversion", ctypes.c_int),
                 ("gpulayers", ctypes.c_int),
-                ("linear_rope", ctypes.c_bool),
+                ("rope_freq_scale", ctypes.c_float),
+                ("rope_freq_base", ctypes.c_float),
                 ("banned_tokens", ctypes.c_char_p * ban_token_max)]
 
 class generation_inputs(ctypes.Structure):
@@ -164,6 +165,7 @@ def init_library():
     handle.has_finished.restype = ctypes.c_bool
     handle.get_last_eval_time.restype = ctypes.c_float
     handle.get_last_process_time.restype = ctypes.c_float
+    handle.get_last_token_count.restype = ctypes.c_int
     handle.abort_generate.restype = ctypes.c_bool
     handle.get_pending_output.restype = ctypes.c_char_p
 
@@ -190,7 +192,11 @@ def load_model(model_filename):
     inputs.blasbatchsize = args.blasbatchsize
     inputs.forceversion = args.forceversion
     inputs.gpulayers = args.gpulayers
-    inputs.linear_rope = args.linearrope
+    inputs.rope_freq_scale = args.ropeconfig[0]
+    if len(args.ropeconfig)>1:
+        inputs.rope_freq_base = args.ropeconfig[1]
+    else:
+        inputs.rope_freq_base = 10000
     clblastids = 0
     if args.useclblast:
         clblastids = 100 + int(args.useclblast[0])*10 + int(args.useclblast[1])
@@ -243,8 +249,10 @@ def generate(prompt,max_length=20, max_context_length=512, temperature=0.8, top_
             for i, sampler in enumerate(sampler_order):
                 inputs.sampler_order[i] = sampler
             inputs.sampler_len = len(sampler_order)
-            if inputs.sampler_len>0 and (inputs.sampler_order[0]!=6 or inputs.sampler_order[inputs.sampler_len-1]!=5):
-                print("\n(Warning!!! Poor sampler_order detected! You will have reduced quality. Recommended values are [6,0,1,3,4,2,5])")
+            global showsamplerwarning
+            if showsamplerwarning and inputs.mirostat==0 and inputs.sampler_len>0 and (inputs.sampler_order[0]!=6 or inputs.sampler_order[inputs.sampler_len-1]!=5):
+                print("\n(Note: Sub-optimal sampler_order detected. You may have reduced quality. Recommended sampler values are [6,0,1,3,4,2,5]. This message will only show once per session.)")
+                showsamplerwarning = False
         except TypeError as e:
             print("ERROR: sampler_order must be a list of integers: " + str(e))
     inputs.seed = seed
@@ -274,10 +282,11 @@ friendlymodelname = "concedo/koboldcpp"  # local kobold api apparently needs a h
 maxctx = 2048
 maxhordectx = 1024
 maxhordelen = 256
-modelbusy = False
+modelbusy = threading.Lock()
 defaultport = 5001
-KcppVersion = "1.35"
+KcppVersion = "1.36"
 showdebug = True
+showsamplerwarning = True
 
 class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
     sys_version = ""
@@ -366,7 +375,6 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     async def handle_sse_stream(self):
         self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
         self.end_headers()
@@ -459,7 +467,8 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path.endswith(('/api/extra/perf')):
             lastp = handle.get_last_process_time()
             laste = handle.get_last_eval_time()
-            response_body = (json.dumps({"last_process":lastp,"last_eval":laste}).encode())
+            lastc = handle.get_last_token_count()
+            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc}).encode())
 
         if response_body is None:
             self.send_response(404)
@@ -488,7 +497,6 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"success": ("true" if ag else "false")}).encode())
             print("\nGeneration Aborted")
-            modelbusy = False
             return
 
         if self.path.endswith('/api/extra/generate/check'):
@@ -499,7 +507,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"results": [{"text": pendtxtStr}]}).encode())
             return
 
-        if modelbusy:
+        if not modelbusy.acquire(blocking=False):
             self.send_response(503)
             self.end_headers()
             self.wfile.write(json.dumps({"detail": {
@@ -508,46 +516,45 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 }}).encode())
             return
 
-        if self.path.endswith('/request'):
-            basic_api_flag = True
+        try:
+            if self.path.endswith('/request'):
+                basic_api_flag = True
 
-        if self.path.endswith(('/api/v1/generate', '/api/latest/generate')):
-            kai_api_flag = True
+            if self.path.endswith(('/api/v1/generate', '/api/latest/generate')):
+                kai_api_flag = True
 
-        if self.path.endswith('/api/extra/generate/stream'):
-            kai_api_flag = True
-            kai_sse_stream_flag = True
+            if self.path.endswith('/api/extra/generate/stream'):
+                kai_api_flag = True
+                kai_sse_stream_flag = True
 
-        if basic_api_flag or kai_api_flag:
-            genparams = None
-            try:
-                genparams = json.loads(body)
-            except ValueError as e:
-                utfprint("Body Err: " + str(body))
-                return self.send_response(503)
+            if basic_api_flag or kai_api_flag:
+                genparams = None
+                try:
+                    genparams = json.loads(body)
+                except ValueError as e:
+                    utfprint("Body Err: " + str(body))
+                    return self.send_response(503)
 
-            if args.debugmode!=-1:
-                utfprint("\nInput: " + json.dumps(genparams))
+                if args.debugmode!=-1:
+                    utfprint("\nInput: " + json.dumps(genparams))
 
-            modelbusy = True
+                if kai_api_flag:
+                    fullprompt = genparams.get('prompt', "")
+                else:
+                    fullprompt = genparams.get('text', "")
+                newprompt = fullprompt
 
-            if kai_api_flag:
-                fullprompt = genparams.get('prompt', "")
-            else:
-                fullprompt = genparams.get('text', "")
-            newprompt = fullprompt
+                gen = asyncio.run(self.handle_request(genparams, newprompt, basic_api_flag, kai_sse_stream_flag))
+                try:
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(json.dumps(gen).encode())
+                except:
+                    print("Generate: The response could not be sent, maybe connection was terminated?")
 
-            gen = asyncio.run(self.handle_request(genparams, newprompt, basic_api_flag, kai_sse_stream_flag))
-            try:
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(json.dumps(gen).encode())
-            except:
-                print("Generate: The response could not be sent, maybe connection was terminated?")
-
-            modelbusy = False
-
-            return
+                return
+        finally:
+            modelbusy.release()
 
         self.send_response(404)
         self.end_headers()
@@ -786,6 +793,10 @@ def show_new_gui():
 
     context_var = ctk.IntVar()
 
+    customrope_var = ctk.IntVar()
+    customrope_scale = ctk.StringVar(value="1.0")
+    customrope_base = ctk.StringVar(value="10000")
+
     model_var = ctk.StringVar()
     lora_var = ctk.StringVar()
     lora_base_var  = ctk.StringVar()
@@ -927,6 +938,19 @@ def show_new_gui():
     # context size
     makeslider(tokens_tab, "Context Size:",contextsize_text, context_var, 0, 4, 20, set=2)
 
+
+    customrope_scale_entry, customrope_scale_label = makelabelentry(tokens_tab, "RoPE Scale:", customrope_scale)
+    customrope_base_entry, customrope_base_label = makelabelentry(tokens_tab, "RoPE Base:", customrope_base)
+    def togglerope(a,b,c):
+        items = [customrope_scale_label, customrope_scale_entry,customrope_base_label, customrope_base_entry]
+        for idx, item in enumerate(items):
+            if customrope_var.get() == 1:
+                item.grid(row=23 + int(idx/2), column=idx%2, padx=8, stick="nw")
+            else:
+                item.grid_forget()
+    makecheckbox(tokens_tab,  "Custom RoPE Config", variable=customrope_var, row=22, command=togglerope)
+    togglerope(1,1,1)
+
     # Model Tab
     model_tab = tabcontent["Model"]
 
@@ -1023,6 +1047,9 @@ def show_new_gui():
         args.mirostat = [int(mirostat_var.get()), float(mirostat_tau.get()), float(mirostat_eta.get())] if usemirostat.get()==1 else None
         args.contextsize = int(contextsize_text[context_var.get()])
 
+        if customrope_var.get()==1:
+            args.ropeconfig = [float(customrope_scale.get()),float(customrope_base.get())]
+
         args.model_param = None if model_var.get() == "" else model_var.get()
         args.lora = None if lora_var.get() == "" else ([lora_var.get()] if lora_base_var.get()=="" else [lora_var.get(), lora_base_var.get()])
 
@@ -1073,6 +1100,15 @@ def show_new_gui():
 
         if dict["contextsize"]:
             context_var.set(contextsize_text.index(str(dict["contextsize"])))
+
+        if dict["ropeconfig"] and len(dict["ropeconfig"])>1:
+            if dict["ropeconfig"][0]>0:
+                customrope_var.set(1)
+                customrope_scale.set(str(dict["ropeconfig"][0]))
+                customrope_base.set(str(dict["ropeconfig"][1]))
+            else:
+                customrope_var.set(0)
+
         if dict["blasbatchsize"]:
             blas_size_var.set(blasbatchsize_values.index(str(dict["blasbatchsize"])))
         if dict["forceversion"]:
@@ -1465,7 +1501,7 @@ if __name__ == '__main__':
     parser.add_argument("--highpriority", help="Experimental flag. If set, increases the process CPU priority, potentially speeding up generation. Use caution.", action='store_true')
     parser.add_argument("--contextsize", help="Controls the memory allocated for maximum context size, only change if you need more RAM for big contexts. (default 2048)", type=int,choices=[512,1024,2048,3072,4096,6144,8192], default=2048)
     parser.add_argument("--blasbatchsize", help="Sets the batch size used in BLAS processing (default 512). Setting it to -1 disables BLAS mode, but keeps other benefits like GPU offload.", type=int,choices=[-1,32,64,128,256,512,1024], default=512)
-    parser.add_argument("--linearrope", help="If set, uses linear RoPE scaling. Otherwise, uses NTK-Aware scaling.", action='store_true')
+    parser.add_argument("--ropeconfig", help="If set, uses customized RoPE scaling from configured frequency scale and frequency base (e.g. --ropeconfig 0.25 10000). Otherwise, uses NTK-Aware scaling set automatically based on context size. For linear rope, simply set the freq-scale and ignore the freq-base",metavar=('[rope-freq-scale]', '[rope-freq-base]'), default=[0.0, 10000.0], type=float, nargs='+')
     parser.add_argument("--stream", help="Uses streaming when generating tokens. Only for the Kobold Lite UI.", action='store_true')
     parser.add_argument("--smartcontext", help="Reserving a portion of context to try processing less frequently.", action='store_true')
     parser.add_argument("--unbantokens", help="Normally, KoboldAI prevents the EOS token from being generated. This flag unbans it.", action='store_true')

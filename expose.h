@@ -36,7 +36,8 @@ struct load_model_inputs
     const int debugmode = 0;
     const int forceversion = 0;
     const int gpulayers = 0;
-    const bool linear_rope;
+    const float rope_freq_scale = 1.0f;
+    const float rope_freq_base = 10000.0f;
     const char * banned_tokens[ban_token_max];
 };
 struct generation_inputs
@@ -74,3 +75,4 @@ extern std::vector<std::string> generated_tokens;
 extern bool generation_finished;
 extern float last_eval_time;
 extern float last_process_time;
+extern int last_token_count;

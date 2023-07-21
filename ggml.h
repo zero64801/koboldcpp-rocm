@@ -201,13 +201,11 @@
 #define GGML_MAX_NAME          48
 #define GGML_DEFAULT_N_THREADS 4
 
-#define GGML_UNUSED(x) (void)(x)
 
-// Maximum training context of the model in use
-// For the LLaMA models this is normally 2048, but somehow "stepping out" by 128 gives better results (tested at 7B and 13B)
-#ifndef GGML_TRAINING_CTX
-#define GGML_TRAINING_CTX 2048
-#endif
+#define GGML_EXIT_SUCCESS 0
+#define GGML_EXIT_ABORTED 1
+
+#define GGML_UNUSED(x) (void)(x)
 
 #define GGML_ASSERT(x) \
     do { \
@@ -369,6 +367,8 @@ extern "C" {
         GGML_OP_CLAMP,
         GGML_OP_CONV_1D,
         GGML_OP_CONV_2D,
+        GGML_OP_POOL_1D,
+        GGML_OP_POOL_2D,
 
         GGML_OP_FLASH_ATTN,
         GGML_OP_FLASH_FF,
@@ -448,6 +448,10 @@ extern "C" {
 
         // the `n_tasks` of nodes, 1:1 mapping to cgraph nodes
         int n_tasks[GGML_MAX_NODES];
+
+        // abort ggml_graph_compute when true
+        bool (*abort_callback)(void * data);
+        void * abort_callback_data;
     };
 
     // computation graph
@@ -540,10 +544,6 @@ extern "C" {
 
     // use this to compute the memory overhead of a tensor
     GGML_API size_t ggml_tensor_overhead(void);
-
-    GGML_API void set_ntk_rope_scale_mode(bool useNtk);
-    GGML_API bool get_ntk_rope_scale_mode();
-    GGML_API float get_theta_scale(int n_dims,int n_past,int n_ctx);
 
     // main
 
@@ -1120,6 +1120,17 @@ extern "C" {
             int                   mode,
             int                   n_ctx);
 
+    // custom RoPE, in-place, returns view(a)
+    GGML_API struct ggml_tensor * ggml_rope_custom_inplace(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   n_past,
+            int                   n_dims,
+            int                   mode,
+            float                 freq_base,
+            float                 freq_scale,
+            int                   n_ctx);
+
     // rotary position embedding backward, i.e compute dx from dy
     // a - dy
     GGML_API struct ggml_tensor * ggml_rope_back(
@@ -1173,6 +1184,31 @@ extern "C" {
             struct ggml_tensor  * b,
             int                   s,
             int                   d);
+
+    enum ggml_op_pool {
+        GGML_OP_POOL_MAX,
+        GGML_OP_POOL_AVG,
+        GGML_OP_POOL_COUNT,
+    };
+
+    GGML_API struct ggml_tensor* ggml_pool_1d(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            enum ggml_op_pool     op,
+            int                   k0, // kernel size
+            int                   s0, // stride
+            int                   p0); // padding
+
+    GGML_API struct ggml_tensor* ggml_pool_2d(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            enum ggml_op_pool     op,
+            int                   k0,
+            int                   k1,
+            int                   s0,
+            int                   s1,
+            int                   p0,
+            int                   p1);
 
     GGML_API struct ggml_tensor * ggml_flash_attn(
             struct ggml_context * ctx,
@@ -1313,7 +1349,7 @@ extern "C" {
     // ggml_graph_plan() has to be called before ggml_graph_compute()
     // when plan.work_size > 0, caller must allocate memory for plan.work_data
     GGML_API struct ggml_cplan ggml_graph_plan   (struct ggml_cgraph * cgraph, int n_threads /*= GGML_DEFAULT_N_THREADS*/);
-    GGML_API              void ggml_graph_compute(struct ggml_cgraph * cgraph, struct ggml_cplan * cplan);
+    GGML_API               int ggml_graph_compute(struct ggml_cgraph * cgraph, struct ggml_cplan * cplan);
     GGML_API              void ggml_graph_reset  (struct ggml_cgraph * cgraph);
 
     // same as ggml_graph_compute() but the work data is allocated as a part of the context
