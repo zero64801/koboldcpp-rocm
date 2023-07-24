@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 stop_token_max = 10
 sampler_order_max = 7
 ban_token_max = 10
+tensor_split_max = 16
 
 class load_model_inputs(ctypes.Structure):
     _fields_ = [("threads", ctypes.c_int),
@@ -39,7 +40,8 @@ class load_model_inputs(ctypes.Structure):
                 ("gpulayers", ctypes.c_int),
                 ("rope_freq_scale", ctypes.c_float),
                 ("rope_freq_base", ctypes.c_float),
-                ("banned_tokens", ctypes.c_char_p * ban_token_max)]
+                ("banned_tokens", ctypes.c_char_p * ban_token_max),
+                ("tensor_split", ctypes.c_float * tensor_split_max)]
 
 class generation_inputs(ctypes.Structure):
     _fields_ = [("seed", ctypes.c_int),
@@ -209,6 +211,13 @@ def load_model(model_filename):
         os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     elif (args.usecublas and "2" in args.usecublas):
         os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+
+    for n in range(tensor_split_max):
+        if args.tensor_split and n < len(args.tensor_split):
+            inputs.tensor_split[n] = float(args.tensor_split[n])
+        else:
+            inputs.tensor_split[n] = 0
+
     inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
     inputs.debugmode = args.debugmode
     banned_tokens = args.bantokens
@@ -997,7 +1006,7 @@ def show_new_gui():
             else:
                 item.grid_forget()
                 labels[idx].grid_forget()
-        if usehorde_var.get()==1 and horde_name_var.get()=="koboldcpp" and model_var.get()!="":
+        if usehorde_var.get()==1 and (horde_name_var.get()=="koboldcpp" or horde_name_var.get()=="") and model_var.get()!="":
             basefile = os.path.basename(model_var.get())
             horde_name_var.set(os.path.splitext(basefile)[0])
 
@@ -1412,6 +1421,7 @@ def run_horde_worker(args, api_key, worker_name):
     current_id = None
     current_payload = None
     current_generation = None
+    sleepy_counter = 0 #if this exceeds a value, worker becomes sleepy (slower)
     print("===\nEmbedded Horde Worker '"+worker_name+"' Starting...\n(To use your own KAI Bridge/Scribe worker instead, don't set your API key)")
     BRIDGE_AGENT = f"KoboldCppEmbedWorker:1:https://github.com/LostRuins/koboldcpp"
     cluster = "https://horde.koboldai.net"
@@ -1448,9 +1458,13 @@ def run_horde_worker(args, api_key, worker_name):
             time.sleep(5)
             continue
         if not pop["id"]:
-            #print(f"Server {cluster} has no valid generations to do for us.")
-            time.sleep(3)
+            slp = (2 if sleepy_counter<10 else (3 if sleepy_counter<20 else 4))
+            #print(f"Server {cluster} has no valid generations for us. Sleep for {slp}s")
+            time.sleep(slp)
+            sleepy_counter += 1
             continue
+
+        sleepy_counter = 0
         current_id = pop['id']
         current_payload = pop['payload']
         print(f"\nJob received from {cluster} for {current_payload.get('max_length',80)} tokens and {current_payload.get('max_context_length',1024)} max context. Starting generation...")
@@ -1661,11 +1675,14 @@ if __name__ == '__main__':
     parser.add_argument("--noavx2", help="Do not use AVX2 instructions, a slower compatibility mode for older devices. Does not work with --clblast.", action='store_true')
     parser.add_argument("--debugmode", help="Shows additional debug info in the terminal.", action='store_const', const=1, default=0)
     parser.add_argument("--skiplauncher", help="Doesn't display or use the new GUI launcher.", action='store_true')
-    parser.add_argument("--hordeconfig", help="Sets the display model name to something else, for easy use on AI Horde. Optional additional parameters set the horde max genlength, max ctxlen, API key and worker name.",metavar=('[hordemodelname]', '[hordelength] [hordemaxctx] [hordeapikey] [hordeworkername]'), nargs='+')
+    parser.add_argument("--hordeconfig", help="Sets the display model name to something else, for easy use on AI Horde. Optional additional parameters set the horde max genlength, max ctxlen, API key and worker name.",metavar=('[hordemodelname]', '[hordegenlength] [hordemaxctx] [hordeapikey] [hordeworkername]'), nargs='+')
     compatgroup = parser.add_mutually_exclusive_group()
     compatgroup.add_argument("--noblas", help="Do not use OpenBLAS for accelerated prompt ingestion", action='store_true')
     compatgroup.add_argument("--useclblast", help="Use CLBlast for GPU Acceleration. Must specify exactly 2 arguments, platform ID and device ID (e.g. --useclblast 1 0).", type=int, choices=range(0,9), nargs=2)
     compatgroup.add_argument("--usecublas", help="Use CuBLAS/hipBLAS for GPU Acceleration. Requires CUDA. Select lowvram to not allocate VRAM scratch buffer. Enter a number afterwards to select and use 1 GPU. Leaving no number will use all GPUs.", nargs='*',metavar=('[lowvram|normal] [main GPU ID]'), choices=['normal', 'lowvram', '0', '1', '2'])
     parser.add_argument("--gpulayers", help="Set number of layers to offload to GPU when using GPU. Requires GPU.",metavar=('[GPU layers]'), type=int, default=0)
+    parser.add_argument("--tensor_split", help="For CUDA with ALL GPU set only, ratio to split tensors across multiple GPUs, space-separated list of proportions, e.g. 7 3", metavar=('[Ratios]'), type=float, nargs='+')
+
     args = parser.parse_args()
+
     main(args)
