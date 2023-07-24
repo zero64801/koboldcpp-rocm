@@ -1224,10 +1224,19 @@ static void llama_model_load_internal(
 
 #ifdef GGML_USE_CUBLAS
         const int max_backend_supported_layers = hparams.n_layer + 3;
+#if defined(GGML_USE_HIPBLAS)
+        const int max_offloadable_layers = low_vram ? hparams.n_layer + 3 : hparams.n_layer + 3;
+#else
         const int max_offloadable_layers = low_vram ? hparams.n_layer + 1 : hparams.n_layer + 3;
+#endif
         if (n_gpu_layers > (int) hparams.n_layer + 1) {
             if (low_vram) {
+#if defined(GGML_USE_HIPBLAS)
+                fprintf(stderr, "%s: offloading v cache to GPU\n", __func__);
+                vram_kv_cache += MEM_REQ_KV_SELF().at(model.type) / 2;
+#else
                 fprintf(stderr, "%s: cannot offload v cache to GPU due to low VRAM option\n", __func__);
+#endif
             } else {
                 fprintf(stderr, "%s: offloading v cache to GPU\n", __func__);
                 vram_kv_cache += MEM_REQ_KV_SELF().at(model.type) / 2;
@@ -1235,7 +1244,12 @@ static void llama_model_load_internal(
         }
         if (n_gpu_layers > (int) hparams.n_layer + 2) {
             if (low_vram) {
+#if defined(GGML_USE_HIPBLAS)
+                fprintf(stderr, "%s: offloading k cache to GPU\n", __func__);
+                vram_kv_cache += MEM_REQ_KV_SELF().at(model.type) / 2;
+#else
                 fprintf(stderr, "%s: cannot offload k cache to GPU due to low VRAM option\n", __func__);
+#endif
             } else {
                 fprintf(stderr, "%s: offloading k cache to GPU\n", __func__);
                 vram_kv_cache += MEM_REQ_KV_SELF().at(model.type) / 2;
