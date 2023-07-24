@@ -166,6 +166,7 @@ def init_library():
     handle.get_last_eval_time.restype = ctypes.c_float
     handle.get_last_process_time.restype = ctypes.c_float
     handle.get_last_token_count.restype = ctypes.c_int
+    handle.get_last_stop_reason.restype = ctypes.c_int
     handle.abort_generate.restype = ctypes.c_bool
     handle.get_pending_output.restype = ctypes.c_char_p
 
@@ -223,6 +224,8 @@ def generate(prompt,max_length=20, max_context_length=512, temperature=0.8, top_
     inputs = generation_inputs()
     outputs = ctypes.create_unicode_buffer(ctypes.sizeof(generation_outputs))
     inputs.prompt = prompt.encode("UTF-8")
+    if max_length >= max_context_length:
+        max_length = max_context_length-1
     inputs.max_context_length = max_context_length   # this will resize the context buffer if changed
     inputs.max_length = max_length
     inputs.temperature = temperature
@@ -284,9 +287,10 @@ maxhordectx = 1024
 maxhordelen = 256
 modelbusy = threading.Lock()
 defaultport = 5001
-KcppVersion = "1.36"
+KcppVersion = "1.37"
 showdebug = True
 showsamplerwarning = True
+exitcounter = 0
 
 class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
     sys_version = ""
@@ -468,7 +472,8 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             lastp = handle.get_last_process_time()
             laste = handle.get_last_eval_time()
             lastc = handle.get_last_token_count()
-            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc}).encode())
+            stopreason = handle.get_last_stop_reason()
+            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "stop_reason":stopreason}).encode())
 
         if response_body is None:
             self.send_response(404)
@@ -582,6 +587,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def RunServerMultiThreaded(addr, port, embedded_kailite = None):
+    global exitcounter
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((addr, port))
@@ -595,6 +601,7 @@ def RunServerMultiThreaded(addr, port, embedded_kailite = None):
             self.start()
 
         def run(self):
+            global exitcounter
             handler = ServerRequestHandler(addr, port, embedded_kailite)
             with http.server.HTTPServer((addr, port), handler, False) as self.httpd:
                 try:
@@ -602,12 +609,16 @@ def RunServerMultiThreaded(addr, port, embedded_kailite = None):
                     self.httpd.server_bind = self.server_close = lambda self: None
                     self.httpd.serve_forever()
                 except (KeyboardInterrupt,SystemExit):
+                    exitcounter = 999
                     self.httpd.server_close()
                     sys.exit(0)
                 finally:
+                    exitcounter = 999
                     self.httpd.server_close()
                     sys.exit(0)
         def stop(self):
+            global exitcounter
+            exitcounter = 999
             self.httpd.server_close()
 
     numThreads = 6
@@ -618,6 +629,7 @@ def RunServerMultiThreaded(addr, port, embedded_kailite = None):
         try:
             time.sleep(10)
         except KeyboardInterrupt:
+            exitcounter = 999
             for i in range(numThreads):
                 threadArr[i].stop()
             sys.exit(0)
@@ -806,6 +818,8 @@ def show_new_gui():
     horde_name_var = ctk.StringVar(value="koboldcpp")
     horde_gen_var = ctk.StringVar(value=maxhordelen)
     horde_context_var = ctk.StringVar(value=maxhordectx)
+    horde_apikey_var = ctk.StringVar(value="")
+    horde_workername_var = ctk.StringVar(value="")
     usehorde_var = ctk.IntVar()
 
     # Quick Launch Tab
@@ -968,21 +982,26 @@ def show_new_gui():
     # horde
     makelabel(network_tab, "Horde:", 3).grid(pady=10)
 
-    horde_name_entry,  horde_name_label = makelabelentry(network_tab, "Horde Name:", horde_name_var, 5, 200)
+    horde_name_entry,  horde_name_label = makelabelentry(network_tab, "Horde Model Name:", horde_name_var, 5, 180)
     horde_gen_entry,  horde_gen_label = makelabelentry(network_tab, "Gen. Length:", horde_gen_var, 6, 50)
     horde_context_entry,  horde_context_label = makelabelentry(network_tab, "Max Context:",horde_context_var, 7, 50)
+    horde_apikey_entry,  horde_apikey_label = makelabelentry(network_tab, "API Key (If Embedded Worker):",horde_apikey_var, 8, 180)
+    horde_workername_entry,  horde_workername_label = makelabelentry(network_tab, "Horde Worker Name:",horde_workername_var, 9, 180)
 
     def togglehorde(a,b,c):
-        labels = [horde_name_label, horde_gen_label, horde_context_label]
-        for idx, item in enumerate([horde_name_entry, horde_gen_entry, horde_context_entry]):
+        labels = [horde_name_label, horde_gen_label, horde_context_label, horde_apikey_label, horde_workername_label]
+        for idx, item in enumerate([horde_name_entry, horde_gen_entry, horde_context_entry, horde_apikey_entry, horde_workername_entry]):
             if usehorde_var.get() == 1:
                 item.grid(row=5 + idx, column = 1, padx=8, pady=1, stick="nw")
                 labels[idx].grid(row=5 + idx, padx=8, pady=1, stick="nw")
             else:
                 item.grid_forget()
                 labels[idx].grid_forget()
+        if usehorde_var.get()==1 and horde_name_var.get()=="koboldcpp" and model_var.get()!="":
+            basefile = os.path.basename(model_var.get())
+            horde_name_var.set(os.path.splitext(basefile)[0])
 
-    usehorde_box = makecheckbox(network_tab, "Configure for Horde", usehorde_var, 4, command=togglehorde)
+    makecheckbox(network_tab, "Configure for Horde", usehorde_var, 4, command=togglehorde)
     togglehorde(1,1,1)
 
     # launch
@@ -1056,124 +1075,98 @@ def show_new_gui():
         args.port_param = defaultport if port_var.get()=="" else int(port_var.get())
         args.host = host_var.get()
 
-        args.hordeconfig = None if usehorde_var.get() == 0 else [horde_name_var.get(), horde_gen_var.get(), horde_context_var.get()]
+        if horde_apikey_var.get()=="" or horde_workername_var.get()=="":
+            args.hordeconfig = None if usehorde_var.get() == 0 else [horde_name_var.get(), horde_gen_var.get(), horde_context_var.get()]
+        else:
+            args.hordeconfig = None if usehorde_var.get() == 0 else [horde_name_var.get(), horde_gen_var.get(), horde_context_var.get(), horde_apikey_var.get(), horde_workername_var.get()]
 
     def import_vars(dict):
-        threads_var.set(dict["threads"])
-        usemlock.set(1 if dict["usemlock"] else 0)
-        debugmode.set(1 if dict["debugmode"] else 0)
-        launchbrowser.set(1 if dict["launch"] else 0)
-        highpriority.set(1 if dict["highpriority"] else 0)
-        disablemmap.set(1 if dict["nommap"] else 0)
-        psutil.set(1 if dict["psutil_set_threads"] else 0)
-        stream.set(1 if dict["stream"] else 0)
-        smartcontext.set(1 if dict["smartcontext"] else 0)
-        unbantokens.set(1 if dict["unbantokens"] else 0)
+        if "threads" in dict:
+            threads_var.set(dict["threads"])
+        usemlock.set(1 if "usemlock" in dict and dict["usemlock"] else 0)
+        debugmode.set(1 if "debugmode" in dict and dict["debugmode"] else 0)
+        launchbrowser.set(1 if "launch" in dict and dict["launch"] else 0)
+        highpriority.set(1 if "highpriority" in dict and dict["highpriority"] else 0)
+        disablemmap.set(1 if "nommap" in dict and dict["nommap"] else 0)
+        psutil.set(1 if "psutil_set_threads" in dict and dict["psutil_set_threads"] else 0)
+        stream.set(1 if "stream" in dict and dict["stream"] else 0)
+        smartcontext.set(1 if "smartcontext" in dict and dict["smartcontext"] else 0)
+        unbantokens.set(1 if "unbantokens" in dict and dict["unbantokens"] else 0)
         runopts_var.set(runopts[0])
-        try:
-            if dict["useclblast"]:
-                runopts_var.set(runopts[1])
-                gpu_choice_var.set(str(["0 0", "1 0", "0 1"].index(str(dict["useclblast"][0]) + " " + str(dict["useclblast"][1])) + 1))
-            elif dict["usecublas"]:
-                runopts_var.set(runopts[2])
-                if len(dict["usecublas"])==1:
-                    lowvram_var.set(1 if dict["usecublas"][0]=="lowvram" else 0)
-                else:
-                    lowvram_var.set(1 if "lowvram" in dict["usecublas"] else 0)
-                    gpu_choice_var.set("1")
-                    for g in range(3):
-                        if str(g) in dict["usecublas"]:
-                            gpu_choice_var.set(str(g+1))
-                            break
-        except (KeyError, IndexError):
-            pass
-
-        try:
-            if dict["gpulayers"]:
-                gpulayers_var.set(dict["gpulayers"])
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["noblas"] and dict["noavx2"]:
-                runopts_var.set(runopts[5])
-            elif dict["noavx2"]:
-                runopts_var.set(runopts[5])
-            elif dict["noblas"]:
-                runopts_var.set(runopts[3])
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["blasthreads"]:
-                blas_threads_var.set(str(dict["blasthreads"]))
+        if "useclblast" in dict and dict["useclblast"]:
+            runopts_var.set(runopts[1])
+            gpu_choice_var.set(str(["0 0", "1 0", "0 1"].index(str(dict["useclblast"][0]) + " " + str(dict["useclblast"][1])) + 1))
+        elif "usecublas" in dict and dict["usecublas"]:
+            runopts_var.set(runopts[2])
+            if len(dict["usecublas"])==1:
+                lowvram_var.set(1 if dict["usecublas"][0]=="lowvram" else 0)
             else:
-                blas_threads_var.set("")
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["contextsize"]:
-                context_var.set(contextsize_text.index(str(dict["contextsize"])))
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["ropeconfig"] and len(dict["ropeconfig"])>1:
-                if dict["ropeconfig"][0]>0:
-                    customrope_var.set(1)
-                    customrope_scale.set(str(dict["ropeconfig"][0]))
-                    customrope_base.set(str(dict["ropeconfig"][1]))
-                else:
-                    customrope_var.set(0)
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["blasbatchsize"]:
-                blas_size_var.set(blasbatchsize_values.index(str(dict["blasbatchsize"])))
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["forceversion"]:
-                version_var.set(str(dict["forceversion"]))
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["mirostat"] and len(dict["mirostat"])>1:
-                usemirostat.set(0 if str(dict["mirostat"][0])=="0" else 1)
-                mirostat_var.set(str(dict["mirostat"][0]))
-                mirostat_tau.set(str(dict["mirostat"][1]))
-                mirostat_eta.set(str(dict["mirostat"][2]))
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["model_param"]:
-                model_var.set(dict["model_param"])
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["lora"]:
-                if len(dict["lora"]) > 1:
-                    lora_var.set(dict["lora"][0])
-                    lora_base_var.set(dict["lora"][1])
-                else:
-                    lora_var.set(dict["lora"][0])
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["port_param"]:
-                port_var.set(dict["port_param"])
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["host"]:
-                host_var.set(dict["host"])
-        except (KeyError, IndexError):
-            pass
-        try:
-            if dict["hordeconfig"] and len(dict["hordeconfig"]) > 1:
-                horde_name_var.set(dict["hordeconfig"][0])
-                horde_gen_var.set(dict["hordeconfig"][1])
-                horde_context_var.set(dict["hordeconfig"][2])
-        except (KeyError, IndexError):
-            pass
+                lowvram_var.set(1 if "lowvram" in dict["usecublas"] else 0)
+                gpu_choice_var.set("1")
+                for g in range(3):
+                    if str(g) in dict["usecublas"]:
+                        gpu_choice_var.set(str(g+1))
+                        break
+        if "gpulayers" in dict and dict["gpulayers"]:
+            gpulayers_var.set(dict["gpulayers"])
 
+        if  "noavx2" in dict and "noblas" in dict and dict["noblas"] and dict["noavx2"]:
+            runopts_var.set(runopts[5])
+        elif "noavx2" in dict and dict["noavx2"]:
+            runopts_var.set(runopts[4])
+        elif "noblas" in dict and dict["noblas"]:
+            runopts_var.set(runopts[3])
+        if "blasthreads" in dict and dict["blasthreads"]:
+            blas_threads_var.set(str(dict["blasthreads"]))
+        else:
+            blas_threads_var.set("")
+
+        if "contextsize" in dict and dict["contextsize"]:
+            context_var.set(contextsize_text.index(str(dict["contextsize"])))
+
+        if "ropeconfig" in dict and dict["ropeconfig"] and len(dict["ropeconfig"])>1:
+            if dict["ropeconfig"][0]>0:
+                customrope_var.set(1)
+                customrope_scale.set(str(dict["ropeconfig"][0]))
+                customrope_base.set(str(dict["ropeconfig"][1]))
+            else:
+                customrope_var.set(0)
+
+        if "blasbatchsize" in dict and dict["blasbatchsize"]:
+            blas_size_var.set(blasbatchsize_values.index(str(dict["blasbatchsize"])))
+        if "forceversion" in dict and dict["forceversion"]:
+            version_var.set(str(dict["forceversion"]))
+
+        if "mirostat" in dict and dict["mirostat"] and len(dict["mirostat"])>1:
+            usemirostat.set(0 if str(dict["mirostat"][0])=="0" else 1)
+            mirostat_var.set(str(dict["mirostat"][0]))
+            mirostat_tau.set(str(dict["mirostat"][1]))
+            mirostat_eta.set(str(dict["mirostat"][2]))
+
+        if "model_param" in dict and dict["model_param"]:
+            model_var.set(dict["model_param"])
+
+        if "lora" in dict and dict["lora"]:
+            if len(dict["lora"]) > 1:
+                lora_var.set(dict["lora"][0])
+                lora_base_var.set(dict["lora"][1])
+            else:
+                lora_var.set(dict["lora"][0])
+
+        if "port_param" in dict and dict["port_param"]:
+            port_var.set(dict["port_param"])
+
+        if "host" in dict and dict["host"]:
+            host_var.set(dict["host"])
+
+        if "hordeconfig" in dict and dict["hordeconfig"] and len(dict["hordeconfig"]) > 1:
+            horde_name_var.set(dict["hordeconfig"][0])
+            horde_gen_var.set(dict["hordeconfig"][1])
+            horde_context_var.set(dict["hordeconfig"][2])
+            if len(dict["hordeconfig"]) > 4:
+                horde_apikey_var.set(dict["hordeconfig"][3])
+                horde_workername_var.set(dict["hordeconfig"][4])
+                usehorde_var.set("1")
 
         
     def save_config():
@@ -1385,8 +1378,123 @@ def show_old_gui():
             time.sleep(2)
             sys.exit(2)
 
-def main(args):
+#A very simple and stripped down embedded horde worker with no dependencies
+def run_horde_worker(args, api_key, worker_name):
+    import urllib.request
+    global friendlymodelname, maxhordectx, maxhordelen, exitcounter, modelbusy
 
+    def make_url_request(url, data, method='POST'):
+        try:
+            request = None
+            headers = {"apikey": api_key,'User-Agent':'KoboldCpp Embedded Worker v1'}
+            if method=='POST':
+                json_payload = json.dumps(data).encode('utf-8')
+                request = urllib.request.Request(url, data=json_payload, headers=headers, method=method)
+                request.add_header('Content-Type', 'application/json')
+            else:
+                request = urllib.request.Request(url, headers=headers, method=method)
+            response_data = ""
+            with urllib.request.urlopen(request) as response:
+                response_data = response.read().decode('utf-8')
+                json_response = json.loads(response_data)
+                return json_response
+        except urllib.error.HTTPError as e:
+            try:
+                errmsg = e.read().decode('utf-8')
+                print(f"Error: {e} - {errmsg}, Make sure your Horde API key and worker name is valid.")
+            except Exception as e:
+                print(f"Error: {e}, Make sure your Horde API key and worker name is valid.")
+            return None
+        except Exception as e:
+            print(f"Error: {e} - {response_data}, Make sure your Horde API key and worker name is valid.")
+            return None
+
+    current_id = None
+    current_payload = None
+    current_generation = None
+    print("===\nEmbedded Horde Worker '"+worker_name+"' Starting...\n(To use your own KAI Bridge/Scribe worker instead, don't set your API key)")
+    BRIDGE_AGENT = f"KoboldCppEmbedWorker:1:https://github.com/LostRuins/koboldcpp"
+    cluster = "https://horde.koboldai.net"
+    while exitcounter < 10:
+        time.sleep(2)
+        readygo = make_url_request(f'http://localhost:{args.port}/api/v1/info/version', None,'GET')
+        if readygo:
+            print("Embedded Horde Worker is started.")
+            break
+
+    while exitcounter < 10:
+        currentjob_attempts = 0
+        current_generation = None
+
+        #first, make sure we are not generating
+        if modelbusy.locked():
+            time.sleep(0.5)
+            continue
+
+        #pop new request
+        gen_dict = {
+            "name": worker_name,
+            "models": [friendlymodelname],
+            "max_length": maxhordelen,
+            "max_context_length": maxhordectx,
+            "priority_usernames": [],
+            "softprompts": [],
+            "bridge_agent": BRIDGE_AGENT,
+        }
+        pop = make_url_request(f'{cluster}/api/v2/generate/text/pop',gen_dict)
+        if not pop:
+            exitcounter += 1
+            print(f"Failed to fetch job from {cluster}. Waiting 5 seconds...")
+            time.sleep(5)
+            continue
+        if not pop["id"]:
+            #print(f"Server {cluster} has no valid generations to do for us.")
+            time.sleep(3)
+            continue
+        current_id = pop['id']
+        current_payload = pop['payload']
+        print(f"\nJob received from {cluster} for {current_payload.get('max_length',80)} tokens and {current_payload.get('max_context_length',1024)} max context. Starting generation...")
+
+        #do gen
+        while exitcounter < 10:
+            if not modelbusy.locked():
+                current_generation = make_url_request(f'http://localhost:{args.port}/api/v1/generate', current_payload)
+                if current_generation:
+                    break
+                else:
+                    currentjob_attempts += 1
+                    if currentjob_attempts>5:
+                        break
+            print("Server Busy - Not ready to generate...")
+            time.sleep(5)
+
+        #submit reply
+        if current_generation:
+            submit_dict = {
+                "id": current_id,
+                "generation": current_generation["results"][0]["text"],
+                "state": "ok"
+            }
+            reply = make_url_request(cluster + '/api/v2/generate/text/submit', submit_dict)
+            if not reply:
+                exitcounter += 1
+                print("\nError: Job submit failed.")
+            else:
+                print(f'\nSubmitted generation to {cluster} with id {current_id} and contributed for {reply["reward"]}')
+        else:
+            print("\nError: Abandoned current job due to errors. Getting new job.")
+        current_id = None
+        current_payload = None
+        time.sleep(1)
+    if exitcounter<100:
+        print("Horde Worker Shutdown - Too many errors.")
+        time.sleep(2)
+    else:
+        print("Horde Worker Shutdown - Server Closing.")
+        time.sleep(1)
+    sys.exit(2)
+
+def main(args):
     embedded_kailite = None
     if not args.model_param:
         args.model_param = args.model
@@ -1510,6 +1618,11 @@ def main(args):
             wb.open(epurl)
         except:
             print("--launch was set, but could not launch web browser automatically.")
+
+    if args.hordeconfig and len(args.hordeconfig)>4:
+        horde_thread = threading.Thread(target=run_horde_worker,args=(args,args.hordeconfig[3],args.hordeconfig[4]))
+        horde_thread.start()
+
     print(f"Please connect to custom endpoint at {epurl}")
     asyncio.run(RunServerMultiThreaded(args.host, args.port, embedded_kailite))
 
@@ -1548,7 +1661,7 @@ if __name__ == '__main__':
     parser.add_argument("--noavx2", help="Do not use AVX2 instructions, a slower compatibility mode for older devices. Does not work with --clblast.", action='store_true')
     parser.add_argument("--debugmode", help="Shows additional debug info in the terminal.", action='store_const', const=1, default=0)
     parser.add_argument("--skiplauncher", help="Doesn't display or use the new GUI launcher.", action='store_true')
-    parser.add_argument("--hordeconfig", help="Sets the display model name to something else, for easy use on AI Horde. Optional additional parameters set the horde max genlength and max ctxlen.",metavar=('[hordename]', '[hordelength] [hordectx]'), nargs='+')
+    parser.add_argument("--hordeconfig", help="Sets the display model name to something else, for easy use on AI Horde. Optional additional parameters set the horde max genlength, max ctxlen, API key and worker name.",metavar=('[hordemodelname]', '[hordelength] [hordemaxctx] [hordeapikey] [hordeworkername]'), nargs='+')
     compatgroup = parser.add_mutually_exclusive_group()
     compatgroup.add_argument("--noblas", help="Do not use OpenBLAS for accelerated prompt ingestion", action='store_true')
     compatgroup.add_argument("--useclblast", help="Use CLBlast for GPU Acceleration. Must specify exactly 2 arguments, platform ID and device ID (e.g. --useclblast 1 0).", type=int, choices=range(0,9), nargs=2)
