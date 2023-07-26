@@ -296,7 +296,7 @@ maxhordectx = 1024
 maxhordelen = 256
 modelbusy = threading.Lock()
 defaultport = 5001
-KcppVersion = "1.37"
+KcppVersion = "1.37.1"
 showdebug = True
 showsamplerwarning = True
 exitcounter = 0
@@ -1391,11 +1391,14 @@ def show_old_gui():
 def run_horde_worker(args, api_key, worker_name):
     import urllib.request
     global friendlymodelname, maxhordectx, maxhordelen, exitcounter, modelbusy
+    epurl = f"http://localhost:{args.port}"
+    if args.host!="":
+        epurl = f"http://{args.host}:{args.port}"
 
     def make_url_request(url, data, method='POST'):
         try:
             request = None
-            headers = {"apikey": api_key,'User-Agent':'KoboldCpp Embedded Worker v1'}
+            headers = {"apikey": api_key,'User-Agent':'KoboldCpp Embedded Worker v1','Client-Agent':'KoboldCppEmbedWorker:1'}
             if method=='POST':
                 json_payload = json.dumps(data).encode('utf-8')
                 request = urllib.request.Request(url, data=json_payload, headers=headers, method=method)
@@ -1427,7 +1430,7 @@ def run_horde_worker(args, api_key, worker_name):
     cluster = "https://horde.koboldai.net"
     while exitcounter < 10:
         time.sleep(2)
-        readygo = make_url_request(f'http://localhost:{args.port}/api/v1/info/version', None,'GET')
+        readygo = make_url_request(f'{epurl}/api/v1/info/version', None,'GET')
         if readygo:
             print("Embedded Horde Worker is started.")
             break
@@ -1472,7 +1475,7 @@ def run_horde_worker(args, api_key, worker_name):
         #do gen
         while exitcounter < 10:
             if not modelbusy.locked():
-                current_generation = make_url_request(f'http://localhost:{args.port}/api/v1/generate', current_payload)
+                current_generation = make_url_request(f'{epurl}/api/v1/generate', current_payload)
                 if current_generation:
                     break
                 else:

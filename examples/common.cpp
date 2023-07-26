@@ -177,6 +177,12 @@ bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
                 break;
             }
             params.n_gqa = std::stoi(argv[i]);
+        } else if (arg == "-eps" || arg == "--rms-norm-eps") {
+            if (++i >= argc) {
+                invalid_param = true;
+                break;
+            }
+            params.rms_norm_eps = std::stof(argv[i]);
         } else if (arg == "--rope-freq-base") {
             if (++i >= argc) {
                 invalid_param = true;
@@ -426,6 +432,8 @@ bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
             exit(0);
         } else if (arg == "--random-prompt") {
             params.random_prompt = true;
+        } else if (arg == "--in-prefix-bos") {
+            params.input_prefix_bos = true;
         } else if (arg == "--in-prefix") {
             if (++i >= argc) {
                 invalid_param = true;
@@ -511,6 +519,7 @@ void gpt_print_usage(int /*argc*/, char ** argv, const gpt_params & params) {
     fprintf(stdout, "                        not supported with --interactive or other interactive options\n");
     fprintf(stdout, "  --prompt-cache-ro     if specified, uses the prompt cache but does not update it.\n");
     fprintf(stdout, "  --random-prompt       start with a randomized prompt.\n");
+    fprintf(stdout, "  --in-prefix-bos       prefix BOS to user inputs, preceding the `--in-prefix` string\n");
     fprintf(stdout, "  --in-prefix STRING    string to prefix user inputs with (default: empty)\n");
     fprintf(stdout, "  --in-suffix STRING    string to suffix after user inputs with (default: empty)\n");
     fprintf(stdout, "  -f FNAME, --file FNAME\n");
@@ -519,6 +528,7 @@ void gpt_print_usage(int /*argc*/, char ** argv, const gpt_params & params) {
     fprintf(stdout, "  -c N, --ctx-size N    size of the prompt context (default: %d)\n", params.n_ctx);
     fprintf(stdout, "  -b N, --batch-size N  batch size for prompt processing (default: %d)\n", params.n_batch);
     fprintf(stdout, "  -gqa N, --gqa N       grouped-query attention factor (TEMP!!! use 8 for LLaMAv2 70B) (default: %d)\n", params.n_gqa);
+    fprintf(stdout, "  -eps N, --rms-norm-eps N rms norm eps (TEMP!!! use 1e-5 for LLaMAv2) (default: %.1e)\n", params.rms_norm_eps);
     fprintf(stdout, "  --top-k N             top-k sampling (default: %d, 0 = disabled)\n", params.top_k);
     fprintf(stdout, "  --top-p N             top-p sampling (default: %.1f, 1.0 = disabled)\n", (double)params.top_p);
     fprintf(stdout, "  --tfs N               tail free sampling, parameter z (default: %.1f, 1.0 = disabled)\n", (double)params.tfs_z);
@@ -615,6 +625,7 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     lparams.n_ctx           = params.n_ctx;
     lparams.n_batch         = params.n_batch;
     lparams.n_gqa           = params.n_gqa;
+    lparams.rms_norm_eps    = params.rms_norm_eps;
     lparams.n_gpu_layers    = params.n_gpu_layers;
     lparams.main_gpu        = params.main_gpu;
     lparams.tensor_split    = params.tensor_split;
