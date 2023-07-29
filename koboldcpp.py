@@ -662,7 +662,6 @@ def show_new_gui():
         return
 
     import customtkinter as ctk
-
     nextstate = 0 #0=exit, 1=launch, 2=oldgui
     windowwidth = 520
     windowheight = 500
@@ -699,6 +698,7 @@ def show_new_gui():
     blasbatchsize_text = ["Don't Batch BLAS","32","64","128","256","512","1024"]
     contextsize_text = ["512", "1024", "2048", "3072", "4096", "6144", "8192"]
     runopts = [opt for lib, opt in lib_option_pairs if file_exists(lib) or os.name == 'nt' and file_exists(opt + ".dll")] 
+    antirunopts = [opt.replace("Use ", "") for lib, opt in lib_option_pairs if not file_exists(lib) or os.name == 'nt' and not file_exists(opt + ".dll")]
     if not any(runopts):
         show_gui_warning("No Backend Available")
     def tabbuttonaction(name):
@@ -851,6 +851,24 @@ def show_new_gui():
     CUDA_quick_gpu_selector_box = ctk.CTkComboBox(quick_tab, values=CUdevices, width=180, variable=gpu_choice_var, state="readonly")
     quick_lowvram_box = makecheckbox(quick_tab, "Low VRAM", lowvram_var, 5)
 
+    def show_tooltip(event, tooltip_text=None):
+        if hasattr(show_tooltip, "_tooltip"):
+            tooltip = show_tooltip._tooltip
+        else:
+            tooltip = ctk.CTkToplevel(root)
+            tooltip.configure(fg_color="#ffffe0")
+            tooltip.withdraw()
+            tooltip.overrideredirect(True)
+            tooltip_label = ctk.CTkLabel(tooltip, text=tooltip_text, text_color="#000000", fg_color="#ffffe0")
+            tooltip_label.pack(expand=True, padx=2, pady=1)
+            show_tooltip._tooltip = tooltip
+        x, y = root.winfo_pointerxy()
+        tooltip.wm_geometry(f"+{x + 10}+{y + 10}")
+        tooltip.deiconify()
+    def hide_tooltip(event):
+        if hasattr(show_tooltip, "_tooltip"):
+            tooltip = show_tooltip._tooltip
+            tooltip.withdraw()
     def changerunmode(a,b,c):
         index = runopts_var.get()
         if index == "Use CLBlast" or index == "Use CuBLAS/hipBLAS":
@@ -894,7 +912,12 @@ def show_new_gui():
     runoptbox = ctk.CTkComboBox(quick_tab, values=runopts, width=180,variable=runopts_var, state="readonly")
     runoptbox.grid(row=1, column=1,padx=8, stick="nw")
     runoptbox.set(runopts[0])
-
+    # Tell user how many backends are available
+    num_backends_built = makelabel(quick_tab, str(len(runopts)) + "/6", 5, 2)
+    num_backends_built.grid(row=1, column=2, padx=0, pady=0)
+    num_backends_built.configure(text_color="#00ff00")
+    num_backends_built.bind("<Enter>", lambda event: show_tooltip(event, f"This is the number of backends you have built and available.\nMissing: {', '.join(antirunopts)}"))
+    num_backends_built.bind("<Leave>", hide_tooltip)
     # threads
     makelabelentry(quick_tab, "Threads:" , threads_var, 8, 50)
 
@@ -905,7 +928,6 @@ def show_new_gui():
     quick_boxes = {"Launch Browser": launchbrowser , "High Priority" : highpriority, "Streaming Mode":stream, "Use SmartContext":smartcontext, "Unban Tokens":unbantokens, "Disable MMAP":disablemmap,}
     for idx, name, in enumerate(quick_boxes):
         makecheckbox(quick_tab, name, quick_boxes[name], int(idx/2) +20, idx%2)
-
     # context size
     makeslider(quick_tab, "Context Size:", contextsize_text, context_var, 0, len(contextsize_text)-1, 30, set=2)
 
@@ -929,6 +951,13 @@ def show_new_gui():
     runoptbox.set(runopts[0])
     runopts_var.trace('w', changerunmode)
     changerunmode(1,1,1)
+
+    # Tell user how many backends are available
+    num_backends_built = makelabel(hardware_tab, str(len(runopts)) + "/6", 5, 2)
+    num_backends_built.grid(row=1, column=2, padx=0, pady=0)
+    num_backends_built.configure(text_color="#00ff00")
+    num_backends_built.bind("<Enter>", show_tooltip)
+    num_backends_built.bind("<Leave>", hide_tooltip)
     # threads
     makelabelentry(hardware_tab, "Threads:" , threads_var, 8, 50)
 
