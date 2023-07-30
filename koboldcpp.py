@@ -765,6 +765,24 @@ def show_new_gui():
         button = ctk.CTkButton(parent, 50, text="Browse", command= lambda a=var,b=searchtext:getfilename(a,b))
         button.grid(row=row+1, column=1, stick="nw")
         return
+    def show_tooltip(event, tooltip_text=None):
+        if hasattr(show_tooltip, "_tooltip"):
+            tooltip = show_tooltip._tooltip
+        else:
+            tooltip = ctk.CTkToplevel(root)
+            tooltip.configure(fg_color="#ffffe0")
+            tooltip.withdraw()
+            tooltip.overrideredirect(True)
+            tooltip_label = ctk.CTkLabel(tooltip, text=tooltip_text, text_color="#000000", fg_color="#ffffe0")
+            tooltip_label.pack(expand=True, padx=2, pady=1)
+            show_tooltip._tooltip = tooltip
+        x, y = root.winfo_pointerxy()
+        tooltip.wm_geometry(f"+{x + 10}+{y + 10}")
+        tooltip.deiconify()
+    def hide_tooltip(event):
+        if hasattr(show_tooltip, "_tooltip"):
+            tooltip = show_tooltip._tooltip
+            tooltip.withdraw()
     
     from subprocess import run, CalledProcessError
     def get_device_names():
@@ -851,24 +869,6 @@ def show_new_gui():
     CUDA_quick_gpu_selector_box = ctk.CTkComboBox(quick_tab, values=CUdevices, width=180, variable=gpu_choice_var, state="readonly")
     quick_lowvram_box = makecheckbox(quick_tab, "Low VRAM", lowvram_var, 5)
 
-    def show_tooltip(event, tooltip_text=None):
-        if hasattr(show_tooltip, "_tooltip"):
-            tooltip = show_tooltip._tooltip
-        else:
-            tooltip = ctk.CTkToplevel(root)
-            tooltip.configure(fg_color="#ffffe0")
-            tooltip.withdraw()
-            tooltip.overrideredirect(True)
-            tooltip_label = ctk.CTkLabel(tooltip, text=tooltip_text, text_color="#000000", fg_color="#ffffe0")
-            tooltip_label.pack(expand=True, padx=2, pady=1)
-            show_tooltip._tooltip = tooltip
-        x, y = root.winfo_pointerxy()
-        tooltip.wm_geometry(f"+{x + 10}+{y + 10}")
-        tooltip.deiconify()
-    def hide_tooltip(event):
-        if hasattr(show_tooltip, "_tooltip"):
-            tooltip = show_tooltip._tooltip
-            tooltip.withdraw()
     def changerunmode(a,b,c):
         index = runopts_var.get()
         if index == "Use CLBlast" or index == "Use CuBLAS/hipBLAS":
@@ -916,7 +916,7 @@ def show_new_gui():
     num_backends_built = makelabel(quick_tab, str(len(runopts)) + "/6", 5, 2)
     num_backends_built.grid(row=1, column=2, padx=0, pady=0)
     num_backends_built.configure(text_color="#00ff00")
-    num_backends_built.bind("<Enter>", lambda event: show_tooltip(event, f"This is the number of backends you have built and available.\nMissing: {', '.join(antirunopts)}"))
+    num_backends_built.bind("<Enter>", lambda event: show_tooltip(event, f"This is the number of backends you have built and available." if len(runopts)==6 else + "\nMissing: {', '.join(antirunopts)}"))
     num_backends_built.bind("<Leave>", hide_tooltip)
     # threads
     makelabelentry(quick_tab, "Threads:" , threads_var, 8, 50)
