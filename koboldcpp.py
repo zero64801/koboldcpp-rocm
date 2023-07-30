@@ -811,6 +811,25 @@ def show_new_gui():
         if not CLdevices: CLdevices.extend(['1', '2', '3'])
         return CUdevices, CLdevices
 
+    def show_tooltip(event, tooltip_text=None):
+        if hasattr(show_tooltip, "_tooltip"):
+            tooltip = show_tooltip._tooltip
+        else:
+            tooltip = ctk.CTkToplevel(root)
+            tooltip.configure(fg_color="#ffffe0")
+            tooltip.withdraw()
+            tooltip.overrideredirect(True)
+            tooltip_label = ctk.CTkLabel(tooltip, text=tooltip_text, text_color="#000000", fg_color="#ffffe0")
+            tooltip_label.pack(expand=True, padx=2, pady=1)
+            show_tooltip._tooltip = tooltip
+        x, y = root.winfo_pointerxy()
+        tooltip.wm_geometry(f"+{x + 10}+{y + 10}")
+        tooltip.deiconify()
+    def hide_tooltip(event):
+        if hasattr(show_tooltip, "_tooltip"):
+            tooltip = show_tooltip._tooltip
+            tooltip.withdraw()
+
     # Vars - should be in scope to be used by multiple widgets
     CUdevices, CLdevices = get_device_names()
     gpulayers_var = ctk.StringVar(value="0")
@@ -916,7 +935,8 @@ def show_new_gui():
     num_backends_built = makelabel(quick_tab, str(len(runopts)) + "/6", 5, 2)
     num_backends_built.grid(row=1, column=2, padx=0, pady=0)
     num_backends_built.configure(text_color="#00ff00")
-    num_backends_built.bind("<Enter>", lambda event: show_tooltip(event, f"This is the number of backends you have built and available." if len(runopts)==6 else + "\nMissing: {', '.join(antirunopts)}"))
+    # Bind the backend count label with the tooltip function
+    num_backends_built.bind("<Enter>", lambda event: show_tooltip(event, f"This is the number of backends you have built and available." + (f"\nMissing: {', '.join(antirunopts)}" if len(runopts) != 6 else "")))
     num_backends_built.bind("<Leave>", hide_tooltip)
     # threads
     makelabelentry(quick_tab, "Threads:" , threads_var, 8, 50)
