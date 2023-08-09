@@ -189,7 +189,7 @@ ifdef LLAMA_HIPBLAS
 	LLAMA_CUDA_KQUANTS_ITER ?= 1
 	LLAMA_CUDA_FORCE_DMMV ?= true
 	HIPFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
-	HIPLDFLAGS    += -L/opt/rocm/lib -Wl,-rpath=$(ROCM_PATH)/lib -lhipblas -lamdhip64
+	HIPLDFLAGS    += -L$(ROCM_PATH)/lib -Wl,-rpath=$(ROCM_PATH)/lib -lhipblas -lamdhip64
 	HIP_OBJS       += ggml-cuda.o ggml_v2-cuda.o ggml_v2-cuda-legacy.o
 ggml-cuda.o: HIPFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
 						-DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
