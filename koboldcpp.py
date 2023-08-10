@@ -304,7 +304,7 @@ maxhordectx = 1024
 maxhordelen = 256
 modelbusy = threading.Lock()
 defaultport = 5001
-KcppVersion = "1.39.1"
+KcppVersion = "1.40.1"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -496,7 +496,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             laste = handle.get_last_eval_time()
             lastc = handle.get_last_token_count()
             stopreason = handle.get_last_stop_reason()
-            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "stop_reason":stopreason}).encode())
+            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "stop_reason":stopreason, "idle":(0 if modelbusy.locked() else 1)}).encode())
 
         if response_body is None:
             self.send_response(404)
@@ -674,7 +674,7 @@ def show_new_gui():
         root.destroy()
         if not args.model_param:
             print("\nNo ggml model file was selected. Exiting.")
-            time.sleep(2)
+            time.sleep(3)
             sys.exit(2)
         return
 
@@ -1306,7 +1306,7 @@ def show_new_gui():
 
     if nextstate==0:
         print("Exiting by user request.")
-        time.sleep(2)
+        time.sleep(3)
         sys.exit()
     elif nextstate==2:
         time.sleep(0.1)
@@ -1317,7 +1317,7 @@ def show_new_gui():
 
         if not args.model_param:
             print("\nNo ggml model file was selected. Exiting.")
-            time.sleep(2)
+            time.sleep(3)
             sys.exit(2)
 
 def show_gui_warning(issue=None):
@@ -1329,7 +1329,7 @@ def show_gui_warning(issue=None):
         messagebox.showerror(title="No Backends Available!", message="KoboldCPP couldn't locate any backends to use.\n\nTo use the program, please run the 'make' command from the directory.")
         root.destroy()
         print("No Backend Available (i.e Default, OpenBLAS, CLBlast, CuBLAS). To use the program, please run the 'make' command from the directory.")
-        time.sleep(2)
+        time.sleep(3)
         sys.exit(2)
     else:
         messagebox.showerror(title="New GUI failed, using Old GUI", message="The new GUI failed to load.\n\nTo use new GUI, please install the customtkinter python module.")
@@ -1423,7 +1423,7 @@ def show_old_gui():
 
         if launchclicked==False:
             print("Exiting by user request.")
-            time.sleep(2)
+            time.sleep(3)
             sys.exit()
 
         #load all the vars
@@ -1479,7 +1479,7 @@ def show_old_gui():
         root.destroy()
         if not args.model_param:
             print("\nNo ggml model file was selected. Exiting.")
-            time.sleep(2)
+            time.sleep(3)
             sys.exit(2)
 
     else:
@@ -1489,7 +1489,7 @@ def show_old_gui():
         root.destroy()
         if not args.model_param:
             print("\nNo ggml model file was selected. Exiting.")
-            time.sleep(2)
+            time.sleep(3)
             sys.exit(2)
 
 #A very simple and stripped down embedded horde worker with no dependencies
@@ -1534,7 +1534,7 @@ def run_horde_worker(args, api_key, worker_name):
     BRIDGE_AGENT = f"KoboldCppEmbedWorker:1:https://github.com/LostRuins/koboldcpp"
     cluster = "https://horde.koboldai.net"
     while exitcounter < 10:
-        time.sleep(2)
+        time.sleep(3)
         readygo = make_url_request(f'{epurl}/api/v1/info/version', None,'GET')
         if readygo:
             print("Embedded Horde Worker is started.")
@@ -1610,10 +1610,10 @@ def run_horde_worker(args, api_key, worker_name):
         time.sleep(1)
     if exitcounter<100:
         print("Horde Worker Shutdown - Too many errors.")
-        time.sleep(2)
+        time.sleep(3)
     else:
         print("Horde Worker Shutdown - Server Closing.")
-        time.sleep(1)
+        time.sleep(2)
     sys.exit(2)
 
 def main(args):
@@ -1637,7 +1637,7 @@ def main(args):
                 except Exception as ex2:
                     print("File selection GUI unsupported. Please check command line: script.py --help")
                     print("Reason for no GUI: " + str(ex2))
-                    time.sleep(2)
+                    time.sleep(3)
                     sys.exit(2)
 
     if args.hordeconfig and args.hordeconfig[0]!="":
@@ -1681,20 +1681,20 @@ def main(args):
     time.sleep(1)
     if not os.path.exists(args.model_param):
         print(f"Cannot find model file: {args.model_param}")
-        time.sleep(2)
+        time.sleep(3)
         sys.exit(2)
 
     if args.lora and args.lora[0]!="":
         if not os.path.exists(args.lora[0]):
             print(f"Cannot find lora file: {args.lora[0]}")
-            time.sleep(2)
+            time.sleep(3)
             sys.exit(2)
         else:
             args.lora[0] = os.path.abspath(args.lora[0])
             if len(args.lora) > 1:
                 if not os.path.exists(args.lora[1]):
                     print(f"Cannot find lora base: {args.lora[1]}")
-                    time.sleep(2)
+                    time.sleep(3)
                     sys.exit(2)
                 else:
                     args.lora[1] = os.path.abspath(args.lora[1])
@@ -1715,7 +1715,7 @@ def main(args):
 
     if not loadok:
         print("Could not load model: " + modelname)
-        time.sleep(2)
+        time.sleep(3)
         sys.exit(3)
     try:
         basepath = os.path.abspath(os.path.dirname(__file__))
@@ -1743,6 +1743,7 @@ def main(args):
 
     if args.hordeconfig and len(args.hordeconfig)>4:
         horde_thread = threading.Thread(target=run_horde_worker,args=(args,args.hordeconfig[3],args.hordeconfig[4]))
+        horde_thread.daemon = True
         horde_thread.start()
 
     print(f"Please connect to custom endpoint at {epurl}")

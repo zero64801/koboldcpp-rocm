@@ -158,8 +158,8 @@ static const std::map<e_model, size_t> & VRAM_REQ_SCRATCH_BASE()
         { MODEL_7B,   512ull * kB },
         { MODEL_13B,  640ull * kB },
         { MODEL_30B,  768ull * kB },
-        { MODEL_65B, 1280ull * kB },
-        { MODEL_70B, 1280ull * kB },
+        { MODEL_65B, 1360ull * kB },
+        { MODEL_70B, 1360ull * kB },
     };
     return k_sizes;
 }
@@ -173,8 +173,8 @@ static const std::map<e_model, size_t> & VRAM_REQ_SCRATCH_PER_CONTEXT()
         { MODEL_7B,  128ull },
         { MODEL_13B, 160ull },
         { MODEL_30B, 208ull },
-        { MODEL_65B, 256ull },
-        { MODEL_70B, 256ull },
+        { MODEL_65B, 320ull },
+        { MODEL_70B, 320ull },
     };
     return k_sizes;
 }
@@ -937,6 +937,11 @@ bool llama_mlock_supported() {
     return llama_mlock::SUPPORTED;
 }
 
+int get_blas_batch_mul(int batch)
+{
+    return (batch>512?(batch>1024?4:2):1);
+}
+
 void llama_backend_init(bool numa) {
     ggml_time_init();
 
@@ -1042,7 +1047,7 @@ static void llama_model_load_internal(
         void * progress_callback_user_data) {
 
     model.t_start_us = ggml_time_us();
-    size_t blasbatchmul = (n_batch>512?(n_batch>1024?4:2):1);
+    size_t blasbatchmul = get_blas_batch_mul(n_batch);
 
     std::unique_ptr<llama_model_loader> ml(new llama_model_loader(fname, use_mmap));
 
@@ -1076,7 +1081,7 @@ static void llama_model_load_internal(
         // LLaMAv2
         // TODO: temporary until GGUF
         //patch for llama2 gqa
-        if (model.type == e_model::MODEL_65B && hparams.n_mult == 4096) {
+        if (model.type == e_model::MODEL_65B && (hparams.n_mult >= 4096 && hparams.n_mult != 5504)) {
             fprintf(stderr, "%s: Applying KCPP Patch for 70B model, setting GQA to 8\n", __func__);
             n_gqa = 8;
         }
@@ -3248,7 +3253,7 @@ struct llama_context * llama_new_context_with_model(
         params.seed = time(NULL);
     }
 
-    size_t blasbatchmul = (params.n_batch>512?2:1);
+    size_t blasbatchmul = get_blas_batch_mul(params.n_batch);
 
     unsigned cur_percentage = 0;
     if (params.progress_callback == NULL) {
