@@ -209,11 +209,11 @@ def load_model(model_filename):
     inputs.clblast_info = clblastids
     inputs.cublas_info = 0
     if (args.usecublas and "0" in args.usecublas):
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        inputs.cublas_info = 0
     elif (args.usecublas and "1" in args.usecublas):
-        os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+        inputs.cublas_info = 1
     elif (args.usecublas and "2" in args.usecublas):
-        os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+        inputs.cublas_info = 2
 
     for n in range(tensor_split_max):
         if args.tensor_split and n < len(args.tensor_split):
