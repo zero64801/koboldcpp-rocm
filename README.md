@@ -1,6 +1,7 @@
 # koboldcpp-ROCM
+This is mostly for Linux, but with the release of ROCm frameworks on Windows, it might eventually be possible to run this on Windows.
 
-To install, navigate to the folder you want to download to in Terminal and run
+To install, either use the file "[easy_KCPP-ROCm_install.sh](https://github.com/YellowRoseCx/koboldcpp-rocm/blob/main/easy_KCPP-ROCm_install.sh)" or navigate to the folder you want to download to in Terminal then run
 ```
 git clone https://github.com/YellowRoseCx/koboldcpp-rocm.git -b main --depth 1 && \
 cd koboldcpp-rocm && \
