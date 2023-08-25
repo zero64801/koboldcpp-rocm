@@ -77,18 +77,25 @@ def file_exists(filename):
     return os.path.exists(os.path.join(getdirpath(), filename))
 
 def pick_existant_file(ntoption,nonntoption):
+    precompiled_prefix = "precompiled_"
     ntexist = file_exists(ntoption)
     nonntexist = file_exists(nonntoption)
+    precompiled_ntexist = file_exists(precompiled_prefix+ntoption)
+    precompiled_nonntexist = file_exists(precompiled_prefix+nonntoption)
     if os.name == 'nt':
+        if not ntexist and precompiled_ntexist:
+            return (precompiled_prefix+ntoption)
         if nonntexist and not ntexist:
             return nonntoption
         return ntoption
     else:
+        if not nonntexist and precompiled_nonntexist:
+            return (precompiled_prefix+nonntoption)
         if ntexist and not nonntexist:
             return ntoption
         return nonntoption
 
-lib_default = pick_existant_file("koboldcpp.dll","koboldcpp.so")
+lib_default = pick_existant_file("koboldcpp_default.dll","koboldcpp_default.so")
 lib_failsafe = pick_existant_file("koboldcpp_failsafe.dll","koboldcpp_failsafe.so")
 lib_openblas = pick_existant_file("koboldcpp_openblas.dll","koboldcpp_openblas.so")
 lib_noavx2 = pick_existant_file("koboldcpp_noavx2.dll","koboldcpp_noavx2.so")
@@ -97,7 +104,7 @@ lib_cublas = pick_existant_file("koboldcpp_cublas.dll","koboldcpp_cublas.so")
 
 
 def init_library():
-    global handle
+    global handle, args
     global lib_default,lib_failsafe,lib_openblas,lib_noavx2,lib_clblast,lib_cublas
 
     libname = ""
@@ -172,9 +179,11 @@ def init_library():
     handle.get_last_token_count.restype = ctypes.c_int
     handle.get_last_stop_reason.restype = ctypes.c_int
     handle.abort_generate.restype = ctypes.c_bool
+    handle.token_count.restype = ctypes.c_int
     handle.get_pending_output.restype = ctypes.c_char_p
 
 def load_model(model_filename):
+    global args
     inputs = load_model_inputs()
     inputs.model_filename = model_filename.encode("UTF-8")
     inputs.batch_size = 8
@@ -233,7 +242,7 @@ def load_model(model_filename):
     return ret
 
 def generate(prompt,max_length=20, max_context_length=512, temperature=0.8, top_k=120, top_a=0.0, top_p=0.85, typical_p=1.0, tfs=1.0, rep_pen=1.1, rep_pen_range=128, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], stream_sse=False):
-    global maxctx
+    global maxctx, args
     inputs = generation_inputs()
     outputs = ctypes.create_unicode_buffer(ctypes.sizeof(generation_outputs))
     inputs.prompt = prompt.encode("UTF-8")
@@ -292,6 +301,7 @@ def utfprint(str):
     except UnicodeEncodeError:
         # Replace or omit the problematic character
         utf_string = str.encode('ascii', 'ignore').decode('ascii')
+        utf_string = utf_string.replace('\a', '') #remove bell characters
         print(utf_string)
 
 #################################################################
@@ -304,11 +314,12 @@ maxhordectx = 1024
 maxhordelen = 256
 modelbusy = threading.Lock()
 defaultport = 5001
-KcppVersion = "1.40.1"
+KcppVersion = "1.41"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
 exitcounter = 0
+args = None #global args
 
 class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
     sys_version = ""
@@ -519,6 +530,22 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         kai_sse_stream_flag = False
         self.path = self.path.rstrip('/')
 
+        if self.path.endswith(('/api/extra/tokencount')):
+            try:
+                genparams = json.loads(body)
+                countprompt = genparams.get('prompt', "")
+                count = handle.token_count(countprompt.encode("UTF-8"))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"value": count}).encode())
+
+            except ValueError as e:
+                utfprint("Count Tokens - Body Error: " + str(e))
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"value": -1}).encode())
+            return
+
         if self.path.endswith('/api/extra/abort'):
             ag = handle.abort_generate()
             self.send_response(200)
@@ -714,8 +741,8 @@ def show_new_gui():
     blasbatchsize_values = ["-1", "32", "64", "128", "256", "512", "1024", "2048"]
     blasbatchsize_text = ["Don't Batch BLAS","32","64","128","256","512","1024","2048"]
     contextsize_text = ["512", "1024", "2048", "3072", "4096", "6144", "8192", "12288", "16384"]
-    runopts = [opt for lib, opt in lib_option_pairs if file_exists(lib) or os.name == 'nt' and file_exists(opt + ".dll")]
-    antirunopts = [opt.replace("Use ", "") for lib, opt in lib_option_pairs if not file_exists(lib) or os.name == 'nt' and not file_exists(opt + ".dll")]
+    runopts = [opt for lib, opt in lib_option_pairs if file_exists(lib)]
+    antirunopts = [opt.replace("Use ", "") for lib, opt in lib_option_pairs if not (opt in runopts)]
     if not any(runopts):
         show_gui_warning("No Backend Available")
     def tabbuttonaction(name):
@@ -870,7 +897,7 @@ def show_new_gui():
     debugmode = ctk.IntVar()
 
     lowvram_var = ctk.IntVar()
-    mmq_var = ctk.IntVar()
+    mmq_var = ctk.IntVar(value=1)
 
     blas_threads_var = ctk.StringVar()
     blas_size_var = ctk.IntVar()
@@ -1616,8 +1643,20 @@ def run_horde_worker(args, api_key, worker_name):
         time.sleep(2)
     sys.exit(2)
 
-def main(args):
+def main(launch_args,start_server=True):
+    global args
+    args = launch_args
     embedded_kailite = None
+    if args.config:
+        if isinstance(args.config, str) and os.path.exists(args.config):
+            with open(args.config, 'r') as f:
+                config = json.load(f)
+            for key, value in config.items():
+                setattr(args, key, value)
+        else:
+            print("Specified kcpp config file invalid or not found.")
+            time.sleep(2)
+            sys.exit(2)
     if not args.model_param:
         args.model_param = args.model
     if not args.model_param:
@@ -1746,8 +1785,13 @@ def main(args):
         horde_thread.daemon = True
         horde_thread.start()
 
-    print(f"Please connect to custom endpoint at {epurl}")
-    asyncio.run(RunServerMultiThreaded(args.host, args.port, embedded_kailite))
+    if start_server:
+        print(f"Please connect to custom endpoint at {epurl}")
+        asyncio.run(RunServerMultiThreaded(args.host, args.port, embedded_kailite))
+    else:
+        print(f"Server was not started, main function complete. Idling.")
+        # while True:
+        #     time.sleep(5)
 
 if __name__ == '__main__':
     print("***\nWelcome to KoboldCpp - Version " + KcppVersion) # just update version manually
@@ -1762,6 +1806,7 @@ if __name__ == '__main__':
     parser.add_argument("--host", help="Host IP to listen on. If empty, all routable interfaces are accepted.", default="")
     parser.add_argument("--launch", help="Launches a web browser when load is completed.", action='store_true')
     parser.add_argument("--lora", help="LLAMA models only, applies a lora file on top of model. Experimental.", metavar=('[lora_filename]', '[lora_base]'), nargs='+')
+    parser.add_argument("--config", help="Load settings from a .kcpps file. Other arguments will be ignored", type=str, nargs='?')
     physical_core_limit = 1
     if os.cpu_count()!=None and os.cpu_count()>1:
         physical_core_limit = int(os.cpu_count()/2)
@@ -1792,6 +1837,4 @@ if __name__ == '__main__':
     parser.add_argument("--gpulayers", help="Set number of layers to offload to GPU when using GPU. Requires GPU.",metavar=('[GPU layers]'), type=int, default=0)
     parser.add_argument("--tensor_split", help="For CUDA with ALL GPU set only, ratio to split tensors across multiple GPUs, space-separated list of proportions, e.g. 7 3", metavar=('[Ratios]'), type=float, nargs='+')
 
-    args = parser.parse_args()
-
-    main(args)
+    main(parser.parse_args(),start_server=True)

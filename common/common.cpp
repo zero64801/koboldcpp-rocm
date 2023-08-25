@@ -170,18 +170,6 @@ bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
                 break;
             }
             params.n_ctx = std::stoi(argv[i]);
-        } else if (arg == "-gqa" || arg == "--gqa") {
-            if (++i >= argc) {
-                invalid_param = true;
-                break;
-            }
-            params.n_gqa = std::stoi(argv[i]);
-        } else if (arg == "-eps" || arg == "--rms-norm-eps") {
-            if (++i >= argc) {
-                invalid_param = true;
-                break;
-            }
-            params.rms_norm_eps = std::stof(argv[i]);
         } else if (arg == "--rope-freq-base") {
             if (++i >= argc) {
                 invalid_param = true;
@@ -274,6 +262,21 @@ bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
                 break;
             }
             params.cfg_negative_prompt = argv[i];
+        } else if (arg == "--cfg-negative-prompt-file") {
+            if (++i >= argc) {
+                invalid_param = true;
+                break;
+            }
+            std::ifstream file(argv[i]);
+            if (!file) {
+                fprintf(stderr, "error: failed to open file '%s'\n", argv[i]);
+                invalid_param = true;
+                break;
+            }
+            std::copy(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), back_inserter(params.cfg_negative_prompt));
+            if (params.cfg_negative_prompt.back() == '\n') {
+                params.cfg_negative_prompt.pop_back();
+            }
         } else if (arg == "--cfg-scale") {
             if (++i >= argc) {
                 invalid_param = true;
@@ -286,7 +289,6 @@ bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
                 break;
             }
             params.n_batch = std::stoi(argv[i]);
-            params.n_batch = std::min(512, params.n_batch);
         } else if (arg == "--keep") {
             if (++i >= argc) {
                 invalid_param = true;
@@ -385,11 +387,11 @@ bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
 #else
             fprintf(stderr, "warning: llama.cpp was compiled without cuBLAS. It is not possible to set a tensor split.\n");
 #endif // GGML_USE_CUBLAS
-        } else if (arg == "--mul-mat-q" || arg == "-mmq") {
+        } else if (arg == "--no-mul-mat-q" || arg == "-nommq") {
 #ifdef GGML_USE_CUBLAS
-            params.mul_mat_q = true;
+            params.mul_mat_q = false;
 #else
-            fprintf(stderr, "warning: llama.cpp was compiled without cuBLAS. It is not possible to use mul_mat_q kernels.\n");
+            fprintf(stderr, "warning: llama.cpp was compiled without cuBLAS. Disabling mul_mat_q kernels has no effect.\n");
 #endif // GGML_USE_CUBLAS
         } else if (arg == "--low-vram" || arg == "-lv") {
 #ifdef GGML_USE_CUBLAS
@@ -415,6 +417,18 @@ bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
             params.antiprompt.push_back(argv[i]);
         } else if (arg == "--perplexity") {
             params.perplexity = true;
+        } else if (arg == "--ppl-stride") {
+            if (++i >= argc) {
+                invalid_param = true;
+                break;
+            }
+            params.ppl_stride = std::stoi(argv[i]);
+        } else if (arg == "--ppl-output-type") {
+            if (++i >= argc) {
+                invalid_param = true;
+                break;
+            }
+            params.ppl_output_type = std::stoi(argv[i]);
         } else if (arg == "--hellaswag") {
             params.hellaswag = true;
         } else if (arg == "--hellaswag-tasks") {
@@ -424,7 +438,7 @@ bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
             }
             params.hellaswag_tasks = std::stoi(argv[i]);
         } else if (arg == "--ignore-eos") {
-            params.logit_bias[llama_token_eos()] = -INFINITY;
+            params.ignore_eos = true;
         } else if (arg == "--no-penalize-nl") {
             params.penalize_nl = false;
         } else if (arg == "-l" || arg == "--logit-bias") {
@@ -546,8 +560,6 @@ void gpt_print_usage(int /*argc*/, char ** argv, const gpt_params & params) {
     fprintf(stdout, "  -n N, --n-predict N   number of tokens to predict (default: %d, -1 = infinity, -2 = until context filled)\n", params.n_predict);
     fprintf(stdout, "  -c N, --ctx-size N    size of the prompt context (default: %d)\n", params.n_ctx);
     fprintf(stdout, "  -b N, --batch-size N  batch size for prompt processing (default: %d)\n", params.n_batch);
-    fprintf(stdout, "  -gqa N, --gqa N       grouped-query attention factor (TEMP!!! use 8 for LLaMAv2 70B) (default: %d)\n", params.n_gqa);
-    fprintf(stdout, "  -eps N, --rms-norm-eps N rms norm eps (TEMP!!! use 1e-5 for LLaMAv2) (default: %.1e)\n", params.rms_norm_eps);
     fprintf(stdout, "  --top-k N             top-k sampling (default: %d, 0 = disabled)\n", params.top_k);
     fprintf(stdout, "  --top-p N             top-p sampling (default: %.1f, 1.0 = disabled)\n", (double)params.top_p);
     fprintf(stdout, "  --tfs N               tail free sampling, parameter z (default: %.1f, 1.0 = disabled)\n", (double)params.tfs_z);
@@ -567,8 +579,10 @@ void gpt_print_usage(int /*argc*/, char ** argv, const gpt_params & params) {
     fprintf(stdout, "                        or `--logit-bias 15043-1` to decrease likelihood of token ' Hello'\n");
     fprintf(stdout, "  --grammar GRAMMAR     BNF-like grammar to constrain generations (see samples in grammars/ dir)\n");
     fprintf(stdout, "  --grammar-file FNAME  file to read grammar from\n");
-    fprintf(stdout, "  --cfg-negative-prompt PROMPT \n");
+    fprintf(stdout, "  --cfg-negative-prompt PROMPT\n");
     fprintf(stdout, "                        negative prompt to use for guidance. (default: empty)\n");
+    fprintf(stdout, "  --cfg-negative-prompt-file FNAME\n");
+    fprintf(stdout, "                        negative prompt file to use for guidance. (default: empty)\n");
     fprintf(stdout, "  --cfg-scale N         strength of guidance (default: %f, 1.0 = disable)\n", params.cfg_scale);
     fprintf(stdout, "  --rope-scale N        RoPE context linear scaling factor, inverse of --rope-freq-scale (default: %g)\n", 1.0f/params.rope_freq_scale);
     fprintf(stdout, "  --rope-freq-base N    RoPE base frequency, used by NTK-aware scaling (default: %.1f)\n", params.rope_freq_base);
@@ -599,11 +613,9 @@ void gpt_print_usage(int /*argc*/, char ** argv, const gpt_params & params) {
     fprintf(stdout, "                        how to split tensors across multiple GPUs, comma-separated list of proportions, e.g. 3,1\n");
     fprintf(stdout, "  -mg i, --main-gpu i   the GPU to use for scratch and small tensors\n");
     fprintf(stdout, "  -lv, --low-vram       don't allocate VRAM scratch buffer\n");
-#ifdef GGML_USE_CUBLAS
     fprintf(stdout, "  -nommq, --no-mul-mat-q\n");
-    fprintf(stdout, "                        use " GGML_CUBLAS_NAME " instead of custom mul_mat_q " GGML_CUDA_NAME " kernels.\n");
+    fprintf(stdout, "                        use cuBLAS instead of custom mul_mat_q CUDA kernels.\n");
     fprintf(stdout, "                        Not recommended since this is both slower and uses more VRAM.\n");
-#endif // GGML_USE_CUBLAS
 #endif
     fprintf(stdout, "  --mtest               compute maximum memory usage\n");
     fprintf(stdout, "  --export              export the computation graph to 'llama.ggml'\n");
@@ -635,24 +647,15 @@ std::string gpt_random_prompt(std::mt19937 & rng) {
     return "The";
 }
 
-// TODO: not great allocating this every time
-std::vector<llama_token> llama_tokenize(struct llama_context * ctx, const std::string & text, bool add_bos) {
-    // initialize to prompt numer of chars, since n_tokens <= n_prompt_chars
-    std::vector<llama_token> res(text.size() + (int) add_bos);
-    const int n = llama_tokenize(ctx, text.c_str(), res.data(), res.size(), add_bos);
-    assert(n >= 0);
-    res.resize(n);
-
-    return res;
-}
+//
+// Model utils
+//
 
 struct llama_context_params llama_context_params_from_gpt_params(const gpt_params & params) {
     auto lparams = llama_context_default_params();
 
     lparams.n_ctx           = params.n_ctx;
     lparams.n_batch         = params.n_batch;
-    lparams.n_gqa           = params.n_gqa;
-    lparams.rms_norm_eps    = params.rms_norm_eps;
     lparams.n_gpu_layers    = params.n_gpu_layers;
     lparams.main_gpu        = params.main_gpu;
     lparams.tensor_split    = params.tensor_split;
@@ -670,7 +673,7 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     return lparams;
 }
 
-std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_params(const gpt_params & params) {
+std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_params(gpt_params & params) {
     auto lparams = llama_context_params_from_gpt_params(params);
 
     llama_model * model  = llama_load_model_from_file(params.model.c_str(), lparams);
@@ -699,5 +702,45 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
         }
     }
 
+    if (params.ignore_eos) {
+        params.logit_bias[llama_token_eos(lctx)] = -INFINITY;
+    }
+
     return std::make_tuple(model, lctx);
+}
+
+//
+// Vocab utils
+//
+
+std::vector<llama_token> llama_tokenize(
+        struct llama_context * ctx,
+           const std::string & text,
+                        bool   add_bos) {
+    // upper limit for the number of tokens
+    int n_tokens = text.length() + add_bos;
+    std::vector<llama_token> result(n_tokens);
+    n_tokens = llama_tokenize(ctx, text.c_str(), result.data(), result.size(), add_bos);
+    if (n_tokens < 0) {
+        result.resize(-n_tokens);
+        int check = llama_tokenize(ctx, text.c_str(), result.data(), result.size(), add_bos);
+        GGML_ASSERT(check == -n_tokens);
+    } else {
+        result.resize(n_tokens);
+    }
+    return result;
+}
+
+std::string llama_token_to_str(const struct llama_context * ctx, llama_token token) {
+    std::vector<char> result(8, 0);
+    const int n_tokens = llama_token_to_str(ctx, token, result.data(), result.size());
+    if (n_tokens < 0) {
+        result.resize(-n_tokens);
+        int check = llama_token_to_str(ctx, token, result.data(), result.size());
+        GGML_ASSERT(check == -n_tokens);
+    } else {
+        result.resize(n_tokens);
+    }
+
+    return std::string(result.data(), result.size());
 }

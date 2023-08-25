@@ -21,6 +21,7 @@ enum FileFormat
     GGJT=3, // 3=(llama ggjt)
     GGJT_2=4, //newer llama format unshuffled
     GGJT_3=5, //using 16bit scalar
+    GGUF_LLAMA=6, //GGUF (llama newest ver)
 
     GPTJ_1=100, //the very first super old GPTJ format
     GPTJ_2=101, //pygmalion, uses old ggml lib
@@ -45,6 +46,9 @@ enum FileFormat
     NEOX_7=406, //using 16bit scalar redpajama
 
     MPT_1=500, //first supported mpt version
+
+
+
 };
 
 enum ModelLoadResult
@@ -58,6 +62,7 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
 generation_outputs gpttype_generate(const generation_inputs inputs, generation_outputs &output);
 bool gpttype_generate_abort();
 const std::string & gpttype_get_pending_output();
+int gpttype_token_count(const std::string & input);
 
 void timer_start();
 double timer_check();
