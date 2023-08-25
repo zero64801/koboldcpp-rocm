@@ -597,11 +597,13 @@ void gpt_print_usage(int /*argc*/, char ** argv, const gpt_params & params) {
     fprintf(stdout, "                        number of layers to store in VRAM\n");
     fprintf(stdout, "  -ts SPLIT --tensor-split SPLIT\n");
     fprintf(stdout, "                        how to split tensors across multiple GPUs, comma-separated list of proportions, e.g. 3,1\n");
-    fprintf(stdout, "  -mg i, --main-gpu i   the GPU to use for scratch and small tensors\n" );
-    fprintf(stdout, "  -lv, --low-vram       don't allocate VRAM scratch buffer\n" );
-    fprintf(stdout, "  -mmq, --mul-mat-q     use experimental mul_mat_q CUDA kernels instead of cuBLAS. TEMP!!!\n" );
-    fprintf(stdout, "                        Reduces VRAM usage by 700/970/1430 MiB for 7b/13b/33b but prompt processing speed\n" );
-    fprintf(stdout, "                        is still suboptimal, especially q2_K, q3_K, q5_K, and q6_K.\n" );
+    fprintf(stdout, "  -mg i, --main-gpu i   the GPU to use for scratch and small tensors\n");
+    fprintf(stdout, "  -lv, --low-vram       don't allocate VRAM scratch buffer\n");
+#ifdef GGML_USE_CUBLAS
+    fprintf(stdout, "  -nommq, --no-mul-mat-q\n");
+    fprintf(stdout, "                        use " GGML_CUBLAS_NAME " instead of custom mul_mat_q " GGML_CUDA_NAME " kernels.\n");
+    fprintf(stdout, "                        Not recommended since this is both slower and uses more VRAM.\n");
+#endif // GGML_USE_CUBLAS
 #endif
     fprintf(stdout, "  --mtest               compute maximum memory usage\n");
     fprintf(stdout, "  --export              export the computation graph to 'llama.ggml'\n");
