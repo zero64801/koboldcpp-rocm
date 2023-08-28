@@ -216,19 +216,28 @@ def load_model(model_filename):
     if args.useclblast:
         clblastids = 100 + int(args.useclblast[0])*10 + int(args.useclblast[1])
     inputs.clblast_info = clblastids
-    inputs.cublas_info = 0
-    if (args.usecublas and "0" in args.usecublas):
-        inputs.cublas_info = 0
-    elif (args.usecublas and "1" in args.usecublas):
-        inputs.cublas_info = 1
-    elif (args.usecublas and "2" in args.usecublas):
-        inputs.cublas_info = 2
 
     for n in range(tensor_split_max):
         if args.tensor_split and n < len(args.tensor_split):
             inputs.tensor_split[n] = float(args.tensor_split[n])
         else:
             inputs.tensor_split[n] = 0
+
+    # we must force an explicit tensor split
+    # otherwise the default will divide equally and multigpu crap will slow it down badly
+    inputs.cublas_info = 0
+    if (args.usecublas and "0" in args.usecublas):
+        inputs.cublas_info = 0
+        if not args.tensor_split:
+            inputs.tensor_split[inputs.cublas_info] = 100
+    elif (args.usecublas and "1" in args.usecublas):
+        inputs.cublas_info = 1
+        if not args.tensor_split:
+            inputs.tensor_split[inputs.cublas_info] = 100
+    elif (args.usecublas and "2" in args.usecublas):
+        inputs.cublas_info = 2
+        if not args.tensor_split:
+            inputs.tensor_split[inputs.cublas_info] = 100
 
     inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
     inputs.debugmode = args.debugmode
@@ -314,7 +323,7 @@ maxhordectx = 1024
 maxhordelen = 256
 modelbusy = threading.Lock()
 defaultport = 5001
-KcppVersion = "1.41"
+KcppVersion = "1.42"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -950,6 +959,8 @@ def show_new_gui():
             if index == "Use CLBlast":
                 gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
                 quick_gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
+                if gpu_choice_var.get()=="All":
+                    gpu_choice_var.set("1")
             elif index == "Use CuBLAS/hipBLAS":
                 CUDA_gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
                 CUDA_quick_gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
