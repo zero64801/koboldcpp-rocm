@@ -328,7 +328,7 @@ static std::string FileFormatTokenizeID(int id, FileFormat file_format)
     {
         return std::string(llama_v3_token_to_str(llama_ctx_v3, id));
     }
-    else if( file_format == FileFormat::GGUF_LLAMA)
+    else if(file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON)
     {
         return std::string(llama_token_to_str(llama_ctx_v4, id));
     }
@@ -340,7 +340,7 @@ static std::string FileFormatTokenizeID(int id, FileFormat file_format)
 
 static void TokenizeString(const std::string & str_to_tokenize, std::vector<int> & output_tokens, FileFormat file_format)
 {
-    if (file_format == FileFormat::GGML || file_format == FileFormat::GGHF || file_format == FileFormat::GGJT || file_format == FileFormat::GGJT_2  || file_format == FileFormat::GGJT_3 || file_format == FileFormat::GGUF_LLAMA)
+    if (file_format == FileFormat::GGML || file_format == FileFormat::GGHF || file_format == FileFormat::GGJT || file_format == FileFormat::GGJT_2  || file_format == FileFormat::GGJT_3 || file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON)
     {
         if(file_format == FileFormat::GGHF || file_format == FileFormat::GGJT || file_format == FileFormat::GGJT_2 )
         {
@@ -364,6 +364,23 @@ static void TokenizeString(const std::string & str_to_tokenize, std::vector<int>
         // tokenize the prompt
         output_tokens = ::gpt_tokenize(vocab, str_to_tokenize);
     }
+}
+
+static float LowestLogit(const std::vector<float> & logits)
+{
+    int topid = std::min_element(logits.begin(), logits.end()) - logits.begin();
+    float v = logits[topid];
+    return (v < 0 ? (v-1) : 0);
+}
+static float LowestLogit(const float *logits, size_t size)
+{
+    if (size == 0) {
+        // Handle the case of an empty array
+        return 0.0;
+    }
+    int topid = std::min_element(logits, logits + size) - logits;
+    float v = logits[topid];
+    return (v < 0 ? (v-1) : 0);
 }
 
 static std::string RemoveBell(const std::string & input) //removes the bell character
@@ -417,7 +434,13 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         else
         {
             //approximate NTK aware ctx
-            rope_freq_base = (params.n_ctx <= 3072 ? 26000.0f : (params.n_ctx <= 4096 ? 32000.0f : (params.n_ctx <= 6144 ? 54000.0f : (params.n_ctx <= 8192 ? 82684.0f : (params.n_ctx <= 12288 ? 140000.0f : 200000.0f)))));
+            auto effectivenctx = params.n_ctx;
+            // if((file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON) && llama_ctx_v4->model.hparams.n_ctx_train>2048)
+            // {
+            //     float factor = llama_ctx_v4->model.hparams.n_ctx_train/2048;
+            //     effectivenctx = effectivenctx/factor;
+            // }
+            rope_freq_base = (effectivenctx <= 3072 ? 26000.0f : (effectivenctx <= 4096 ? 32000.0f : (effectivenctx <= 6144 ? 54000.0f : (effectivenctx <= 8192 ? 82684.0f : (effectivenctx <= 12288 ? 140000.0f : 200000.0f)))));
 
         }
 
@@ -570,7 +593,7 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         }
         return ModelLoadResult::SUCCESS;
     }
-    else if(file_format==FileFormat::GGUF_LLAMA)
+    else if(file_format==FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON)
     {
         llama_context_params llama_ctx_params = llama_context_default_params();
         llama_ctx_params.n_ctx = inputs.max_context_length;
@@ -583,6 +606,13 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         llama_ctx_params.use_mmap = inputs.use_mmap;
         llama_ctx_params.use_mlock = inputs.use_mlock;
         llama_ctx_params.n_gpu_layers = inputs.gpulayers;
+        #if defined(GGML_USE_CLBLAST)
+        if(file_format==FileFormat::GGUF_FALCON && llama_ctx_params.n_gpu_layers>0)
+        {
+            printf("\nGPU layer offload for GGUF FALCON on OpenCL is known to have issues, it has been set to 0.\n");
+            llama_ctx_params.n_gpu_layers = 0;
+        }
+        #endif
         llama_ctx_params.main_gpu = cu_parseinfo_maindevice;
         llama_ctx_params.rope_freq_base = rope_freq_base;
         llama_ctx_params.rope_freq_scale = rope_freq_scale;
@@ -1105,7 +1135,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
     {
         //for non llama, limit to 256
         int bbs = blasbatchsize;
-        if (file_format != FileFormat::GGML && file_format != FileFormat::GGHF && file_format != FileFormat::GGJT && file_format != FileFormat::GGJT_2 && file_format != FileFormat::GGJT_3 && file_format != FileFormat::GGUF_LLAMA)
+        if (file_format != FileFormat::GGML && file_format != FileFormat::GGHF && file_format != FileFormat::GGJT && file_format != FileFormat::GGJT_2 && file_format != FileFormat::GGJT_3 && file_format != FileFormat::GGUF_LLAMA && file_format!=FileFormat::GGUF_FALCON)
         {
             bbs = (blasbatchsize > 256 ? 256 : blasbatchsize);
         }
@@ -1165,7 +1195,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
     {
         n_vocab = llama_v3_n_vocab(llama_ctx_v3);
     }
-    else if(file_format == FileFormat::GGUF_LLAMA)
+    else if(file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON)
     {
         n_vocab = llama_n_vocab(llama_ctx_v4);
     }
@@ -1316,7 +1346,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
             {
                 evalres = (llama_v3_eval(llama_ctx_v3, embd.data(), embdsize, n_past, params.n_threads)==0);
             }
-            else if(file_format == FileFormat::GGUF_LLAMA)
+            else if(file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON)
             {
                 evalres = (llama_eval(llama_ctx_v4, embd.data(), embdsize, n_past, params.n_threads)==0);
             }
@@ -1424,9 +1454,9 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
             unsigned int eosID = 0;
             float * logitsPtr;
             int btsize = banned_token_ids.size();
-            if(file_format == FileFormat::GGML || file_format == FileFormat::GGHF || file_format == FileFormat::GGJT || file_format == FileFormat::GGJT_2 || file_format == FileFormat::GGJT_3 || file_format == FileFormat::GGUF_LLAMA)
+            if(file_format == FileFormat::GGML || file_format == FileFormat::GGHF || file_format == FileFormat::GGJT || file_format == FileFormat::GGJT_2 || file_format == FileFormat::GGJT_3 || file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON)
             {
-                if(file_format == FileFormat::GGUF_LLAMA)
+                if(file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON)
                 {
                     logitsPtr = llama_get_logits(llama_ctx_v4);
                     eosID = llama_token_eos(llama_ctx_v4);
@@ -1442,24 +1472,26 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                     eosID = llama_v3_token_eos();
                 }
 
-                if (!unbanTokens)
+                float lowestLogit = LowestLogit(logitsPtr,n_vocab);
+                if (!unbanTokens && !inputs.unban_tokens_rt)
                 {
                     // set the logit of the eos token (2) to -INF to avoid sampling it
-                    logitsPtr[eosID] = -INFINITY;
+                    logitsPtr[eosID] = lowestLogit;
                 }
 
                 if(btsize>0)
                 {
                     for(int t=0;t<btsize;++t)
                     {
-                        logitsPtr[banned_token_ids[t]]=-INFINITY;
+                        logitsPtr[banned_token_ids[t]]=lowestLogit;
                     }
                 }
             }
             else
             {
                 logitsPtr = logits.data();
-                if (!unbanTokens)
+                float lowestLogit = LowestLogit(logits);
+                if (!unbanTokens && !inputs.unban_tokens_rt)
                 {
                     //gpt2 uses negative logits, so we cant zero it
                     // set the logit of the eos token to minimum to avoid sampling it
@@ -1474,9 +1506,10 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                          file_format == FileFormat::GPTJ_5)
                     {
                         eosID = 50256;
+
                         if(logits.size() > eosID)
                         {
-                            logits[eosID] = -INFINITY;
+                            logits[eosID] = lowestLogit;
                         }
                         else
                         {
@@ -1484,7 +1517,8 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                             if (file_format == FileFormat::GPT2_3 || file_format == FileFormat::GPT2_4)
                             {
                                 eosID = 0;
-                                logits[eosID] = -INFINITY;
+                                logits[eosID] = lowestLogit;
+
                             }
                         }
                     }
@@ -1502,7 +1536,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                          file_format == FileFormat::MPT_1)
                     {
                         eosID = 0;
-                        logits[eosID] = -INFINITY;
+                        logits[eosID] = lowestLogit;
                     }
                 }
 
@@ -1510,7 +1544,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                 {
                     for (int t = 0; t < btsize; ++t)
                     {
-                        logits[banned_token_ids[t]] = -INFINITY;
+                        logits[banned_token_ids[t]] = lowestLogit;
                     }
                 }
             }
@@ -1561,7 +1595,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                 printf("]\n");
             }
 
-            if(unbanTokens && id==eosID)
+            if((unbanTokens||inputs.unban_tokens_rt) && id==eosID)
             {
                 stopper_unused_tokens = remaining_tokens;
                 printf("\n(EOS token triggered!)");

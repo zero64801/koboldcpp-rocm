@@ -69,6 +69,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 add_compile_definitions(GGML_USE_K_QUANTS)
+add_compile_definitions(LOG_DISABLE_LOGS)
 
 if (LLAMA_CUBLAS)
     cmake_minimum_required(VERSION 3.17)
@@ -175,6 +176,7 @@ if (LLAMA_ALL_WARNINGS)
             -Wstrict-prototypes
             -Wpointer-arith
             -Wmissing-prototypes
+            -Werror=implicit-int
         )
         set(cxx_flags
             -Wall
