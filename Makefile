@@ -1,5 +1,5 @@
-default: koboldcpp_default koboldcpp_failsafe koboldcpp_openblas koboldcpp_noavx2 koboldcpp_clblast koboldcpp_cublas
-tools: quantize_gpt2 quantize_gptj quantize_llama quantize_neox quantize_mpt
+default: koboldcpp_default koboldcpp_failsafe koboldcpp_openblas koboldcpp_noavx2 koboldcpp_clblast koboldcpp_cublas 
+tools: quantize_gpt2 quantize_gptj quantize_llama quantize_neox quantize_mpt llama-bench perplexity
 dev: koboldcpp_openblas
 dev2: koboldcpp_clblast
 
@@ -198,9 +198,9 @@ ifdef LLAMA_HIPBLAS
 	CC         := $(ROCM_PATH)/llvm/bin/clang
 	CXX        := $(ROCM_PATH)/llvm/bin/clang++
 	GPU_TARGETS ?= gfx803 gfx900 gfx906 gfx908 gfx90a gfx1030 gfx1100 $(shell $(ROCM_PATH)/llvm/bin/amdgpu-arch)
-	LLAMA_CUDA_DMMV_X ?= 128
+	LLAMA_CUDA_DMMV_X ?= 32
 	LLAMA_CUDA_MMV_Y ?= 2
-	LLAMA_CUDA_KQUANTS_ITER ?= 1
+	LLAMA_CUDA_KQUANTS_ITER ?= 2
 	HIPFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
 ifdef LLAMA_CUDA_FORCE_DMMV
 	HIPFLAGS 	+= -DGGML_CUDA_FORCE_DMMV
@@ -416,7 +416,7 @@ gpttype_adapter_cublas.o: $(GPTTYPE_ADAPTER)
 	$(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
 
 clean:
-	rm -vf *.o main quantize_llama quantize_gpt2 quantize_gptj quantize_neox quantize_mpt quantize-stats perplexity embedding benchmark-matmult save-load-state gguf gguf.exe main.exe quantize_llama.exe quantize_gptj.exe quantize_gpt2.exe quantize_neox.exe quantize_mpt.exe koboldcpp_default.dll koboldcpp_openblas.dll koboldcpp_failsafe.dll koboldcpp_noavx2.dll koboldcpp_clblast.dll koboldcpp_cublas.dll koboldcpp_default.so koboldcpp_openblas.so koboldcpp_failsafe.so koboldcpp_noavx2.so koboldcpp_clblast.so koboldcpp_cublas.so
+	rm -vf *.o main quantize_llama quantize_gpt2 quantize_gptj quantize_neox quantize_mpt quantize-stats llama-bench perplexity embedding benchmark-matmult save-load-state gguf gguf.exe main.exe quantize_llama.exe quantize_gptj.exe quantize_gpt2.exe quantize_neox.exe quantize_mpt.exe koboldcpp_default.dll koboldcpp_openblas.dll koboldcpp_failsafe.dll koboldcpp_noavx2.dll koboldcpp_clblast.dll koboldcpp_cublas.dll koboldcpp_default.so koboldcpp_openblas.so koboldcpp_failsafe.so koboldcpp_noavx2.so koboldcpp_clblast.so koboldcpp_cublas.so
 
 main: examples/main/main.cpp build-info.h ggml.o k_quants.o ggml-alloc.o llama.o common.o console.o grammar-parser.o $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
@@ -451,7 +451,10 @@ quantize_neox: ggml.o llama.o k_quants.o ggml-alloc.o otherarch/tools/neox_quant
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 quantize_mpt: ggml.o llama.o k_quants.o ggml-alloc.o otherarch/tools/mpt_quantize.cpp otherarch/tools/common-ggml.cpp
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
-
+perplexity: examples/perplexity/perplexity.cpp                build-info.h ggml_cublas.o ggml_v2_cublas.o ggml_v1.o expose.o common.o gpttype_adapter_cublas.o k_quants.o ggml-alloc.o $(CUBLAS_OBJS) $(HIP_OBJS) $(OBJS)
+	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) $(HIPLDFLAGS)
+llama-bench: examples/llama-bench/llama-bench.cpp build-info.h ggml_cublas.o ggml_v2_cublas.o ggml_v1.o expose.o common.o gpttype_adapter_cublas.o k_quants.o ggml-alloc.o $(CUBLAS_OBJS) $(HIP_OBJS) $(OBJS)
+	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) $(HIPLDFLAGS)
 
 build-info.h:
 	$(DONOTHING)
