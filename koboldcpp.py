@@ -227,18 +227,24 @@ def load_model(model_filename):
     # we must force an explicit tensor split
     # otherwise the default will divide equally and multigpu crap will slow it down badly
     inputs.cublas_info = 0
-    if (args.usecublas and "0" in args.usecublas):
-        inputs.cublas_info = 0
-        if not args.tensor_split:
-            inputs.tensor_split[inputs.cublas_info] = 100
-    elif (args.usecublas and "1" in args.usecublas):
-        inputs.cublas_info = 1
-        if not args.tensor_split:
-            inputs.tensor_split[inputs.cublas_info] = 100
-    elif (args.usecublas and "2" in args.usecublas):
-        inputs.cublas_info = 2
-        if not args.tensor_split:
-            inputs.tensor_split[inputs.cublas_info] = 100
+
+    if not args.tensor_split:
+        if (args.usecublas and "0" in args.usecublas):
+            os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+            os.environ["HIP_VISIBLE_DEVICES"] = "0"
+        elif (args.usecublas and "1" in args.usecublas):
+            os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+            os.environ["HIP_VISIBLE_DEVICES"] = "1"
+        elif (args.usecublas and "2" in args.usecublas):
+            os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+            os.environ["HIP_VISIBLE_DEVICES"] = "2"
+    else:
+        if (args.usecublas and "0" in args.usecublas):
+            inputs.cublas_info = 0
+        elif (args.usecublas and "1" in args.usecublas):
+            inputs.cublas_info = 1
+        elif (args.usecublas and "2" in args.usecublas):
+            inputs.cublas_info = 2
 
     inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
     inputs.debugmode = args.debugmode
@@ -325,7 +331,7 @@ maxhordectx = 1024
 maxhordelen = 256
 modelbusy = threading.Lock()
 defaultport = 5001
-KcppVersion = "1.42.1"
+KcppVersion = "1.43"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -429,11 +435,12 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         incomplete_token_buffer = bytearray()
         while not handle.has_finished():
-            while current_token < handle.get_stream_count():
+            streamcount = handle.get_stream_count()
+            while current_token < streamcount:
                 token = handle.new_token(current_token)
 
                 if token is None: # Token isnt ready yet, received nullpointer
-                    continue
+                    break
 
                 current_token += 1
 
@@ -446,7 +453,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                     event_str = json.dumps(event_data)
                     await self.send_sse_event("message", event_str)
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.02) #this should keep things responsive
 
         # flush buffers, sleep a bit to make sure all data sent, and then force close the connection
         self.wfile.flush()
@@ -710,7 +717,7 @@ def show_new_gui():
         import tkinter as tk
         root = tk.Tk() #we dont want the useless window to be visible, but we want it in taskbar
         root.attributes("-alpha", 0)
-        args.model_param = askopenfilename(title="Select ggml model .bin files")
+        args.model_param = askopenfilename(title="Select ggml model .bin or .gguf files")
         root.destroy()
         if not args.model_param:
             print("\nNo ggml model file was selected. Exiting.")
@@ -946,14 +953,6 @@ def show_new_gui():
     # Quick Launch Tab
     quick_tab = tabcontent["Quick Launch"]
 
-    # gpu options
-
-    quick_gpu_layers_entry, quick_gpu_layers_label = makelabelentry(quick_tab, "GPU Layers:", gpulayers_var, 5, 50)
-    quick_gpu_selector_label = makelabel(quick_tab, "GPU ID:", 3)
-    quick_gpu_selector_box = ctk.CTkComboBox(quick_tab, values=CLdevices, width=180, variable=gpu_choice_var, state="readonly")
-    CUDA_quick_gpu_selector_box = ctk.CTkComboBox(quick_tab, values=CUdevices, width=180, variable=gpu_choice_var, state="readonly")
-    quick_lowvram_box = makecheckbox(quick_tab, "Low VRAM", lowvram_var, 4,0)
-    quick_mmq_box = makecheckbox(quick_tab,  "Use QuantMatMul (mmq)", mmq_var, 4,1)
 
     def changerunmode(a,b,c):
         index = runopts_var.get()
@@ -1008,6 +1007,15 @@ def show_new_gui():
     # Tell user how many backends are available
     setup_backend_tooltip(quick_tab)
 
+    # gpu options
+
+    quick_gpu_layers_entry, quick_gpu_layers_label = makelabelentry(quick_tab, "GPU Layers:", gpulayers_var, 5, 50)
+    quick_gpu_selector_label = makelabel(quick_tab, "GPU ID:", 3)
+    quick_gpu_selector_box = ctk.CTkComboBox(quick_tab, values=CLdevices, width=180, variable=gpu_choice_var, state="readonly")
+    CUDA_quick_gpu_selector_box = ctk.CTkComboBox(quick_tab, values=CUdevices, width=180, variable=gpu_choice_var, state="readonly")
+    quick_lowvram_box = makecheckbox(quick_tab, "Low VRAM", lowvram_var, 4,0)
+    quick_mmq_box = makecheckbox(quick_tab,  "Use QuantMatMul (mmq)", mmq_var, 4,1)
+
     # threads
     makelabelentry(quick_tab, "Threads:" , threads_var, 8, 50)
 
@@ -1027,6 +1035,15 @@ def show_new_gui():
     # Hardware Tab
     hardware_tab = tabcontent["Hardware"]
 
+    # presets selector
+    makelabel(hardware_tab, "Presets:", 1)
+    runoptbox = ctk.CTkComboBox(hardware_tab, values=runopts,  width=180,variable=runopts_var, state="readonly")
+    runoptbox.grid(row=1, column=1,padx=8, stick="nw")
+    runoptbox.set(runopts[0]) # Set to first available option
+
+    # Tell user how many backends are available
+    setup_backend_tooltip(hardware_tab)
+
     # gpu options
     gpu_layers_entry,gpu_layers_label = makelabelentry(hardware_tab,"GPU Layers:", gpulayers_var, 5, 50)
     gpu_selector_label = makelabel(hardware_tab, "GPU ID:", 3)
@@ -1034,17 +1051,6 @@ def show_new_gui():
     CUDA_gpu_selector_box = ctk.CTkComboBox(hardware_tab, values=CUdevices, width=180, variable=gpu_choice_var, state="readonly")
     lowvram_box = makecheckbox(hardware_tab, "Low VRAM", lowvram_var, 4,0)
     mmq_box = makecheckbox(hardware_tab,  "Use QuantMatMul (mmq)", mmq_var, 4,1)
-
-    # presets selector
-    makelabel(hardware_tab, "Presets:", 1)
-    runoptbox = ctk.CTkComboBox(hardware_tab, values=runopts,  width=180,variable=runopts_var, state="readonly")
-    runoptbox.grid(row=1, column=1,padx=8, stick="nw")
-    runoptbox.set(runopts[0]) # Set to first available option
-    runopts_var.trace('w', changerunmode)
-    changerunmode(1,1,1)
-
-    # Tell user how many backends are available
-    setup_backend_tooltip(hardware_tab)
 
     # threads
     makelabelentry(hardware_tab, "Threads:" , threads_var, 8, 50)
@@ -1061,6 +1067,9 @@ def show_new_gui():
     makeslider(hardware_tab, "BLAS Batch Size:", blasbatchsize_text, blas_size_var, 0, 7, 12, set=5)
     # force version
     makelabelentry(hardware_tab, "Force Version:" , version_var, 100, 50)
+
+    runopts_var.trace('w', changerunmode)
+    changerunmode(1,1,1)
 
     # Tokens Tab
     tokens_tab = tabcontent["Tokens"]
@@ -1142,7 +1151,7 @@ def show_new_gui():
     # launch
     def guilaunch():
         if model_var.get() == "":
-            tmp = askopenfilename(title="Select ggml model .bin files")
+            tmp = askopenfilename(title="Select ggml model .bin or .gguf files")
             model_var.set(tmp)
         nonlocal nextstate
         nextstate = 1
@@ -1517,7 +1526,7 @@ def show_old_gui():
 
         root = tk.Tk()
         root.attributes("-alpha", 0)
-        args.model_param = askopenfilename(title="Select ggml model .bin files")
+        args.model_param = askopenfilename(title="Select ggml model .bin or .gguf files")
         root.destroy()
         if not args.model_param:
             print("\nNo ggml model file was selected. Exiting.")
@@ -1527,7 +1536,7 @@ def show_old_gui():
     else:
         root = tk.Tk() #we dont want the useless window to be visible, but we want it in taskbar
         root.attributes("-alpha", 0)
-        args.model_param = askopenfilename(title="Select ggml model .bin files")
+        args.model_param = askopenfilename(title="Select ggml model .bin or .gguf files")
         root.destroy()
         if not args.model_param:
             print("\nNo ggml model file was selected. Exiting.")

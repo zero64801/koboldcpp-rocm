@@ -8,6 +8,7 @@
 //Python will ALWAYS provide the memory, we just write to it.
 
 #include <time.h>
+#include <mutex>
 #include "model_adapter.h"
 #include "otherarch.h"
 
@@ -85,7 +86,9 @@ static std::vector<int> banned_token_ids;
 static std::vector<llama_token_data> top_picks;
 static int remaining_tokens = 0;
 static int stopper_unused_tokens = 0;
+static std::mutex concat_output_mtx;
 static std::string concat_output = "";
+static std::string concat_output_reader_copy = "";
 
 inline bool IsNanCheck(float f)
 {
@@ -370,7 +373,7 @@ static float LowestLogit(const std::vector<float> & logits)
 {
     int topid = std::min_element(logits.begin(), logits.end()) - logits.begin();
     float v = logits[topid];
-    return (v < 0 ? (v-1) : 0);
+    return (v < 0 ? (v-8) : 0);
 }
 static float LowestLogit(const float *logits, size_t size)
 {
@@ -380,7 +383,7 @@ static float LowestLogit(const float *logits, size_t size)
     }
     int topid = std::min_element(logits, logits + size) - logits;
     float v = logits[topid];
-    return (v < 0 ? (v-1) : 0);
+    return (v < 0 ? (v-8) : 0);
 }
 
 static std::string RemoveBell(const std::string & input) //removes the bell character
@@ -390,7 +393,7 @@ static std::string RemoveBell(const std::string & input) //removes the bell char
     return word2;
 }
 
-ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in_file_format)
+ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in_file_format, FileFormatExtraMeta file_format_meta)
 {
     ggml_time_init();
 
@@ -435,11 +438,11 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         {
             //approximate NTK aware ctx
             auto effectivenctx = params.n_ctx;
-            // if((file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON) && llama_ctx_v4->model.hparams.n_ctx_train>2048)
-            // {
-            //     float factor = llama_ctx_v4->model.hparams.n_ctx_train/2048;
-            //     effectivenctx = effectivenctx/factor;
-            // }
+            if((file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON) && file_format_meta.n_ctx_train > 2048)
+            {
+                float factor = file_format_meta.n_ctx_train/2048;
+                effectivenctx = effectivenctx/factor;
+            }
             rope_freq_base = (effectivenctx <= 3072 ? 26000.0f : (effectivenctx <= 4096 ? 32000.0f : (effectivenctx <= 6144 ? 54000.0f : (effectivenctx <= 8192 ? 82684.0f : (effectivenctx <= 12288 ? 140000.0f : 200000.0f)))));
 
         }
@@ -1039,12 +1042,17 @@ int gpttype_token_count(const std::string & input)
 
 const std::string & gpttype_get_pending_output()
 {
-    return concat_output;
+    concat_output_mtx.lock();
+    concat_output_reader_copy = concat_output;
+    concat_output_mtx.unlock();
+    return concat_output_reader_copy;
 }
 
 generation_outputs gpttype_generate(const generation_inputs inputs, generation_outputs &output)
 {
+    concat_output_mtx.lock();
     concat_output = "";
+    concat_output_mtx.unlock();
     last_stop_reason = stop_reason::OUT_OF_TOKENS;
     stop_sequence.clear();
     for(int x=0;x<stop_token_max;++x)
@@ -1570,7 +1578,9 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                 {
                     generated_tokens.push_back(tokenizedstr);
                 }
+                concat_output_mtx.lock();
                 concat_output += tokenizedstr;
+                concat_output_mtx.unlock();
             }
 
             if (startedsampling && debugmode!=-1)
