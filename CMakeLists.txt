@@ -205,7 +205,6 @@ if (LLAMA_HIPBLAS)
         target_compile_definitions(ggml-rocm PUBLIC GGML_CUDA_DMMV_X=${LLAMA_CUDA_DMMV_X})
         target_compile_definitions(ggml-rocm PUBLIC GGML_CUDA_MMV_Y=${LLAMA_CUDA_MMV_Y})
         target_compile_definitions(ggml-rocm PUBLIC K_QUANTS_PER_ITERATION=${LLAMA_CUDA_KQUANTS_ITER})
-        target_compile_definitions(ggml-rocm PUBLIC CC_TURING=1000000000)
         set_source_files_properties(ggml-cuda.cu PROPERTIES LANGUAGE CXX)
         target_link_libraries(ggml-rocm PUBLIC hip::device hip::host roc::rocblas roc::hipblas)
 

@@ -211,18 +211,15 @@ endif # LLAMA_CUDA_FORCE_DMMV
 ggml-cuda.o: HIPFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
 						-DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
                         -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_MMV_Y) \
-                        -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER) \
-						-DCC_TURING=1000000000
+                        -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER)
 ggml_v2-cuda.o: HIPFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
 						-DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
                         -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_MMV_Y) \
-                        -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER) \
-						-DCC_TURING=1000000000
+                        -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER) 
 ggml_v2-cuda-legacy.o: HIPFLAGS += $(addprefix --offload-arch=,$(GPU_TARGETS)) \
 						-DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X) \
                         -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_MMV_Y) \
-                        -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER) \
-						-DCC_TURING=1000000000 # DGGML_CUDA_DMMV_F16 does not currently work with AMD.
+                        -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER)  # DGGML_CUDA_DMMV_F16 does not currently work with AMD.
 ggml-cuda.o: ggml-cuda.cu ggml-cuda.h
 	$(CXX) $(CXXFLAGS) $(HIPFLAGS) -x hip -c -o $@ $<
 ggml_v2-cuda.o: otherarch/ggml_v2-cuda.cu otherarch/ggml_v2-cuda.h
