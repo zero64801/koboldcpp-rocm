@@ -163,8 +163,9 @@ def init_library():
 
     print("Initializing dynamic library: " + libname)
     dir_path = getdirpath()
-
-    #OpenBLAS should provide about a 2x speedup on prompt ingestion if compatible.
+    os.add_dll_directory(dir_path)
+    os.add_dll_directory(os.path.dirname(os.path.abspath(__file__)))
+    os.add_dll_directory(os.getcwd())
     handle = ctypes.CDLL(os.path.join(dir_path, libname), winmode=0)
 
     handle.load_model.argtypes = [load_model_inputs]
