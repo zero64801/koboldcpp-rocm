@@ -165,7 +165,7 @@ def init_library():
     dir_path = getdirpath()
 
     #OpenBLAS should provide about a 2x speedup on prompt ingestion if compatible.
-    handle = ctypes.CDLL(os.path.join(dir_path, libname))
+    handle = ctypes.CDLL(os.path.join(dir_path, libname), winmode=0)
 
     handle.load_model.argtypes = [load_model_inputs]
     handle.load_model.restype = ctypes.c_bool
