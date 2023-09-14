@@ -20,5 +20,5 @@ echo "Build will start shortly."
 countdown 5
 
 make clean && \
-make LLAMA_HIPBLAS=1 LLAMA_OPENBLAS=1 LLAMA_CLBLAST=1 -j4 && \
+make LLAMA_HIPBLAS=1 -j4 && \
 ./koboldcpp.py
