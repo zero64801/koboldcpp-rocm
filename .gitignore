@@ -88,3 +88,4 @@ tests/test-tokenizer-0
 rocblas.dll
 hipblas.dll
 koboldcpp_hipblas.so
+koboldcpp_hipblas.dll
