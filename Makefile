@@ -1,4 +1,4 @@
-default: koboldcpp_default koboldcpp_failsafe koboldcpp_openblas koboldcpp_noavx2 koboldcpp_clblast koboldcpp_cublas 
+default: koboldcpp_default koboldcpp_failsafe koboldcpp_openblas koboldcpp_noavx2 koboldcpp_clblast koboldcpp_cublas koboldcpp_hipblas 
 tools: quantize_gpt2 quantize_gptj quantize_llama quantize_neox quantize_mpt llama-bench perplexity
 dev: koboldcpp_openblas
 dev2: koboldcpp_clblast
@@ -39,8 +39,8 @@ endif
 #
 
 # keep standard at C11 and C++11
-CFLAGS   = -I.              -I./include -I./include/CL -I./otherarch -I./otherarch/tools -Ofast -DNDEBUG -std=c11   -fPIC -DGGML_USE_K_QUANTS -DLOG_DISABLE_LOGS
-CXXFLAGS = -I. -I./common -I./include -I./include/CL -I./otherarch -I./otherarch/tools -Ofast -DNDEBUG -std=c++11 -fPIC -DGGML_USE_K_QUANTS -DLOG_DISABLE_LOGS
+CFLAGS   = -I.              -I./include -I./include/CL -I./otherarch -I./otherarch/tools -Ofast -DNDEBUG -std=c11   -fPIC -DGGML_USE_K_QUANTS -DLOG_DISABLE_LOGS -D_GNU_SOURCE
+CXXFLAGS = -I. -I./common -I./include -I./include/CL -I./otherarch -I./otherarch/tools -Ofast -DNDEBUG -std=c++11 -fPIC -DGGML_USE_K_QUANTS -DLOG_DISABLE_LOGS -D_GNU_SOURCE
 LDFLAGS  =
 
 # these are used on windows, to build some libraries with extra old device compatibility
@@ -414,7 +414,7 @@ gpttype_adapter_cublas.o: $(GPTTYPE_ADAPTER)
 	$(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
 
 clean:
-	rm -vf *.o main quantize_llama quantize_gpt2 quantize_gptj quantize_neox quantize_mpt quantize-stats llama-bench perplexity embedding benchmark-matmult save-load-state gguf gguf.exe main.exe quantize_llama.exe quantize_gptj.exe quantize_gpt2.exe quantize_neox.exe quantize_mpt.exe koboldcpp_default.dll koboldcpp_openblas.dll koboldcpp_failsafe.dll koboldcpp_noavx2.dll koboldcpp_clblast.dll koboldcpp_cublas.dll koboldcpp_default.so koboldcpp_openblas.so koboldcpp_failsafe.so koboldcpp_noavx2.so koboldcpp_clblast.so koboldcpp_cublas.so
+	rm -vf *.o main quantize_llama quantize_gpt2 quantize_gptj quantize_neox quantize_mpt quantize-stats perplexity embedding benchmark-matmult save-load-state gguf gguf.exe main.exe quantize_llama.exe quantize_gptj.exe quantize_gpt2.exe quantize_neox.exe quantize_mpt.exe koboldcpp_default.dll koboldcpp_openblas.dll koboldcpp_failsafe.dll koboldcpp_noavx2.dll koboldcpp_clblast.dll koboldcpp_cublas.dll koboldcpp_hipblas.dll koboldcpp_default.so koboldcpp_openblas.so koboldcpp_failsafe.so koboldcpp_noavx2.so koboldcpp_clblast.so koboldcpp_cublas.so koboldcpp_hipblas.so
 
 main: examples/main/main.cpp build-info.h ggml.o k_quants.o ggml-alloc.o llama.o common.o console.o grammar-parser.o $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
@@ -436,8 +436,10 @@ koboldcpp_noavx2: ggml_noavx2.o ggml_v2_noavx2.o ggml_v1_failsafe.o expose.o com
 	$(NOAVX2_BUILD)
 koboldcpp_clblast: ggml_clblast.o ggml_v2_clblast.o ggml_v1.o expose.o common.o gpttype_adapter_clblast.o ggml-opencl.o ggml_v2-opencl.o ggml_v2-opencl-legacy.o k_quants.o ggml-alloc.o $(OBJS)
 	$(CLBLAST_BUILD)
-koboldcpp_cublas: ggml_cublas.o ggml_v2_cublas.o ggml_v1.o expose.o common.o gpttype_adapter_cublas.o k_quants.o ggml-alloc.o $(CUBLAS_OBJS) $(HIP_OBJS) $(OBJS)
-	$(CUBLAS_BUILD) $(HIPBLAS_BUILD)
+koboldcpp_cublas: ggml_cublas.o ggml_v2_cublas.o ggml_v1.o expose.o common.o gpttype_adapter_cublas.o k_quants.o ggml-alloc.o $(CUBLAS_OBJS) $(OBJS)
+	$(CUBLAS_BUILD)
+koboldcpp_hipblas: ggml_cublas.o ggml_v2_cublas.o ggml_v1.o expose.o common.o gpttype_adapter_cublas.o k_quants.o ggml-alloc.o $(HIP_OBJS) $(OBJS)
+	$(HIPBLAS_BUILD)
 
 quantize_llama: examples/quantize/quantize.cpp ggml.o llama.o k_quants.o ggml-alloc.o
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
