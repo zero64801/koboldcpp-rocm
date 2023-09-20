@@ -82,6 +82,8 @@ set(LLAMA_CUDA_DMMV_X      "32" CACHE STRING "llama: x stride for dmmv CUDA kern
 set(LLAMA_CUDA_MMV_Y        "1" CACHE STRING "llama: y block size for mmv CUDA kernels")
 option(LLAMA_CUDA_F16                        "llama: use 16 bit floats for some calculations"   OFF)
 set(LLAMA_CUDA_KQUANTS_ITER "2" CACHE STRING "llama: iters./thread per block for Q2_K/Q6_K")
+set(LLAMA_CUDA_PEER_MAX_BATCH_SIZE "128" CACHE STRING
+                                             "llama: max. batch size for using peer access")
 option(LLAMA_HIPBLAS                         "llama: use hipBLAS"                               ON)
 option(LLAMA_K_QUANTS                        "llama: use k-quants"                              ON)
 
@@ -139,7 +141,6 @@ if (LLAMA_CUBLAS)
 
         enable_language(CUDA)
 
-
         add_compile_definitions(GGML_USE_CUBLAS)
 #        if (LLAMA_CUDA_CUBLAS)
 #            add_compile_definitions(GGML_CUDA_CUBLAS)
@@ -156,6 +157,7 @@ if (LLAMA_CUBLAS)
             add_compile_definitions(GGML_CUDA_F16)
         endif()
         add_compile_definitions(K_QUANTS_PER_ITERATION=${LLAMA_CUDA_KQUANTS_ITER})
+        add_compile_definitions(GGML_CUDA_PEER_MAX_BATCH_SIZE=${LLAMA_CUDA_PEER_MAX_BATCH_SIZE})
 
         if (LLAMA_STATIC)
             set(LLAMA_EXTRA_LIBS ${LLAMA_EXTRA_LIBS} CUDA::cudart_static CUDA::cublas_static CUDA::cublasLt_static)
@@ -185,7 +187,7 @@ if (LLAMA_HIPBLAS)
     if (MSVC)
         list(APPEND CMAKE_PREFIX_PATH "C:/Program Files/AMD/ROCm/5.5")
     else()
-        list(APPEND CMAKE_PREFIX_PATH "/opt/rocm")
+        list(APPEND CMAKE_PREFIX_PATH /opt/rocm)
     endif()
 
 
@@ -269,6 +271,7 @@ if (LLAMA_ALL_WARNINGS)
             -Wextra
             -Wpedantic
             -Wcast-qual
+            -Wmissing-declarations
             -Wno-unused-function
             -Wno-multichar
         )
@@ -287,7 +290,7 @@ if (LLAMA_ALL_WARNINGS)
 
 endif()
 
-if (MSVC)
+if (WIN32)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
     if (BUILD_SHARED_LIBS)
@@ -484,7 +487,9 @@ set_target_properties(ggml_v2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(common2
             common/common.cpp
-            common/common.h)
+            common/common.h
+            common/grammar-parser.h
+            common/grammar-parser.cpp)
 target_include_directories(common2 PUBLIC . ./otherarch ./otherarch/tools ./examples ./common)
 target_compile_features(common2 PUBLIC cxx_std_11) # don't bump
 target_link_libraries(common2 PRIVATE ggml ${LLAMA_EXTRA_LIBS})

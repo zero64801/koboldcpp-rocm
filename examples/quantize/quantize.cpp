@@ -1,3 +1,5 @@
+#include "build-info.h"
+#include "common.h"
 #include "llama.h"
 
 #include <cstdio>
@@ -38,7 +40,7 @@ static const std::vector<struct quant_option> QUANT_OPTIONS = {
 };
 
 
-bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftype, std::string & ftype_str_out) {
+static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftype, std::string & ftype_str_out) {
     std::string ftype_str;
 
     for (auto ch : ftype_str_in) {
@@ -70,7 +72,7 @@ bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftype, std:
 // usage:
 //  ./quantize [--allow-requantize] [--leave-output-tensor] models/llama/ggml-model.gguf [models/llama/ggml-model-quant.gguf] type [nthreads]
 //
-void usage(const char * executable) {
+static void usage(const char * executable) {
     printf("usage: %s [--help] [--allow-requantize] [--leave-output-tensor] model-f32.gguf [model-quant.gguf] type [nthreads]\n\n", executable);
     printf("  --allow-requantize: Allows requantizing tensors that have already been quantized. Warning: This can severely reduce quality compared to quantizing from 16bit or 32bit\n");
     printf("  --leave-output-tensor: Will leave output.weight un(re)quantized. Increases model size but may also increase quality, especially when requantizing\n");
@@ -141,10 +143,9 @@ int main(int argc, char ** argv) {
         if (!try_parse_ftype(argv[arg_idx], params.ftype, ftype_str)) {
             fprintf(stderr, "%s: invalid ftype '%s'\n", __func__, argv[3]);
             return 1;
-        } else {
-            if (ftype_str == "COPY") {
-               params.only_copy = true;
-            }
+        }
+        if (ftype_str == "COPY") {
+           params.only_copy = true;
         }
         arg_idx++;
     }
@@ -159,6 +160,8 @@ int main(int argc, char ** argv) {
             return 1;
         }
     }
+
+    print_build_info();
 
     fprintf(stderr, "%s: quantizing '%s' to '%s' as %s", __func__, fname_inp.c_str(), fname_out.c_str(), ftype_str.c_str());
     if (params.nthread > 0) {

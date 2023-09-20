@@ -64,7 +64,8 @@ class generation_inputs(ctypes.Structure):
                 ("sampler_len", ctypes.c_int),
                 ("unban_tokens_rt", ctypes.c_bool),
                 ("stop_sequence", ctypes.c_char_p * stop_token_max),
-                ("stream_sse", ctypes.c_bool)]
+                ("stream_sse", ctypes.c_bool),
+                ("grammar", ctypes.c_char_p)]
 
 class generation_outputs(ctypes.Structure):
     _fields_ = [("status", ctypes.c_int),
@@ -74,6 +75,8 @@ handle = None
 
 def getdirpath():
     return os.path.dirname(os.path.realpath(__file__))
+def getabspath():
+    return os.path.dirname(os.path.abspath(__file__))
 def file_exists(filename):
     return os.path.exists(os.path.join(getdirpath(), filename))
 
@@ -172,8 +175,14 @@ def init_library():
 
     print("Initializing dynamic library: " + libname)
     dir_path = getdirpath()
+    abs_path = getabspath()
 
-    handle = ctypes.CDLL(os.path.join(dir_path, libname), winmode=0)
+    #add all potential paths
+    if os.name=='nt':
+        os.add_dll_directory(dir_path)
+        os.add_dll_directory(abs_path)
+        os.add_dll_directory(os.getcwd())
+    handle = ctypes.CDLL(os.path.join(dir_path, libname)) #, winmode=0)
 
     handle.load_model.argtypes = [load_model_inputs]
     handle.load_model.restype = ctypes.c_bool
@@ -246,6 +255,9 @@ def load_model(model_filename):
         elif (args.usecublas and "2" in args.usecublas):
             os.environ["CUDA_VISIBLE_DEVICES"] = "2"
             os.environ["HIP_VISIBLE_DEVICES"] = "2"
+        elif (args.usecublas and "3" in args.usecublas):
+            os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+            os.environ["HIP_VISIBLE_DEVICES"] = "3"
     else:
         if (args.usecublas and "0" in args.usecublas):
             inputs.cublas_info = 0
@@ -253,6 +265,8 @@ def load_model(model_filename):
             inputs.cublas_info = 1
         elif (args.usecublas and "2" in args.usecublas):
             inputs.cublas_info = 2
+        elif (args.usecublas and "3" in args.usecublas):
+            inputs.cublas_info = 3
 
     inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
     inputs.debugmode = args.debugmode
@@ -265,7 +279,7 @@ def load_model(model_filename):
     ret = handle.load_model(inputs)
     return ret
 
-def generate(prompt,max_length=20, max_context_length=512, temperature=0.8, top_k=120, top_a=0.0, top_p=0.85, typical_p=1.0, tfs=1.0, rep_pen=1.1, rep_pen_range=128, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=True, stream_sse=False):
+def generate(prompt,max_length=20, max_context_length=512, temperature=0.8, top_k=120, top_a=0.0, top_p=0.85, typical_p=1.0, tfs=1.0, rep_pen=1.1, rep_pen_range=128, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=True, stream_sse=False, grammar=''):
     global maxctx, args
     inputs = generation_inputs()
     outputs = ctypes.create_unicode_buffer(ctypes.sizeof(generation_outputs))
@@ -287,6 +301,7 @@ def generate(prompt,max_length=20, max_context_length=512, temperature=0.8, top_
     inputs.rep_pen = rep_pen
     inputs.rep_pen_range = rep_pen_range
     inputs.stream_sse = stream_sse
+    inputs.grammar = grammar.encode("UTF-8")
     inputs.unban_tokens_rt = not use_default_badwordsids
     if args.usemirostat and args.usemirostat[0]>0:
         inputs.mirostat = int(args.usemirostat[0])
@@ -338,8 +353,9 @@ maxctx = 2048
 maxhordectx = 1024
 maxhordelen = 256
 modelbusy = threading.Lock()
+requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.43.2-ROCm"
+KcppVersion = "1.44-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -386,7 +402,8 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                     seed=genparams.get('sampler_seed', -1),
                     stop_sequence=genparams.get('stop_sequence', []),
                     use_default_badwordsids=genparams.get('use_default_badwordsids', True),
-                    stream_sse=stream_flag)
+                    stream_sse=stream_flag,
+                    grammar=genparams.get('grammar', ''))
 
             else:
                 return generate(prompt=newprompt,
@@ -407,7 +424,8 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                     seed=genparams.get('sampler_seed', -1),
                     stop_sequence=genparams.get('stop_sequence', []),
                     use_default_badwordsids=genparams.get('use_default_badwordsids', True),
-                    stream_sse=stream_flag)
+                    stream_sse=stream_flag,
+                    grammar=genparams.get('grammar', ''))
 
         recvtxt = ""
         if stream_flag:
@@ -527,6 +545,9 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path.endswith(('/api/v1/info/version', '/api/latest/info/version')):
             response_body = (json.dumps({"result":"1.2.4"}).encode())
 
+        elif self.path.endswith(('/api/extra/true_max_context_length')): #do not advertise this to horde
+            response_body = (json.dumps({"value": maxctx}).encode())
+
         elif self.path.endswith(('/api/extra/version')):
             response_body = (json.dumps({"result":"KoboldCpp","version":KcppVersion}).encode())
 
@@ -535,7 +556,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             laste = handle.get_last_eval_time()
             lastc = handle.get_last_token_count()
             stopreason = handle.get_last_stop_reason()
-            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "stop_reason":stopreason, "idle":(0 if modelbusy.locked() else 1)}).encode())
+            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "stop_reason":stopreason, "queue":requestsinqueue, "idle":(0 if modelbusy.locked() else 1)}).encode())
 
         if response_body is None:
             self.send_response(404)
@@ -550,7 +571,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         return
 
     def do_POST(self):
-        global modelbusy
+        global modelbusy, requestsinqueue
         content_length = int(self.headers['Content-Length'])
         body = self.rfile.read(content_length)
         basic_api_flag = False
@@ -575,22 +596,31 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if self.path.endswith('/api/extra/abort'):
-            ag = handle.abort_generate()
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(json.dumps({"success": ("true" if ag else "false")}).encode())
-            print("\nGeneration Aborted")
+            if requestsinqueue==0:
+                ag = handle.abort_generate()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": ("true" if ag else "false")}).encode())
+                print("\nGeneration Aborted")
+            else:
+                 self.wfile.write(json.dumps({"success": "false"}).encode())
             return
 
         if self.path.endswith('/api/extra/generate/check'):
-            pendtxt = handle.get_pending_output()
-            pendtxtStr = ctypes.string_at(pendtxt).decode("UTF-8","ignore")
+            pendtxtStr = ""
+            if requestsinqueue==0:
+                pendtxt = handle.get_pending_output()
+                pendtxtStr = ctypes.string_at(pendtxt).decode("UTF-8","ignore")
             self.send_response(200)
             self.end_headers()
             self.wfile.write(json.dumps({"results": [{"text": pendtxtStr}]}).encode())
             return
 
-        if not modelbusy.acquire(blocking=False):
+        reqblocking = False
+        if args.multiuser and requestsinqueue < 4: #up to 5 concurrent requests
+            reqblocking = True
+            requestsinqueue += 1
+        if not modelbusy.acquire(blocking=reqblocking):
             self.send_response(503)
             self.end_headers()
             self.wfile.write(json.dumps({"detail": {
@@ -598,6 +628,8 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                     "type": "service_unavailable",
                 }}).encode())
             return
+        if reqblocking:
+            requestsinqueue = (requestsinqueue - 1) if requestsinqueue>0 else 0
 
         try:
             if self.path.endswith('/request'):
@@ -702,7 +734,7 @@ def RunServerMultiThreaded(addr, port, embedded_kailite = None):
             exitcounter = 999
             self.httpd.server_close()
 
-    numThreads = 8
+    numThreads = 10
     threadArr = []
     for i in range(numThreads):
         threadArr.append(Thread(i))
@@ -952,6 +984,7 @@ def show_new_gui():
 
     port_var = ctk.StringVar(value=defaultport)
     host_var = ctk.StringVar(value="")
+    multiuser_var = ctk.IntVar()
     horde_name_var = ctk.StringVar(value="koboldcpp")
     horde_gen_var = ctk.StringVar(value=maxhordelen)
     horde_context_var = ctk.StringVar(value=maxhordectx)
@@ -1132,14 +1165,16 @@ def show_new_gui():
     makelabelentry(network_tab, "Port: ", port_var, 1, 150)
     makelabelentry(network_tab, "Host: ", host_var, 2, 150)
 
-    # horde
-    makelabel(network_tab, "Horde:", 3).grid(pady=10)
+    makecheckbox(network_tab, "Multiuser Mode", multiuser_var, 3)
 
-    horde_name_entry,  horde_name_label = makelabelentry(network_tab, "Horde Model Name:", horde_name_var, 5, 180)
-    horde_gen_entry,  horde_gen_label = makelabelentry(network_tab, "Gen. Length:", horde_gen_var, 6, 50)
-    horde_context_entry,  horde_context_label = makelabelentry(network_tab, "Max Context:",horde_context_var, 7, 50)
-    horde_apikey_entry,  horde_apikey_label = makelabelentry(network_tab, "API Key (If Embedded Worker):",horde_apikey_var, 8, 180)
-    horde_workername_entry,  horde_workername_label = makelabelentry(network_tab, "Horde Worker Name:",horde_workername_var, 9, 180)
+    # horde
+    makelabel(network_tab, "Horde:", 5).grid(pady=10)
+
+    horde_name_entry,  horde_name_label = makelabelentry(network_tab, "Horde Model Name:", horde_name_var, 7, 180)
+    horde_gen_entry,  horde_gen_label = makelabelentry(network_tab, "Gen. Length:", horde_gen_var, 8, 50)
+    horde_context_entry,  horde_context_label = makelabelentry(network_tab, "Max Context:",horde_context_var, 9, 50)
+    horde_apikey_entry,  horde_apikey_label = makelabelentry(network_tab, "API Key (If Embedded Worker):",horde_apikey_var, 10, 180)
+    horde_workername_entry,  horde_workername_label = makelabelentry(network_tab, "Horde Worker Name:",horde_workername_var, 11, 180)
 
     def togglehorde(a,b,c):
         labels = [horde_name_label, horde_gen_label, horde_context_label, horde_apikey_label, horde_workername_label]
@@ -1154,7 +1189,7 @@ def show_new_gui():
             basefile = os.path.basename(model_var.get())
             horde_name_var.set(os.path.splitext(basefile)[0])
 
-    makecheckbox(network_tab, "Configure for Horde", usehorde_var, 4, command=togglehorde)
+    makecheckbox(network_tab, "Configure for Horde", usehorde_var, 6, command=togglehorde)
     togglehorde(1,1,1)
 
     # launch
@@ -1194,7 +1229,7 @@ def show_new_gui():
                 if (gpu_choice_var.get()) in CUdevices:
                     gpuchoiceidx = CUdevices.index((gpu_choice_var.get()))
         if runopts_var.get() == "Use CLBlast":
-            args.useclblast = [[0,0], [1,0], [0,1]][gpuchoiceidx]
+            args.useclblast = [[0,0], [1,0], [0,1], [1,1]][gpuchoiceidx]
         if runopts_var.get() == "Use CuBLAS" or runopts_var.get() == "Use hipBLAS (ROCm)":
             if gpu_choice_var.get()=="All":
                 args.usecublas = ["lowvram"] if lowvram_var.get() == 1 else ["normal"]
@@ -1229,6 +1264,7 @@ def show_new_gui():
 
         args.port_param = defaultport if port_var.get()=="" else int(port_var.get())
         args.host = host_var.get()
+        args.multiuser = multiuser_var.get() == 1
 
         if horde_apikey_var.get()=="" or horde_workername_var.get()=="":
             args.hordeconfig = None if usehorde_var.get() == 0 else [horde_name_var.get(), horde_gen_var.get(), horde_context_var.get()]
@@ -1250,22 +1286,20 @@ def show_new_gui():
         if "useclblast" in dict and dict["useclblast"]:
             if clblast_option is not None:
                 runopts_var.set(clblast_option)
-                gpu_choice_var.set(str(["0 0", "1 0", "0 1"].index(str(dict["useclblast"][0]) + " " + str(dict["useclblast"][1])) + 1))
+                gpu_choice_var.set(str(["0 0", "1 0", "0 1", "1 1"].index(str(dict["useclblast"][0]) + " " + str(dict["useclblast"][1])) + 1))
         elif "usecublas" in dict and dict["usecublas"]:
             if cublas_option is not None or hipblas_option is not None:
                 if cublas_option:
                     runopts_var.set(cublas_option)
                 elif hipblas_option:
                     runopts_var.set(cublas_option)
-                if len(dict["usecublas"])==1:
-                    lowvram_var.set(1 if dict["usecublas"][0]=="lowvram" else 0)
-                else:
-                    lowvram_var.set(1 if "lowvram" in dict["usecublas"] else 0)
-                    gpu_choice_var.set("1")
-                    for g in range(3):
-                        if str(g) in dict["usecublas"]:
-                            gpu_choice_var.set(str(g+1))
-                            break
+                lowvram_var.set(1 if "lowvram" in dict["usecublas"] else 0)
+                mmq_var.set(1 if "mmq" in dict["usecublas"] else 0)
+                gpu_choice_var.set("All")
+                for g in range(4):
+                    if str(g) in dict["usecublas"]:
+                        gpu_choice_var.set(str(g+1))
+                        break
         elif  "noavx2" in dict and "noblas" in dict and dict["noblas"] and dict["noavx2"]:
             if failsafe_option is not None:
                 runopts_var.set(failsafe_option)
@@ -1319,6 +1353,8 @@ def show_new_gui():
 
         if "host" in dict and dict["host"]:
             host_var.set(dict["host"])
+
+        multiuser_var.set(1 if "multiuser" in dict and dict["multiuser"] else 0)
 
         if "hordeconfig" in dict and dict["hordeconfig"] and len(dict["hordeconfig"]) > 1:
             horde_name_var.set(dict["hordeconfig"][0])
@@ -1427,7 +1463,7 @@ def show_old_gui():
         blaschoice = tk.StringVar()
         blaschoice.set("BLAS = 512")
 
-        runopts = ["Use OpenBLAS","Use CLBLast GPU #1","Use CLBLast GPU #2","Use CLBLast GPU #3","Use CuBLAS/hipBLAS GPU","Use No BLAS","NoAVX2 Mode (Old CPU)","Failsafe Mode (Old CPU)"]
+        runopts = ["Use OpenBLAS","Use CLBLast GPU #1","Use CLBLast GPU #2","Use CLBLast GPU #3","Use CuBLAS GPU","Use No BLAS","NoAVX2 Mode (Old CPU)","Failsafe Mode (Old CPU)"]
         runchoice = tk.StringVar()
         runchoice.set("Use OpenBLAS")
 
@@ -1679,6 +1715,52 @@ def run_horde_worker(args, api_key, worker_name):
         time.sleep(2)
     sys.exit(2)
 
+def unload_libs():
+    global handle
+    import platform
+    OS = platform.system()
+    dll_close = None
+    if OS == "Windows":  # pragma: Windows
+        from ctypes import wintypes
+        ctypes.windll.kernel32.FreeLibrary.argtypes = [wintypes.HMODULE]
+        dll_close = ctypes.windll.kernel32.FreeLibrary
+    elif OS == "Darwin":
+        try:
+            try:  # macOS 11 (Big Sur). Possibly also later macOS 10s.
+                stdlib = ctypes.CDLL("libc.dylib")
+            except OSError:
+                stdlib = ctypes.CDLL("libSystem")
+        except OSError:
+            # Older macOSs. Not only is the name inconsistent but it's
+            # not even in PATH.
+            stdlib = ctypes.CDLL("/usr/lib/system/libsystem_c.dylib")
+        dll_close = stdlib.dlclose
+    elif OS == "Linux":
+        try:
+            stdlib = ctypes.CDLL("")
+        except OSError:
+            stdlib = ctypes.CDLL("libc.so") # Alpine Linux.
+        dll_close = stdlib.dlclose
+    elif sys.platform == "msys":
+        # msys can also use `ctypes.CDLL("kernel32.dll").FreeLibrary()`.
+        stdlib = ctypes.CDLL("msys-2.0.dll")
+        dll_close = stdlib.dlclose
+    elif sys.platform == "cygwin":
+        stdlib = ctypes.CDLL("cygwin1.dll")
+        dll_close = stdlib.dlclose
+    elif OS == "FreeBSD":
+        # FreeBSD uses `/usr/lib/libc.so.7` where `7` is another version number.
+        # It is not in PATH but using its name instead of its path is somehow the
+        # only way to open it. The name must include the .so.7 suffix.
+        stdlib = ctypes.CDLL("libc.so.7")
+        dll_close = stdlib.close
+
+    if handle and dll_close:
+        print("Unloading Libraries...")
+        dll_close(handle._handle)
+        del handle
+        handle = None
+
 def main(launch_args,start_server=True):
     global args
     args = launch_args
@@ -1821,6 +1903,15 @@ def main(launch_args,start_server=True):
         horde_thread.daemon = True
         horde_thread.start()
 
+    #if post-ready script specified, execute it
+    if args.onready:
+        def onready_subprocess():
+            import subprocess
+            print("Starting Post-Load subprocess...")
+            subprocess.Popen(args.onready[0], shell=True)
+        timer_thread = threading.Timer(1, onready_subprocess) #1 second delay
+        timer_thread.start()
+
     if start_server:
         print(f"Please connect to custom endpoint at {epurl}")
         asyncio.run(RunServerMultiThreaded(args.host, args.port, embedded_kailite))
@@ -1869,8 +1960,10 @@ if __name__ == '__main__':
     compatgroup = parser.add_mutually_exclusive_group()
     compatgroup.add_argument("--noblas", help="Do not use OpenBLAS for accelerated prompt ingestion", action='store_true')
     compatgroup.add_argument("--useclblast", help="Use CLBlast for GPU Acceleration. Must specify exactly 2 arguments, platform ID and device ID (e.g. --useclblast 1 0).", type=int, choices=range(0,9), nargs=2)
-    compatgroup.add_argument("--usecublas", help="Use CuBLAS/hipBLAS for GPU Acceleration. Requires CUDA. Select lowvram to not allocate VRAM scratch buffer. Enter a number afterwards to select and use 1 GPU. Leaving no number will use all GPUs.", nargs='*',metavar=('[lowvram|normal] [main GPU ID] [mmq]'), choices=['normal', 'lowvram', '0', '1', '2', 'mmq'])
+    compatgroup.add_argument("--usecublas", help="Use CuBLAS for GPU Acceleration. Requires CUDA. Select lowvram to not allocate VRAM scratch buffer. Enter a number afterwards to select and use 1 GPU. Leaving no number will use all GPUs. For hipBLAS binaries, please check YellowRoseCx rocm fork.", nargs='*',metavar=('[lowvram|normal] [main GPU ID] [mmq]'), choices=['normal', 'lowvram', '0', '1', '2', '3', 'mmq'])
     parser.add_argument("--gpulayers", help="Set number of layers to offload to GPU when using GPU. Requires GPU.",metavar=('[GPU layers]'), type=int, default=0)
     parser.add_argument("--tensor_split", help="For CUDA with ALL GPU set only, ratio to split tensors across multiple GPUs, space-separated list of proportions, e.g. 7 3", metavar=('[Ratios]'), type=float, nargs='+')
+    parser.add_argument("--onready", help="An optional shell command to execute after the model has been loaded.", type=str, default="",nargs=1)
+    parser.add_argument("--multiuser", help="Runs in multiuser mode, which queues incoming requests instead of blocking them. Polled-streaming is disabled while multiple requests are in queue.", action='store_true')
 
     main(parser.parse_args(),start_server=True)
