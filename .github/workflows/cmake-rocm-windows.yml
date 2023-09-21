@@ -58,14 +58,15 @@ jobs:
           $env:CMAKE_PREFIX_PATH = 'C:\Program Files\AMD\ROCm\5.5'
           $env:VERBOSE = '1'
           mkdir 'build'
-          cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DLLAMA_HIPBLAS=ON -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
-          cmake --build build 
-          Copy-Item '.\build\bin\koboldcpp_hipblas.dll' '..\..\build'
+          cd 'build'
+          cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DCMAKE_C_COMPILER="C:/Program Files/AMD/ROCm/5.5/bin/clang.exe" -DCMAKE_CXX_COMPILER="C:/Program Files/AMD/ROCm/5.5/bin/clang++.exe" -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
+          cmake --build . 
+#          Copy-Item '.\bin\koboldcpp_hipblas.dll' '..\..\build'
         
-#      - uses: actions/upload-artifact@v3
-#        with:
-#          name: 'win-rocm-lib'
-#          path: ./build/koboldcpp_hipblas.dll
+      - uses: actions/upload-artifact@v3
+        with:
+          name: 'win-rocm-lib'
+          path: ./bin/koboldcpp_hipblas.dll
           
 #  build_wheel:
 #    name: Build ROCm 
