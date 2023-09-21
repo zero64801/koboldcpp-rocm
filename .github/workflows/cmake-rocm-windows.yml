@@ -1,18 +1,18 @@
-name: Build ROCm Windows
+name: Build Koboldcpp-ROCm Windows
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag of llama-cpp-python to build: v0.1.79'
-        default: 'v0.1.79'
+        description: 'Version tag of koboldcpp-rocm to build: v1.43.2-ROCm'
+        default: 'v1.43.2-ROCm'
         required: false
         type: string
   workflow_call:
     inputs:
       version:
-        description: 'Version tag of llama-cpp-python to build: v0.1.79'
-        default: 'v0.1.79'
+        description: 'Version tag of koboldcpp-rocm to build: v1.43.2-ROCm'
+        default: 'v1.43.2-ROCm'
         required: false
         type: string
 
@@ -58,7 +58,6 @@ jobs:
           $env:CMAKE_PREFIX_PATH = 'C:\Program Files\AMD\ROCm\5.5'
           $env:VERBOSE = '1'
           mkdir 'build'
-          Set-Location '.\vendor\koboldcpp-rocm'
           cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DLLAMA_HIPBLAS=ON -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
           cmake --build build 
           Copy-Item '.\build\bin\koboldcpp_hipblas.dll' '..\..\build'
