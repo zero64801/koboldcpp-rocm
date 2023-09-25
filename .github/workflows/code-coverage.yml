@@ -1,5 +1,9 @@
 name: Code Coverage
-on: [push, pull_request]
+#on: [push, pull_request]
+on:
+  pull_request:
+    branches:
+      - master
 
 env:
   GGML_NLOOP: 3
