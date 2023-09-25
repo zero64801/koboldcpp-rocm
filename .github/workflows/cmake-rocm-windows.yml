@@ -5,14 +5,14 @@ on:
     inputs:
       version:
         description: 'Version tag of koboldcpp-rocm to build: v1.43.2-ROCm'
-        default: v${{ inputs.tags }}
+        default: latest
         required: false
         type: string
   workflow_call:
     inputs:
       version:
         description: 'Version tag of koboldcpp-rocm to build: v1.43.2-ROCm'
-        default: v${{ inputs.tags }}
+        default: latest
         required: false
         type: string
 
@@ -82,12 +82,12 @@ jobs:
         
       - uses: actions/upload-artifact@v3
         with:
-          name: koboldcpp_hipblas-v${{ inputs.tags }}
+          name: koboldcpp_hipblas-${{ inputs.version }}
           path: D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll
           
       - uses: actions/upload-artifact@v3
         with:
-          name: koboldcpp_rocm_only-v${{ inputs.tags }}
+          name: koboldcpp_rocm_only-${{ inputs.version }}
           path: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_only.exe
 
       - name: Upload files to a GitHub release
@@ -96,8 +96,8 @@ jobs:
         continue-on-error: true
         with:
           file: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_only.exe
-          release_name: KoboldCPP-v${{ inputs.tags }}
-          tag: v${{ inputs.tags }}
+          release_name: KoboldCPP-${{ inputs.version }}
+          tag: ${{ inputs.version }}
           file_glob: false
           make_latest: true
           overwrite: false
