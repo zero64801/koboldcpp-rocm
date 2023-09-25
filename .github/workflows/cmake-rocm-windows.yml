@@ -85,14 +85,14 @@ jobs:
       - uses: actions/upload-artifact@v3
         with:
           name: 'win-kcpp-rocm-exe'
-          path: D:\a\koboldcpp-rocm\koboldcpp-rocm\dists\koboldcpp_rocm_only.exe
+          path: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_only.exe
 
       - name: Upload files to a GitHub release
         id: upload-release
         uses: svenstaro/upload-release-action@2.6.1
         continue-on-error: true
         with:
-          file: D:\a\koboldcpp-rocm\koboldcpp-rocm\dists\*.exe
+          file: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\*.exe
           tag: ${{ github.ref }}
           file_glob: false
           make_latest: true
