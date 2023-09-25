@@ -12,7 +12,7 @@ on:
     inputs:
       version:
         description: 'Version tag of koboldcpp-rocm to build: v1.43.2-ROCm'
-        default: 'latest-win-ROCm'
+        default: v${{ github.event.release.tag_name }}-ROCm
         required: false
         type: string
 
@@ -95,8 +95,9 @@ jobs:
         uses: svenstaro/upload-release-action@2.6.1
         continue-on-error: true
         with:
-          file: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\*.exe
-          tag: ${{ github.ref }}
+          file: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_only.exe
+          release_name: KoboldCPP-${{ github.event.release.tag_name }}
+          tag: ${{ github.event.release.tag_name }}
           file_glob: false
           make_latest: true
           overwrite: false
