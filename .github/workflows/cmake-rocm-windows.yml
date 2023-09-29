@@ -52,7 +52,7 @@ jobs:
           python -m pip install cmake ninja
           
       - name: Install PyInstaller
-        run: pip install pyinstaller
+        run: pip install pyinstaller psutil
         
       - name: Build Lib
         run: |
