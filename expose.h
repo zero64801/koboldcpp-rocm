@@ -1,7 +1,7 @@
 #pragma once
 
-const int stop_token_max = 10;
-const int ban_token_max = 10;
+const int stop_token_max = 16;
+const int ban_token_max = 16;
 const int tensor_split_max = 16;
 // match kobold's sampler list and order
 enum samplers
@@ -73,6 +73,7 @@ struct generation_inputs
     const char * stop_sequence[stop_token_max];
     const bool stream_sse;
     const char * grammar;
+    const bool grammar_retain_state;
 };
 struct generation_outputs
 {
