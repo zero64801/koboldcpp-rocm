@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 #-*- coding: utf-8 -*-
 
-# A hacky little script from Concedo that exposes llama.cpp function bindings
-# allowing it to be used via a simulated kobold api endpoint
-# generation delay scales linearly with original prompt length.
+# KoboldCpp is an easy-to-use AI text-generation software for GGML models.
+# It's a single self contained distributable from Concedo, that builds off llama.cpp,
+# and adds a versatile Kobold API endpoint, additional format support,
+# backward compatibility, as well as a fancy UI with persistent stories,
+# editing tools, save formats, memory, world info, author's note, characters,
+# scenarios and everything Kobold and Kobold Lite have to offer.
 
 import ctypes
 import os
@@ -365,7 +368,7 @@ maxhordelen = 256
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.45.yr0-ROCm"
+KcppVersion = "1.45.2.yr0-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -524,6 +527,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         global maxctx, maxhordelen, friendlymodelname, KcppVersion, totalgens
         self.path = self.path.rstrip('/')
         response_body = None
+        force_json = False
 
         if self.path in ["", "/?"] or self.path.startswith(('/?','?')): #it's possible for the root url to have ?params without /
             if args.stream and not "streaming=1" in self.path:
@@ -581,8 +585,9 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 pendtxtStr = ctypes.string_at(pendtxt).decode("UTF-8","ignore")
             response_body = (json.dumps({"results": [{"text": pendtxtStr}]}).encode())
 
-        elif self.path.endswith('/api/extra/oai/v1/models'):
+        elif self.path.endswith('/v1/models') or self.path.endswith('/models'):
             response_body = (json.dumps({"object":"list","data":[{"id":"koboldcpp","object":"model","created":1,"owned_by":"koboldcpp","permission":[],"root":"koboldcpp"}]}).encode())
+            force_json = True
 
         elif self.path.endswith(('/api')) or self.path.endswith(('/api/v1')):
             response_body = (json.dumps({"result":"KoboldCpp partial API reference can be found at https://link.concedo.workers.dev/koboldapi"}).encode())
@@ -596,7 +601,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         else:
             self.send_response(200)
             self.send_header('Content-Length', str(len(response_body)))
-            self.end_headers()
+            self.end_headers(force_json=force_json)
             self.wfile.write(response_body)
         return
 
@@ -605,6 +610,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         content_length = int(self.headers['Content-Length'])
         body = self.rfile.read(content_length)
         self.path = self.path.rstrip('/')
+        force_json = False
 
         if self.path.endswith(('/api/extra/tokencount')):
             try:
@@ -682,8 +688,9 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 api_format = 2
                 kai_sse_stream_flag = True
 
-            if self.path.endswith('/api/extra/oai/v1/completions'):
+            if self.path.endswith('/v1/completions') or self.path.endswith('/completions'):
                 api_format = 3
+                force_json = True
 
             if api_format>0:
                 genparams = None
@@ -705,7 +712,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                     # Headers are already sent when streaming
                     if not kai_sse_stream_flag:
                         self.send_response(200)
-                        self.end_headers()
+                        self.end_headers(force_json=force_json)
                     self.wfile.write(json.dumps(gen).encode())
                 except:
                     print("Generate: The response could not be sent, maybe connection was terminated?")
@@ -726,11 +733,11 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
-    def end_headers(self):
+    def end_headers(self, force_json=False):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', '*')
         self.send_header('Access-Control-Allow-Headers', '*')
-        if "/api" in self.path:
+        if "/api" in self.path or force_json:
             if self.path.endswith("/stream"):
                 self.send_header('Content-type', 'text/event-stream')
             self.send_header('Content-type', 'application/json')
@@ -1766,7 +1773,7 @@ def run_horde_worker(args, api_key, worker_name):
                 secs = elapsedtime.seconds % 60
                 elapsedtimestr = f"{hrs:03d}h:{mins:02d}m:{secs:02d}s"
                 earnrate = session_kudos_earned/(elapsedtime.seconds/3600)
-                print_with_time(f'Submitted {current_id} and earned {reward:.0f} kd - [Total:{session_kudos_earned:.0f}kd, Time:{elapsedtimestr}, EarnRate:{earnrate:.0f}kd/hr]')
+                print_with_time(f'Submitted {current_id} and earned {reward:.0f} kudos\n[Total:{session_kudos_earned:.0f} kudos, Time:{elapsedtimestr}, EarnRate:{earnrate:.0f} kudos/hr]')
         else:
             print_with_time("Error: Abandoned current job due to errors. Getting new job.")
         current_id = None
@@ -2002,6 +2009,17 @@ def main(launch_args,start_server=True):
         timer_thread = threading.Timer(1, onready_subprocess) #1 second delay
         timer_thread.start()
 
+    # show deprecation warnings
+    if args.unbantokens:
+        print("WARNING: --unbantokens is DEPRECATED and will be removed soon! EOS unbans should now be set via the generate API.")
+    if args.usemirostat:
+        print("WARNING: --usemirostat is DEPRECATED and will be removed soon! Mirostat values should now be set via the generate API.")
+    if args.stream:
+        print("WARNING: --stream is DEPRECATED and will be removed soon! This was a Kobold Lite only parameter, which is now a proper setting toggle inside Lite.")
+    if args.psutil_set_threads:
+        print("WARNING: --psutil_set_threads is DEPRECATED and will be removed soon! This parameter was generally unhelpful and unnecessary, as the defaults were usually sufficient")
+
+
     if start_server:
         print(f"Please connect to custom endpoint at {epurl}")
         asyncio.run(RunServerMultiThreaded(args.host, args.port, embedded_kailite))
@@ -2028,22 +2046,18 @@ if __name__ == '__main__':
     default_threads = (physical_core_limit if physical_core_limit<=3 else max(3,physical_core_limit-1))
     parser.add_argument("--threads", help="Use a custom number of threads if specified. Otherwise, uses an amount based on CPU cores", type=int, default=default_threads)
     parser.add_argument("--blasthreads", help="Use a different number of threads during BLAS if specified. Otherwise, has the same value as --threads",metavar=('[threads]'), type=int, default=0)
-    parser.add_argument("--psutil_set_threads", help="Experimental flag. If set, uses psutils to determine thread count based on physical cores.", action='store_true')
     parser.add_argument("--highpriority", help="Experimental flag. If set, increases the process CPU priority, potentially speeding up generation. Use caution.", action='store_true')
     parser.add_argument("--contextsize", help="Controls the memory allocated for maximum context size, only change if you need more RAM for big contexts. (default 2048)", type=int,choices=[512,1024,2048,3072,4096,6144,8192,12288,16384,24576,32768], default=2048)
     parser.add_argument("--blasbatchsize", help="Sets the batch size used in BLAS processing (default 512). Setting it to -1 disables BLAS mode, but keeps other benefits like GPU offload.", type=int,choices=[-1,32,64,128,256,512,1024,2048], default=512)
     parser.add_argument("--ropeconfig", help="If set, uses customized RoPE scaling from configured frequency scale and frequency base (e.g. --ropeconfig 0.25 10000). Otherwise, uses NTK-Aware scaling set automatically based on context size. For linear rope, simply set the freq-scale and ignore the freq-base",metavar=('[rope-freq-scale]', '[rope-freq-base]'), default=[0.0, 10000.0], type=float, nargs='+')
-    parser.add_argument("--stream", help="Uses streaming when generating tokens. Only for the Kobold Lite UI.", action='store_true')
     parser.add_argument("--smartcontext", help="Reserving a portion of context to try processing less frequently.", action='store_true')
-    parser.add_argument("--unbantokens", help="Normally, KoboldAI prevents the EOS token from being generated. This flag unbans it.", action='store_true')
     parser.add_argument("--bantokens", help="You can manually specify a list of token SUBSTRINGS that the AI cannot use. This bans ALL instances of that substring.", metavar=('[token_substrings]'), nargs='+')
-    parser.add_argument("--usemirostat", help="Experimental! Replaces your samplers with mirostat. Takes 3 params = [type(0/1/2), tau(5.0), eta(0.1)].",metavar=('[type]', '[tau]', '[eta]'), type=float, nargs=3)
     parser.add_argument("--forceversion", help="If the model file format detection fails (e.g. rogue modified model) you can set this to override the detected format (enter desired version, e.g. 401 for GPTNeoX-Type2).",metavar=('[version]'), type=int, default=0)
     parser.add_argument("--nommap", help="If set, do not use mmap to load newer models", action='store_true')
     parser.add_argument("--usemlock", help="For Apple Systems. Force system to keep model in RAM rather than swapping or compressing", action='store_true')
     parser.add_argument("--noavx2", help="Do not use AVX2 instructions, a slower compatibility mode for older devices. Does not work with --clblast.", action='store_true')
     parser.add_argument("--debugmode", help="Shows additional debug info in the terminal.", action='store_const', const=1, default=0)
-    parser.add_argument("--skiplauncher", help="Doesn't display or use the new GUI launcher.", action='store_true')
+    parser.add_argument("--skiplauncher", help="Doesn't display or use the GUI launcher.", action='store_true')
     parser.add_argument("--hordeconfig", help="Sets the display model name to something else, for easy use on AI Horde. Optional additional parameters set the horde max genlength, max ctxlen, API key and worker name.",metavar=('[hordemodelname]', '[hordegenlength] [hordemaxctx] [hordeapikey] [hordeworkername]'), nargs='+')
     compatgroup = parser.add_mutually_exclusive_group()
     compatgroup.add_argument("--noblas", help="Do not use OpenBLAS for accelerated prompt ingestion", action='store_true')
@@ -2055,5 +2069,10 @@ if __name__ == '__main__':
     parser.add_argument("--multiuser", help="Runs in multiuser mode, which queues incoming requests instead of blocking them. Polled-streaming is disabled while multiple requests are in queue.", action='store_true')
     parser.add_argument("--foreground", help="Windows only. Sends the terminal to the foreground every time a new prompt is generated. This helps avoid some idle slowdown issues.", action='store_true')
 
+    #deprecated
+    parser.add_argument("--psutil_set_threads", help="--psutil_set_threads is DEPRECATED and will be removed soon! This parameter was generally unhelpful and unnecessary,  as the defaults were usually sufficient.", action='store_true')
+    parser.add_argument("--stream", help="--stream is DEPRECATED and will be removed soon! This was a Kobold Lite only parameter, which is now a proper setting toggle inside Lite.", action='store_true')
+    parser.add_argument("--unbantokens", help="--unbantokens is DEPRECATED and will be removed soon! EOS unbans should now be set via the generate API", action='store_true')
+    parser.add_argument("--usemirostat", help="--usemirostat is DEPRECATED and will be removed soon! Mirostat values should now be set via the generate API",metavar=('[type]', '[tau]', '[eta]'), type=float, nargs=3)
 
     main(parser.parse_args(),start_server=True)
