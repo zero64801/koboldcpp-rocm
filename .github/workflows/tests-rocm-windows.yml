@@ -61,8 +61,7 @@ jobs:
           copy "C:\Program Files\AMD\ROCm\5.5\bin\hipblas.dll" .\
           copy "C:\Program Files\AMD\ROCm\5.5\bin\rocblas.dll" .\
           robocopy "C:\Program Files\AMD\ROCm\5.5\bin\rocblas" .\rocblas /MIR
-          ls
           curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.7z
           7z x gfx103132rocblasfiles.7z 
-          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas\libary'
+          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas\library'
           ls
