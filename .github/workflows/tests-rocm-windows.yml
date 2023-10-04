@@ -64,4 +64,5 @@ jobs:
           ls
           curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.7z
           7z x gfx103132rocblasfiles.7z 
+          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas\libary'
           ls
