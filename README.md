@@ -1,18 +1,17 @@
-# koboldcpp-ROCM
-This is mostly for Linux, but with the release of ROCm frameworks on Windows, it might eventually be possible to run this on Windows.
-
+# koboldcpp-ROCM for AMD
+Quick Linux install:              
 To install, either use the file "[easy_KCPP-ROCm_install.sh](https://github.com/YellowRoseCx/koboldcpp-rocm/blob/main/easy_KCPP-ROCm_install.sh)" or navigate to the folder you want to download to in Terminal then run
-```
+```        
 git clone https://github.com/YellowRoseCx/koboldcpp-rocm.git -b main --depth 1 && \
 cd koboldcpp-rocm && \
 make LLAMA_HIPBLAS=1 -j4 && \
 ./koboldcpp.py
 ```
-When the KoboldCPP GUI appears, make sure to select "Use CuBLAS/hipBLAS" and set GPU layers 
+When the KoboldCPP GUI appears, make sure to select "Use hipBLAS (ROCm)" and set GPU layers 
 
-Original [llama.cpp rocm port](https://github.com/ggerganov/llama.cpp/pull/1087) by SlyEcho, modified and ported to koboldcpp by YellowRoseCx
+Original [llama.cpp rocm port](https://github.com/ggerganov/llama.cpp/pull/1087) by SlyEcho et al., modified and ported to koboldcpp by YellowRoseCx
 
-Comparison with OpenCL using 6800xt
+Comparison with OpenCL using 6800xt (old measurement)
 | Model | Offloading Method | Time Taken - Processing 593 tokens| Time Taken - Generating 200 tokens| Total Time | Perf. Diff.
 |-----------------|----------------------------|--------------------|--------------------|------------|---|
 | Robin 7b q6_K |CLBLAST 6-t, All Layers on GPU | 6.8s (11ms/T) | 12.0s (60ms/T)  | 18.7s (10.7T/s) | 1x
@@ -31,7 +30,7 @@ What does it mean? You get llama.cpp with a fancy UI, persistent stories, editin
 ![Preview](media/preview.png)
 
 ## Usage
-- **[Download the latest .exe release here](https://github.com/LostRuins/koboldcpp/releases/latest)** or clone the git repo.
+- **[Download the latest .exe release here]([https://github.com/LostRuins/koboldcpp/releases/latest](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/tag/v1.45.2.yr0-ROCm))** or clone the git repo.
 - Windows binaries are provided in the form of **koboldcpp.exe**, which is a pyinstaller wrapper for a few **.dll** files and **koboldcpp.py**. If you feel concerned, you may prefer to rebuild it yourself with the provided makefiles and scripts.
 - Weights are not included, you can use the official llama.cpp `quantize.exe` to generate them from your official weight files (or download them from other places such as [TheBloke's Huggingface](https://huggingface.co/TheBloke).
 - To run, execute **koboldcpp.exe** or drag and drop your quantized `ggml_model.bin` file onto the .exe, and then connect with Kobold or Kobold Lite. If you're not on windows, then run the script **KoboldCpp.py** after compiling the libraries.
@@ -51,17 +50,40 @@ For more information, be sure to run the program with the `--help` flag.
 - Alternatively, if you want you can also link your own install of CLBlast manually with `make LLAMA_CLBLAST=1`, for this you will need to obtain and link OpenCL and CLBlast libraries.
   - For Arch Linux: Install `cblas` `openblas` and `clblast`.
   - For Debian: Install `libclblast-dev` and `libopenblas-dev`.
-- For a full featured build, do `make LLAMA_OPENBLAS=1 LLAMA_CLBLAST=1 LLAMA_CUBLAS=1`
+- For an ROCm only build, do ``make LLAMA_HIPBLAS=1 -j4`` (-j4 means it will use 4 cores of your CPU; you can adjust accordingly or leave it off altogether)
+- For a full featured build, do `make LLAMA_OPENBLAS=1 LLAMA_CLBLAST=1 LLAMA_HIPBLAS=1 -j4`
 - After all binaries are built, you can run the python script with the command `koboldcpp.py [ggml_model.bin] [port]`
 - Note: Many OSX users have found that the using Accelerate is actually faster than OpenBLAS. To try, you may wish to run with `--noblas` and compare speeds.
 
-## Compiling on Windows
+## Compiling for AMD on Windows
 - You're encouraged to use the .exe released, but if you want to compile your binaries from source at Windows, the easiest way is:
   - Use the latest release of w64devkit (https://github.com/skeeto/w64devkit). Be sure to use the "vanilla one", not i686 or other different stuff. If you try they will conflit with the precompiled libs!
-  - Make sure you are using the w64devkit integrated terminal, then run 'make' at the KoboldCpp source folder. This will create the .dll files.
-  - If you want to generate the .exe file, make sure you have the python module PyInstaller installed with pip ('pip install PyInstaller').
-  - Run the script make_pyinstaller.bat at a regular terminal (or Windows Explorer).
-  - The koboldcpp.exe file will be at your dist folder.
+  - Make sure you are using the w64devkit integrated terminal, (powershell should work for the cmake hipblas part)
+  - *This site may be useful, it has some patches for Windows ROCm to help it with compilation that I used, but I'm not sure if it's necessary.* https://streamhpc.com/blog/2023-08-01/how-to-get-full-cmake-support-for-amd-hip-sdk-on-windows-including-patches/ 
+  - (ROCm Required): https://rocm.docs.amd.com/en/latest/deploy/windows/quick_start.html
+    
+   Build command used:         
+  ``cd koboldcpp-rocm``        
+  ``mkdir build && cd build``
+
+  ```cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DCMAKE_C_COMPILER="C:/Program Files/AMD/ROCm/5.5/bin/clang.exe" -DCMAKE_CXX_COMPILER="C:/Program Files/AMD/ROCm/5.5/bin/clang++.exe" -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"```
+
+  ``cmake --build . -j 6`` (-j 6 means use 6 CPU cores, if you have more or less, feel free to change it to speed things up)
+
+  That puts koboldcpp_hipblas.dll inside of .\koboldcpp-rocm\build\bin           
+  copy koboldcpp_hipblas.dll to the main koboldcpp-rocm folder               
+  (You can run koboldcpp.py like this right away) like this:             
+  
+  ``python koboldcpp.py --usecublas mmq --threads 1 --contextsize 4096 --gpulayers 45 C:\Users\YellowRose\llama-2-7b-chat.Q8_0.gguf``
+
+  To make it into an exe, we use ``make_pyinstaller_exe_rocm_only.bat``          
+  which will attempt to build the exe for you and place it in /koboldcpp-rocm/dists/        
+  **kobold_rocm_only.exe is built!**
+  
+  -----
+  If you'd like to do a full feature build with OPENBLAS and CLBLAST backends, you'll need [w64devkit](https://github.com/skeeto/w64devkit). Once downloaded, open w64devkit.exe and ``cd`` into the folder then run
+  ``make LLAMA_OPENBLAS=1 LLAMA_CLBLAST=1 -j4`` then it will build the rest of the backend files.
+  Once they're all built, you should be able to just run ``make_pyinst_rocm_hybrid_henk_yellow.bat`` and it'll bundle the files together into koboldcpp_rocm.exe in the \koboldcpp-rocm\dists folder
 - If you wish to use your own version of the additional Windows libraries (OpenCL, CLBlast and OpenBLAS), you can do it with:
   - OpenCL - tested with https://github.com/KhronosGroup/OpenCL-SDK . If you wish to compile it, follow the repository instructions. You will need vcpkg.
   - CLBlast - tested with https://github.com/CNugteren/CLBlast . If you wish to compile it you will need to reference the OpenCL files. It will only generate the ".lib" file if you compile using MSVC.
@@ -76,9 +98,6 @@ For more information, be sure to run the program with the `--help` flag.
 ## Using CuBLAS
 - If you're on Windows with an Nvidia GPU you can get CUDA support out of the box using the `--usecublas` flag, make sure you select the correct .exe with CUDA support.
 - You can attempt a CuBLAS build with `LLAMA_CUBLAS=1` or using the provided CMake file (best for visual studio users). If you use the CMake file to build, copy the `koboldcpp_cublas.dll` generated into the same directory as the `koboldcpp.py` file. If you are bundling executables, you may need to include CUDA dynamic libraries (such as `cublasLt64_11.dll` and `cublas64_11.dll`) in order for the executable to work correctly on a different PC.
-
-## AMD
-- Please check out https://github.com/YellowRoseCx/koboldcpp-rocm
 
 ## Questions and Help
 - **First, please check out [The KoboldCpp FAQ and Knowledgebase](https://github.com/LostRuins/koboldcpp/wiki) which may already have answers to your questions! Also please search through past issues and discussions.**
