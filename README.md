@@ -30,7 +30,7 @@ What does it mean? You get llama.cpp with a fancy UI, persistent stories, editin
 ![Preview](media/preview.png)
 
 ## Usage
-- **[Download the latest .exe release here]([https://github.com/LostRuins/koboldcpp/releases/latest](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/tag/v1.45.2.yr0-ROCm))** or clone the git repo.
+- **[Download the latest .exe release here](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/latest)** or clone the git repo.
 - Windows binaries are provided in the form of **koboldcpp.exe**, which is a pyinstaller wrapper for a few **.dll** files and **koboldcpp.py**. If you feel concerned, you may prefer to rebuild it yourself with the provided makefiles and scripts.
 - Weights are not included, you can use the official llama.cpp `quantize.exe` to generate them from your official weight files (or download them from other places such as [TheBloke's Huggingface](https://huggingface.co/TheBloke).
 - To run, execute **koboldcpp.exe** or drag and drop your quantized `ggml_model.bin` file onto the .exe, and then connect with Kobold or Kobold Lite. If you're not on windows, then run the script **KoboldCpp.py** after compiling the libraries.
