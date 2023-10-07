@@ -185,6 +185,10 @@ def init_library():
         os.add_dll_directory(dir_path)
         os.add_dll_directory(abs_path)
         os.add_dll_directory(os.getcwd())
+        if libname == lib_hipblas and "HIP_PATH" in os.environ:
+            os.add_dll_directory(os.path.join(os.environ["HIP_PATH"], "bin"))
+            if args.debugmode == 1:
+                print(f"HIP/ROCm SDK at {os.environ['HIP_PATH']} included in .DLL load path")
     handle = ctypes.CDLL(os.path.join(dir_path, libname)) #, winmode=0)
 
     handle.load_model.argtypes = [load_model_inputs]
@@ -973,7 +977,7 @@ def show_new_gui():
         button = ctk.CTkButton(parent, 50, text="Browse", command= lambda a=var,b=searchtext:getfilename(a,b))
         button.grid(row=row+1, column=1, stick="nw")
         return
-    
+
     from subprocess import run, CalledProcessError
     def get_device_names():
         CUdevices = []
@@ -1297,7 +1301,7 @@ def show_new_gui():
         if gpu_choice_var.get()!="All":
             if runopts_var.get() == "Use CLBlast": #if CLBlast selected
                 if (gpu_choice_var.get()) in CLdevices:
-                    gpuchoiceidx = CLdevices.index((gpu_choice_var.get())) 
+                    gpuchoiceidx = CLdevices.index((gpu_choice_var.get()))
             elif runopts_var.get() == "Use CuBLAS" or runopts_var.get() == "Use hipBLAS (ROCm)":
                 if (gpu_choice_var.get()) in CUdevices:
                     gpuchoiceidx = CUdevices.index((gpu_choice_var.get()))
@@ -1430,7 +1434,7 @@ def show_new_gui():
                 horde_workername_var.set(dict["hordeconfig"][4])
                 usehorde_var.set("1")
 
-        
+
     def save_config():
         file_type = [("KoboldCpp Settings", "*.kcpps")]
         filename = asksaveasfile(filetypes=file_type, defaultextension=file_type)
@@ -1581,7 +1585,7 @@ def show_old_gui():
         #load all the vars
         args.threads = int(threads_var.get())
         args.gpulayers = int(gpu_layers_var.get())
-    
+
         args.stream = (stream.get()==1)
         args.smartcontext = (smartcontext.get()==1)
         args.launch = (launchbrowser.get()==1)
