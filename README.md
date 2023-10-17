@@ -23,9 +23,7 @@ Comparison with OpenCL using 6800xt (old measurement)
 | Robin 33b q4_K_S |ROCM 6-t, 46/63 Layers on GPU   | 14.6s (25ms/T) | 44.1s (221ms/T)   | 58.7s (3.4T/s)| **1.19x**
 
 --------
-A self contained distributable from Concedo that exposes llama.cpp function bindings, allowing it to be used via a simulated Kobold API endpoint.
-
-What does it mean? You get llama.cpp with a fancy UI, persistent stories, editing tools, save formats, memory, world info, author's note, characters, scenarios and everything Kobold and Kobold Lite have to offer. In a tiny package around 20 MB in size, excluding model weights.
+KoboldCpp is an easy-to-use AI text-generation software for GGML and GGUF models. It's a single self contained distributable from Concedo, that builds off llama.cpp, and adds a versatile Kobold API endpoint, additional format support, backward compatibility, as well as a fancy UI with persistent stories, editing tools, save formats, memory, world info, author's note, characters, scenarios and everything Kobold and Kobold Lite have to offer.
 
 ![Preview](media/preview.png)
 ![Preview](media/preview2.png)
