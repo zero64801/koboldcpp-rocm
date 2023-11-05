@@ -510,6 +510,10 @@ llama-bench: examples/llama-bench/llama-bench.cpp build-info.h ggml_cublas.o ggm
 simpleclinfo: simpleclinfo.cpp
 	$(CXX) $(CXXFLAGS) $^ lib/OpenCL.lib lib/clblast.lib -o $@ $(LDFLAGS)
 
+#window simple clinfo
+simpleclinfo: simpleclinfo.cpp
+	$(CXX) $(CXXFLAGS) $^ lib/OpenCL.lib lib/clblast.lib -o $@ $(LDFLAGS)
+
 
 build-info.h:
 	$(DONOTHING)
