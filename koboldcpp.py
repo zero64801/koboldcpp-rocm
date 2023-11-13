@@ -1235,7 +1235,7 @@ def show_new_gui():
             FetchedCUdevices = [line.split(",")[0].strip() for line in output.splitlines()]
             FetchedCUdeviceMem = [line.split(",")[1].strip().split(" ")[0].strip() for line in output.splitlines()]
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+            pass
 
         if len(FetchedCUdevices)==0: # Get AMD GPU names
             FetchedCUdevices, FetchedCUdeviceMem = get_amd_gpu_info()
