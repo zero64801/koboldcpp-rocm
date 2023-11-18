@@ -389,7 +389,7 @@ maxhordelen = 256
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.49.yr1-ROCm"
+KcppVersion = "1.50.yr0-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -426,68 +426,64 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     async def generate_text(self, genparams, api_format, stream_flag):
         global friendlymodelname
-        def run_blocking():
+        def run_blocking(): #api format 1=basic,2=kai,3=oai,4=oai-chat
             if api_format==1:
                 genparams["prompt"] = genparams.get('text', "")
                 genparams["top_k"] = int(genparams.get('top_k', 120))
-                genparams["max_length"] = genparams.get('max', 80)
-            elif api_format==3:
+                genparams["max_length"] = genparams.get('max', 100)
+
+            elif api_format==3 or api_format==4:
                 frqp = genparams.get('frequency_penalty', 0.1)
                 scaled_rep_pen = genparams.get('presence_penalty', frqp) + 1
-                genparams["max_length"] = genparams.get('max_tokens', 80)
+                genparams["max_length"] = genparams.get('max_tokens', 100)
                 genparams["rep_pen"] = scaled_rep_pen
                 # openai allows either a string or a list as a stop sequence
                 if isinstance(genparams.get('stop',[]), list):
                     genparams["stop_sequence"] = genparams.get('stop', [])
                 else:
                     genparams["stop_sequence"] = [genparams.get('stop')]
-            elif api_format==4:
-                # translate openai chat completion messages format into one big string.
-                messages_array = genparams.get('messages', [])
-                adapter_obj = genparams.get('adapter', {})
-                messages_string = ""
-                system_message_start = adapter_obj.get("system_start", "\n### Instruction:\n")
-                system_message_end = adapter_obj.get("system_end", "")
-                user_message_start = adapter_obj.get("user_start", "\n### Instruction:\n")
-                user_message_end = adapter_obj.get("user_end", "")
-                assistant_message_start = adapter_obj.get("assistant_start", "\n### Response:\n")
-                assistant_message_end = adapter_obj.get("assistant_end", "")
 
-                for message in messages_array:
-                    if message['role'] == "system":
-                        messages_string += system_message_start
-                    elif message['role'] == "user":
-                        messages_string += user_message_start
-                    elif message['role'] == "assistant":
-                        messages_string += assistant_message_start
+                genparams["sampler_seed"] = genparams.get('seed', -1)
+                genparams["use_default_badwordsids"] = genparams.get('ignore_eos', False)
+                genparams["mirostat"] = genparams.get('mirostat_mode', 0)
 
-                    messages_string += message['content']
+                if api_format==4:
+                    # translate openai chat completion messages format into one big string.
+                    messages_array = genparams.get('messages', [])
+                    adapter_obj = genparams.get('adapter', {})
+                    messages_string = ""
+                    system_message_start = adapter_obj.get("system_start", "\n### Instruction:\n")
+                    system_message_end = adapter_obj.get("system_end", "")
+                    user_message_start = adapter_obj.get("user_start", "\n### Instruction:\n")
+                    user_message_end = adapter_obj.get("user_end", "")
+                    assistant_message_start = adapter_obj.get("assistant_start", "\n### Response:\n")
+                    assistant_message_end = adapter_obj.get("assistant_end", "")
 
-                    if message['role'] == "system":
-                        messages_string += system_message_end
-                    elif message['role'] == "user":
-                        messages_string += user_message_end
-                    elif message['role'] == "assistant":
-                        messages_string += assistant_message_end
+                    for message in messages_array:
+                        if message['role'] == "system":
+                            messages_string += system_message_start
+                        elif message['role'] == "user":
+                            messages_string += user_message_start
+                        elif message['role'] == "assistant":
+                            messages_string += assistant_message_start
 
-                messages_string += assistant_message_start
+                        messages_string += message['content']
 
-                genparams["prompt"] = messages_string
-                frqp = genparams.get('frequency_penalty', 0.1)
-                scaled_rep_pen = genparams.get('presence_penalty', frqp) + 1
-                genparams["max_length"] = genparams.get('max_tokens', 80)
-                genparams["rep_pen"] = scaled_rep_pen
-                # openai allows either a string or a list as a stop sequence
-                if isinstance(genparams.get('stop',[]), list):
-                    genparams["stop_sequence"] = genparams.get('stop', [])
-                else:
-                    genparams["stop_sequence"] = [genparams.get('stop')]
+                        if message['role'] == "system":
+                            messages_string += system_message_end
+                        elif message['role'] == "user":
+                            messages_string += user_message_end
+                        elif message['role'] == "assistant":
+                            messages_string += assistant_message_end
+
+                    messages_string += assistant_message_start
+                    genparams["prompt"] = messages_string
 
             return generate(
                 prompt=genparams.get('prompt', ""),
                 memory=genparams.get('memory', ""),
                 max_context_length=genparams.get('max_context_length', maxctx),
-                max_length=genparams.get('max_length', 80),
+                max_length=genparams.get('max_length', 100),
                 temperature=genparams.get('temperature', 0.7),
                 top_k=genparams.get('top_k', 100),
                 top_a=genparams.get('top_a', 0.0),
@@ -578,6 +574,9 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             if tokenStr!="":
                 if api_format == 4:  # if oai chat, set format to expected openai streaming response
                     event_str = json.dumps({"id":"koboldcpp","object":"chat.completion.chunk","created":1,"model":friendlymodelname,"choices":[{"index":0,"finish_reason":"length","delta":{'role':'assistant','content':tokenStr}}]})
+                    await self.send_oai_sse_event(event_str)
+                elif api_format == 3:  # non chat completions
+                    event_str = json.dumps({"id":"koboldcpp","object":"text_completion","created":1,"model":friendlymodelname,"choices":[{"index":0,"finish_reason":"length","text":tokenStr}]})
                     await self.send_oai_sse_event(event_str)
                 else:
                     event_str = json.dumps({"token": tokenStr})
@@ -818,7 +817,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                     bring_terminal_to_foreground()
 
                 # Check if streaming chat completions, if so, set stream mode to true
-                if api_format == 4 and "stream" in genparams and genparams["stream"]:
+                if (api_format == 4 or api_format == 3) and "stream" in genparams and genparams["stream"]:
                     sse_stream_flag = True
 
                 gen = asyncio.run(self.handle_request(genparams, api_format, sse_stream_flag))
@@ -1023,7 +1022,7 @@ def show_new_gui():
 
     port_var = ctk.StringVar(value=defaultport)
     host_var = ctk.StringVar(value="")
-    multiuser_var = ctk.IntVar()
+    multiuser_var = ctk.IntVar(value=1)
     horde_name_var = ctk.StringVar(value="koboldcpp")
     horde_gen_var = ctk.StringVar(value=maxhordelen)
     horde_context_var = ctk.StringVar(value=maxhordectx)
@@ -1261,14 +1260,20 @@ def show_new_gui():
             global gui_layers_untouched
             fsize = os.path.getsize(filepath)
             if fsize>10000000: #dont bother with models < 10mb
-                mem = MaxMemory[0]
-                sizeperlayer = fsize*0.05714
                 cs = int(contextsize_text[context_var.get()])
+                mem = MaxMemory[0]
+                layerlimit = 0
+
                 if cs and cs > 4096:
-                    sizeperlayer *= 1.2
+                    fsize *= 1.2
                 elif cs and cs > 2048:
-                    sizeperlayer *= 1.1
-                layerlimit = int(min(200,mem/sizeperlayer))
+                    fsize *= 1.1
+
+                if mem < fsize*1.6:
+                    sizeperlayer = fsize*0.052
+                    layerlimit = int(min(200,mem/sizeperlayer))
+                else:
+                    layerlimit = 200 #assume full offload
                 old_gui_layers_untouched = gui_layers_untouched
                 gui_layers_zeroed = gpulayers_var.get()=="" or gpulayers_var.get()=="0"
                 if (gui_layers_untouched or gui_layers_zeroed) and layerlimit>0:
@@ -1545,7 +1550,7 @@ def show_new_gui():
                 labels[idx].grid_forget()
         if usehorde_var.get()==1 and (horde_name_var.get()=="koboldcpp" or horde_name_var.get()=="") and model_var.get()!="":
             basefile = os.path.basename(model_var.get())
-            horde_name_var.set(os.path.splitext(basefile)[0])
+            horde_name_var.set(sanitize_string(os.path.splitext(basefile)[0]))
 
     makecheckbox(network_tab, "Configure for Horde", usehorde_var, 6, command=togglehorde)
     togglehorde(1,1,1)
