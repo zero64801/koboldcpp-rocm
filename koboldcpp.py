@@ -1198,10 +1198,10 @@ def show_new_gui():
                   
         except FileNotFoundError:
             print("The command 'rocminfo' is not available on this system.")
-            return [], [], False
+            return [], []
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
-            return [], [], False
+            return [], []
 
     def auto_gpu_heuristics():
         from subprocess import run, CalledProcessError
@@ -1333,6 +1333,9 @@ def show_new_gui():
                 s = int(gpu_choice_var.get())-1
                 v = runopts_var.get()
                 if v == "Use CLBlast" or v == "CLBlast NoAVX2 (Old CPU)":
+                    quick_gpuname_label.configure(text=CLDevicesNames[s])
+                    gpuname_label.configure(text=CLDevicesNames[s])
+                elif v == "Use hipBLAS (ROCm)" and len(CUDevicesNames)==0 and len(CLDevicesNames)>=1:
                     quick_gpuname_label.configure(text=CLDevicesNames[s])
                     gpuname_label.configure(text=CLDevicesNames[s])
                 else:
@@ -1767,7 +1770,7 @@ def show_new_gui():
     def display_updates():
         try:
             import webbrowser as wb
-            wb.open("https://github.com/LostRuins/koboldcpp/releases/latest")
+            wb.open("https://github.com/YellowRoseCx/koboldcpp-rocm/releases/latest")
         except:
             print("Cannot launch updates in browser.")
 
