@@ -56,7 +56,7 @@ jobs:
 
       - name: Setup w64devkit          
         run: |                    
-          Invoke-WebRequest -Uri "https://github.com/skeeto/w64devkit/releases/latest/download/w64devkit.zip" -OutFile "w64devkit.zip"          
+          Invoke-WebRequest -Uri "https://github.com/skeeto/w64devkit/releases/download/v1.20.0/w64devkit-1.20.0.zip" -OutFile "w64devkit.zip"          
           Expand-Archive -Path "w64devkit.zip" -DestinationPath "${{ github.workspace }}"          
 
       - name: Build with make          
