@@ -53,6 +53,17 @@ jobs:
           
       - name: Install PyInstaller
         run: pip install pyinstaller psutil
+
+      - name: Setup w64devkit          
+        run: |                    
+          Invoke-WebRequest -Uri "https://github.com/skeeto/w64devkit/releases/latest/download/w64devkit.zip" -OutFile "w64devkit.zip"          
+          Expand-Archive -Path "w64devkit.zip" -DestinationPath "${{ github.workspace }}"          
+
+      - name: Build with make          
+        run: |                
+          echo "${{ github.workspace }}\w64devkit\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append                
+          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'          
+          make LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1
         
       - name: Test Build Lib
         run: |
@@ -65,8 +76,16 @@ jobs:
           Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm\build'
           Get-Location
           cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DCMAKE_C_COMPILER="C:/Program Files/AMD/ROCm/5.5/bin/clang.exe" -DCMAKE_CXX_COMPILER="C:/Program Files/AMD/ROCm/5.5/bin/clang++.exe" -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
-          cmake --build . -j2
-        
+          cmake --build . -j2          
+
+      - name: Copy ROCm DLLs and Run PyInstaller
+        run: |
+          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'
+          Get-Location
+          copy "C:\Program Files\AMD\ROCm\5.5\bin\hipblas.dll" .\
+          copy "C:\Program Files\AMD\ROCm\5.5\bin\rocblas.dll" .\
+          robocopy "C:\Program Files\AMD\ROCm\5.5\bin\rocblas" .\rocblas /MIR
+          pip install customtkinter
           PyInstaller --noconfirm \
                       --onefile \
                       --collect-all customtkinter \
@@ -94,7 +113,7 @@ jobs:
                       --add-data "C:/Windows/System32/msvcp140.dll;." \
                       --add-data "C:/Windows/System32/vcruntime140_1.dll;." \
                       "./koboldcpp.py" \
-                      -n "koboldcpp_rocm_only.exe"
+                      -n "koboldcpp_rocm.exe"
 #          curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.7z
 #          7z x gfx103132rocblasfiles.7z 
 
@@ -105,8 +124,8 @@ jobs:
           
       - uses: actions/upload-artifact@v3
         with:
-          name: koboldcpp_rocm_only-${{ inputs.version }}
-          path: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_only.exe
+          name: koboldcpp_rocm-${{ inputs.version }}
+          path: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm.exe
 
       # - name: Upload files to a GitHub release
       #   id: upload-release
