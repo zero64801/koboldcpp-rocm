@@ -941,7 +941,19 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
             llamamodel->hparams.rope_freq_scale_train!=1.0f ||
             llamamodel->hparams.rope_scaling_type_train==2)
             {
-                printf("Automatic RoPE Scaling: Using model internal values.\n");
+                float ropemultiplier = 1.0f;
+                if(llamamodel->hparams.rope_scaling_type_train!=2 &&
+                llamamodel->hparams.n_ctx_train > 2048 && clamped_max_context_length > llamamodel->hparams.n_ctx_train)
+                {
+                    ropemultiplier = (float)llamamodel->hparams.n_ctx_train / (float)clamped_max_context_length;
+                    llama_ctx_params.rope_freq_base = rope_freq_base = llamamodel->hparams.rope_freq_base_train;
+                    llama_ctx_params.rope_freq_scale = rope_freq_scale = ropemultiplier * llamamodel->hparams.rope_freq_scale_train;
+                    printf("Automatic RoPE Scaling: Using (scale:%.3f, base:%.1f).\n", rope_freq_scale, rope_freq_base);
+                }
+                else
+                {
+                    printf("Automatic RoPE Scaling: Using model internal value.\n");
+                }
             }
             else
             {
@@ -1938,7 +1950,9 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                     remaining_tokens = 0;
                     if(debugmode!=-1)
                     {
-                        printf("\n(Stop sequence triggered: <%s>)", matched.c_str());
+                        auto match_clean = matched;
+                        replace_all(match_clean, "\n", "\\n");
+                        printf("\n(Stop sequence triggered: %s)", match_clean.c_str());
                     }
                     last_stop_reason = stop_reason::CUSTOM_STOPPER;
                     break;
