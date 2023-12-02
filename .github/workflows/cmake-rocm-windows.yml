@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag of koboldcpp-rocm to build: v1.43.2-ROCm'
-        default: latest
+        description: 'Version tag of koboldcpp-rocm to build: v1.51.0.yr1-ROCm'
+        default: v1.51.0.yr1-ROCm
         required: false
         type: string
   workflow_call:
     inputs:
       version:
-        description: 'Version tag of koboldcpp-rocm to build: v1.43.2-ROCm'
-        default: latest
+        description: 'Version tag of koboldcpp-rocm to build: v1.51.0.yr1-ROCm'
+        default: v1.51.0.yr1-ROCm
         required: false
         type: string
 
