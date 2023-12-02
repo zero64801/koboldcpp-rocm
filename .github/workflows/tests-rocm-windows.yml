@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag of koboldcpp-rocm to test: v1.48.1.yr0-ROCm'
-        default: latest
+        description: 'Version tag of koboldcpp-rocm to test: v1.51.0.yr0-ROCm'
+        default: v1.51.0.yr0-ROCm
         required: false
         type: string
   workflow_call:
     inputs:
       version:
-        description: 'Version tag of koboldcpp-rocm to test: v1.48.1.yr0-ROCm'
-        default: latest
+        description: 'Version tag of koboldcpp-rocm to test: v1.51.0.yr0-ROCm'
+        default: v1.51.0.yr0-ROCm
         required: false
         type: string
 
@@ -31,8 +31,23 @@ jobs:
       - uses: actions/checkout@v3
         with:
           repository: 'YellowRoseCx/koboldcpp-rocm'
-          ref: main 
+          ref: main
           submodules: 'recursive'
+          
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
+            
+      - name: Build CLBLAST & Others with make
+        run: |
+          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'          
+          Get-Location
+          ls
+          make CC=gcc LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1 -j2
           
       - name: Install ROCm SDK
         run: |
@@ -53,19 +68,6 @@ jobs:
           
       - name: Install PyInstaller
         run: pip install pyinstaller psutil
-
-      - name: Setup w64devkit          
-        run: |                    
-          Invoke-WebRequest -Uri "https://github.com/skeeto/w64devkit/releases/download/v1.20.0/w64devkit-1.20.0.zip" -OutFile "w64devkit.zip"          
-          Expand-Archive -Path "w64devkit.zip" -DestinationPath "${{ github.workspace }}"          
-
-      - name: Build with make          
-        run: |                
-          echo "${{ github.workspace }}\w64devkit\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append                
-          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'          
-          Get-Location
-          ls
-          make LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1
         
       - name: Test Build Lib
         run: |
