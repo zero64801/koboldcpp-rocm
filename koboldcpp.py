@@ -1159,106 +1159,102 @@ def show_new_gui():
     #     if hasattr(show_tooltip, "_tooltip"):
     #         tooltip = show_tooltip._tooltip
     #         tooltip.withdraw()
+
     # decided to follow yellowrose's and kalomaze's suggestions, this function will automatically try to determine GPU identifiers
     # todo: autopick the right number of layers when a model is selected.
     # run in new thread so it doesnt block. does not return anything, instead overwrites specific values and redraws GUI
 
-    amd_windows_hip_devices = {
-        'W7900':    49152, # 48 GiB
-        'W7800':    32768, # 32 GiB
-        'W6800':    32768, # 32 GiB
-        '7900 XTX': 24560, # 24 GiB
-        '7900 XT':  20464, # 20 GiB
-        '7900 GRE': 16368, # 16 GiB
-        '7800 XT':  16368, # 16 GiB
-        '7600':     8176,  # 8 GiB
-        '6950 XT':  16368, # 16 GiB
-        '6900 XT':  16368, # 16 GiB
-        '6800 XT':  16368, # 16 GiB
-        '6800':     16368  # 16 GiB
-    }
-
-    def get_amd_hip_device_memory(device_name):
-        for key in amd_windows_hip_devices:
-            if key in device_name:
-                return amd_windows_hip_devices[key]
-
-        return None
-
-    def get_amd_gpu_info_windows():
-        # Windows rocm doesn't have rocminfo, and we may not even have the rocm sdk installed so we can't rely
-        # on hipinfo either. So grab the devices through vulkaninfo, which should exist if any AMD GPU drivers are
-        # installed on the machine, and then check them against amd_windows_hip_devices above.
-        import re
-        from subprocess import run
+    def get_amd_gpu_info(): # Fallback
         FetchedAMDdevices = []
         FetchedAMDdeviceMem = []
-        try:
-            output = run(['vulkaninfo', '--summary'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
-            output = output.split("Devices:\n========\n")[1]
-            output = re.split(r"GPU\d+:", output)
+        amd_hip_devices = {
+            'W7900':    49152, # 48 GiB
+            'W7800':    32768, # 32 GiB
+            'W6800':    32768, # 32 GiB
+            '7900 XTX': 24560, # 24 GiB
+            '7900 XT':  20464, # 20 GiB
+            '7900 GRE': 16368, # 16 GiB
+            '7800 XT':  16368, # 16 GiB
+            '7600':     8176,  # 8 GiB
+            '6950 XT':  16368, # 16 GiB
+            '6900 XT':  16368, # 16 GiB
+            '6800 XT':  16368, # 16 GiB
+            '6800':     16368  # 16 GiB
+        }
 
-            device_re = re.compile(r"^\s+deviceName\s+=\s+(.*)$", re.MULTILINE)
-            amd_re = re.compile(r"^\s+vendorID\s+=\s+0x1002$", re.MULTILINE)  # 0x1002 is the AMD vendor id for vulkan
-
-            for gpu in output:
-                if amd_re.search(gpu):
-                    device_match = device_re.search(gpu)
-                    if device_match:
-                        device_name = device_match.group(1)
-                        memSize = get_amd_hip_device_memory(device_name)
-
-                        # For now only list devices we know the memory amoutn for, that can use HIPBlas
-                        # TODO: is this correct? Or do we want all AMD devices?
-                        if memSize:
+        def get_amd_gpu_info_windows(): # grab the devices through vulkaninfo then check them against amd_windows_hip_devices.
+            import re
+            from subprocess import run
+            nonlocal amd_hip_devices, FetchedAMDdevices, FetchedAMDdeviceMem
+            try:
+                output = run(['vulkaninfo', '--summary'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+                output = output.split("Devices:\n========\n")[1]
+                output = re.split(r"GPU\d+:", output)
+                device_re = re.compile(r"^\s+deviceName\s+=\s+(.*)$", re.MULTILINE)
+                amd_re = re.compile(r"^\s+vendorID\s+=\s+0x1002$", re.MULTILINE)  # 0x1002 is the AMD vendor id for vulkan
+                for gpu in output:
+                    if amd_re.search(gpu):
+                        device_match = device_re.search(gpu)
+                        if device_match:
+                            device_name = device_match.group(1)
+                            for key in amd_hip_devices:
+                                if key in device_name:
+                                    memSize = amd_hip_devices[key]
+                            # list devices we know the memory for, that can use HIPBlas
+                            if memSize:
+                                FetchedAMDdevices.append(device_name)
+                                FetchedAMDdeviceMem.append(memSize)
+                try: 
+                    FetchedAMDdevices = [item.replace("AMD Radeon", "AMD") for item in FetchedAMDdevices] #Shorten Device Names
+                except Exception as e: 
+                    pass
+                return FetchedAMDdevices, FetchedAMDdeviceMem
+            except FileNotFoundError:
+                print("The command 'vulkaninfo' is not available on this system. Are GPU drivers installed?")
+                return [],[] # End get_amd_gpu_info_windows()
+            
+        def get_amd_gpu_info_linux():
+            from subprocess import run
+            nonlocal amd_hip_devices, FetchedAMDdevices, FetchedAMDdeviceMem
+            try: # Get AMD ROCm GPU names
+                    output = run(['rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+                    device_name = None
+                    for line in output.splitlines(): # read through the output line by line
+                        line = line.strip()
+                        if line.startswith("Marketing Name:"):
+                            device_name = line.split(":", 1)[1].strip() # if we find a named device, temporarily save the name
+                        elif line.startswith("Device Type:") and "GPU" in line and device_name is not None: # if the following Device Type is a GPU (not a CPU) then add it to devices list
                             FetchedAMDdevices.append(device_name)
-                            FetchedAMDdeviceMem.append(memSize)
-
-            FetchedAMDdevices = [item.replace("AMD Radeon", "AMD") for item in FetchedAMDdevices] # Shorten Device Names
-            print(FetchedAMDdevices, FetchedAMDdeviceMem)
-            return FetchedAMDdevices, FetchedAMDdeviceMem
-
-        except FileNotFoundError:
-            print("The command 'vulkaninfo' is not available on this system. Are GPU drivers installed?")
-            return [],[]
-
-
-    def get_amd_gpu_info():
-        from subprocess import run, CalledProcessError
-        FetchedCUdevices = []
-        FetchedCUdeviceMem = []
-        try: # Get AMD ROCm GPU names
-            output = run(['rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
-            device_name = None
-            for line in output.splitlines(): # read through the output line by line
-                line = line.strip()
-                if line.startswith("Marketing Name:"):
-                    device_name = line.split(":", 1)[1].strip() # if we find a named device, temporarily save the name
-                elif line.startswith("Device Type:") and "GPU" in line and device_name is not None: # if the following Device Type is a GPU (not a CPU) then add it to devices list
-                    FetchedCUdevices.append(device_name)
-                elif line.startswith("Device Type:") and "GPU" not in line: device_name = None
-            if FetchedCUdevices:
-                try:
-                    getamdvram = run(['rocm-smi', '--showmeminfo', 'vram', '--csv'], capture_output=True, text=True, check=True, encoding='utf-8').stdout # fetch VRAM of devices
-                    if getamdvram:
-                        FetchedCUdeviceMem = [str(int(line.split(",")[1].strip()) // 1048576) for line in getamdvram.splitlines()[1:] if line.strip()] #return Mb from Bytes
-                except Exception as e:
-                    pass
-                try:
-                    if not FetchedCUdeviceMem and device_name:
-                        FetchedCUdeviceMem(get_amd_hip_device_memory(device_name))
-                except Exception as e:
-                    pass
-            FetchedCUdevices = [item.replace("AMD Radeon", "AMD") for item in FetchedCUdevices] # Shorten Device Names
-            return FetchedCUdevices, FetchedCUdeviceMem
-
-        except FileNotFoundError:
-            print("The command 'rocminfo' is not available on this system.")
-            return [], []
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-            return [], []
-
+                        elif line.startswith("Device Type:") and "GPU" not in line: device_name = None
+                    if FetchedAMDdevices:
+                        try:
+                            getamdvram = run(['rocm-smi', '--showmeminfo', 'vram', '--csv'], capture_output=True, text=True, check=True, encoding='utf-8').stdout # fetch VRAM of devices
+                            if getamdvram:
+                                FetchedAMDdeviceMem = [str(int(line.split(",")[1].strip()) // 1048576) for line in getamdvram.splitlines()[1:] if line.strip()] #return Mb from Bytes
+                        except Exception as e:
+                            pass
+                        try:
+                            if not FetchedAMDdeviceMem and device_name:
+                                for key in amd_hip_devices:
+                                    if key in device_name:
+                                        memSize = amd_hip_devices[key]
+                                        FetchedAMDdeviceMem.append(memSize)
+                        except Exception as e:
+                            pass
+                    try: 
+                        FetchedAMDdevices = [item.replace("AMD Radeon", "AMD") for item in FetchedAMDdevices] #Shorten Device Names
+                    except Exception as e: 
+                        pass
+                    return FetchedAMDdevices, FetchedAMDdeviceMem
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+                return [], [] # End get_amd_gpu_info_linux()
+            
+        if os.name == "nt":
+            return get_amd_gpu_info_windows()
+        else:
+            return get_amd_gpu_info_linux() # End get_amd_gpu_info()
+        
     def auto_gpu_heuristics():
         from subprocess import run, CalledProcessError
         FetchedCUdevices = []
@@ -1273,8 +1269,10 @@ def show_new_gui():
             for platform in data["devices"]:
                 dev = 0
                 for device in platform["online"]:
-                    dname = device["CL_DEVICE_NAME"]
+                    dname = device["CL_DEVICE_BOARD_NAME_AMD"]
                     dmem = int(device["CL_DEVICE_GLOBAL_MEM_SIZE"])
+                    if "AMD Radeon" in dname:
+                        dname = dname.replace("AMD Radeon", "AMD")
                     idx = plat+dev*2
                     if idx<len(CLDevices):
                         CLDevicesNames[idx] = dname
@@ -1292,11 +1290,8 @@ def show_new_gui():
         except Exception as e:
             pass
 
-        if len(FetchedCUdevices)==0: # Get AMD GPU names
-            if os.name == "nt":
-                FetchedCUdevices, FetchedCUdeviceMem = get_amd_gpu_info_windows()
-            else:
-                FetchedCUdevices, FetchedCUdeviceMem = get_amd_gpu_info()
+        if len(FetchedCUdevices)==0 and not any(CLDevicesNames): # Fallback Get AMD GPU names if OpenCL didn't fetch them (since cuda method is more reliable)
+            FetchedCUdevices, FetchedCUdeviceMem = get_amd_gpu_info()
 
         for idx in range(0,4):
             if(len(FetchedCUdevices)>idx):
@@ -1394,7 +1389,7 @@ def show_new_gui():
                 if v == "Use CLBlast" or v == "CLBlast NoAVX2 (Old CPU)":
                     quick_gpuname_label.configure(text=CLDevicesNames[s])
                     gpuname_label.configure(text=CLDevicesNames[s])
-                elif v == "Use hipBLAS (ROCm)" and len(CUDevicesNames)==0 and len(CLDevicesNames)>=1:
+                elif v == "Use hipBLAS (ROCm)" and not any(CUDevicesNames) and any(CLDevicesNames):
                     quick_gpuname_label.configure(text=CLDevicesNames[s])
                     gpuname_label.configure(text=CLDevicesNames[s])
                 else:
