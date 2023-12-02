@@ -98,6 +98,8 @@ static std::mutex concat_output_mtx;
 static std::string concat_output = "";
 static std::string concat_output_reader_copy = "";
 
+const size_t extra_context_handle_fragmentation = 80;
+
 inline bool IsNanCheck(float f)
 {
     const unsigned int u = *(unsigned int*)&f;
@@ -943,7 +945,8 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
             {
                 float ropemultiplier = 1.0f;
                 if(llamamodel->hparams.rope_scaling_type_train!=2 &&
-                llamamodel->hparams.n_ctx_train > 2048 && clamped_max_context_length > llamamodel->hparams.n_ctx_train)
+                llamamodel->hparams.n_ctx_train > 2048 && clamped_max_context_length > llamamodel->hparams.n_ctx_train &&
+                llamamodel->hparams.rope_freq_scale_train==1.0f)
                 {
                     ropemultiplier = (float)llamamodel->hparams.n_ctx_train / (float)clamped_max_context_length;
                     llama_ctx_params.rope_freq_base = rope_freq_base = llamamodel->hparams.rope_freq_base_train;
@@ -1420,6 +1423,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
             stop_sequence.push_back(stopper);
         }
     }
+
     std::string addedmemory = inputs.memory;
     params.prompt = inputs.prompt;
     params.seed = inputs.seed;
@@ -1440,6 +1444,17 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
     params.n_threads = n_threads;
     params.n_threads_batch = n_blasthreads;
     bool stream_sse = inputs.stream_sse;
+
+    if(params.n_ctx >= 256 && useContextShift && (file_format == FileFormat::GGUF_LLAMA || file_format==FileFormat::GGUF_FALCON))
+    {
+        params.n_ctx -= extra_context_handle_fragmentation; //add some additional buffer to handle KV fragmentation
+        if(debugmode==1)
+        {
+            printf("\nTrue max context permitted: %d\n",params.n_ctx);
+        }
+    }
+
+    bool allow_regular_prints = (debugmode!=-1 && !inputs.quiet) || debugmode >= 1;
 
     generation_finished = false; // Set current generation status
     generated_tokens.clear(); // New Generation, new tokens
@@ -1694,7 +1709,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
         printf("\nBanned a total of %zu tokens.\n",banned_token_ids.size());
     }
 
-    if(debugmode!=-1)
+    if(allow_regular_prints)
     {
         printf("\n");
     }
@@ -1715,7 +1730,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
         // predict
         unsigned int embdsize = embd.size();
         //print progress
-        if (!startedsampling && debugmode!=-1)
+        if (!startedsampling && allow_regular_prints)
         {
             printf("\rProcessing Prompt%s (%d / %zu tokens)", (blasmode ? " [BLAS]" : ""), input_consumed, embd_inp.size());
         }
@@ -1805,7 +1820,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
 
             if (!evalres)
             {
-                fprintf(stderr, "\nFailed to predict! Check your context buffer sizes!\n");
+                fprintf(stderr, "\nFailed to predict at %d! Check your context buffer sizes!\n",n_past);
                 snprintf(output.text, sizeof(output.text), "%s", "");
                 output.status = 0;
                 generation_finished = true;
@@ -1834,7 +1849,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                 params.n_threads = original_threads;
                 time1 = timer_check();
                 timer_start();
-                if(debugmode!=-1)
+                if(allow_regular_prints)
                 {
                     printf("\n");
                 }
@@ -1909,7 +1924,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                 concat_output_mtx.unlock();
             }
 
-            if (startedsampling && debugmode!=-1)
+            if (startedsampling && allow_regular_prints)
             {
                 printf("\rGenerating (%d / %d tokens)", (params.n_predict - remaining_tokens), params.n_predict);
             }
@@ -1934,7 +1949,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
             if(inputs.unban_tokens_rt && id==eosID)
             {
                 stopper_unused_tokens = remaining_tokens;
-                if(debugmode!=-1)
+                if(allow_regular_prints)
                 {
                     printf("\n(EOS token triggered!)");
                 }
@@ -1948,7 +1963,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs, generation_o
                 {
                     stopper_unused_tokens = remaining_tokens;
                     remaining_tokens = 0;
-                    if(debugmode!=-1)
+                    if(allow_regular_prints)
                     {
                         auto match_clean = matched;
                         replace_all(match_clean, "\n", "\\n");
