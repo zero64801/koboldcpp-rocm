@@ -393,7 +393,7 @@ maxhordelen = 256
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.51.0.yr0-ROCm"
+KcppVersion = "1.51.1.yr1-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -541,7 +541,10 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
 
     async def send_oai_sse_event(self, data):
-        self.wfile.write(f'data: {data}\r\n\r\n'.encode())
+        if data=="[DONE]":
+            self.wfile.write(f'data: {data}'.encode())
+        else:
+            self.wfile.write(f'data: {data}\r\n\r\n'.encode())
         self.wfile.flush()
 
     async def send_kai_sse_event(self, data):
@@ -2207,6 +2210,10 @@ def setuptunnel():
                     found = re.findall(pattern, line)
                     for x in found:
                         tunneloutput = x
+
+                        print(f"Your remote Kobold API can be found at {tunneloutput}/api")
+                        print(f"Your remote OpenAI Compatible API can be found at {tunneloutput}/v1")
+                        print("======\n")
                         print(f"Your remote tunnel is ready, please connect to {tunneloutput}")
                         return
 
@@ -2468,8 +2475,9 @@ def main(launch_args,start_server=True):
         epurl = f"http://localhost:{args.port}"
     else:
         epurl = f"http://{args.host}:{args.port}"
-    print(f"Starting Kobold API on port {args.port} at {epurl}/api/")
-    print(f"Starting OpenAI Compatible API on port {args.port} at {epurl}/v1/")
+    if not args.remotetunnel:
+        print(f"Starting Kobold API on port {args.port} at {epurl}/api/")
+        print(f"Starting OpenAI Compatible API on port {args.port} at {epurl}/v1/")
 
     if args.launch:
         try:
