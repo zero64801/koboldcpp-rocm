@@ -42,8 +42,8 @@ endif
 CFLAGS   = -I.            -I./include -I./include/CL -I./otherarch -I./otherarch/tools -Ofast -DNDEBUG -std=c11   -fPIC -DLOG_DISABLE_LOGS -D_GNU_SOURCE
 CXXFLAGS = -I. -I./common -I./include -I./include/CL -I./otherarch -I./otherarch/tools -Ofast -DNDEBUG -std=c++11 -fPIC -DLOG_DISABLE_LOGS -D_GNU_SOURCE
 LDFLAGS  =
-#CC         := gcc-13
-#CXX        := g++-13
+CC         := gcc-13
+CXX        := g++-13
 
 # these are used on windows, to build some libraries with extra old device compatibility
 SIMPLECFLAGS =
