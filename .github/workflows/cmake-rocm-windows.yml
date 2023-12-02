@@ -108,7 +108,7 @@ jobs:
         uses: svenstaro/upload-release-action@2.6.1
         continue-on-error: true
         with:
-          file: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_only.exe
+          file: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm.exe
           release_name: KoboldCPP-${{ inputs.version }}
           tag: ${{ inputs.version }}
           file_glob: false
