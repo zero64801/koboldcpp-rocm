@@ -214,7 +214,11 @@ ifdef LLAMA_HIPBLAS
 	ROCM_PATH	?= /opt/rocm
 	HCC         := $(ROCM_PATH)/llvm/bin/clang
 	HCXX        := $(ROCM_PATH)/llvm/bin/clang++
-	GPU_TARGETS ?= gfx803 gfx900 gfx906 gfx908 gfx90a gfx1030 gfx1100 $(shell $(ROCM_PATH)/llvm/bin/amdgpu-arch)
+	ifdef ALL_AMD_GPU # Build for all AMD GPU types
+		GPU_TARGETS ?= gfx803 gfx900 gfx906 gfx908 gfx90a gfx1010 gfx1030 gfx1031 gfx1032 gfx1100 gfx1101 gfx1102 $(shell $(ROCM_PATH)/llvm/bin/amdgpu-arch)
+	else
+   		GPU_TARGETS ?= gfx803 gfx900 gfx1030 gfx1100 $(shell $(ROCM_PATH)/llvm/bin/amdgpu-arch) # Only build for most common + currently active GPU
+	endif
 	LLAMA_CUDA_DMMV_X ?= 32
 	LLAMA_CUDA_MMV_Y ?= 1
 	LLAMA_CUDA_KQUANTS_ITER ?= 2
@@ -296,6 +300,8 @@ ifeq ($(OS),Windows_NT)
 	endif
 else
 	DEFAULT_BUILD = $(CXX) $(CXXFLAGS) $^ -shared -o $@.so $(LDFLAGS)
+	FAILSAFE_BUILD = $(CXX) $(CXXFLAGS) $^ -shared -o $@.so $(LDFLAGS)
+	NOAVX2_BUILD = $(CXX) $(CXXFLAGS) $^ -shared -o $@.so $(LDFLAGS)
 
 	ifdef LLAMA_OPENBLAS
 	OPENBLAS_BUILD = $(CXX) $(CXXFLAGS) $^ $(ARCH_ADD) -lopenblas -shared -o $@.so $(LDFLAGS)
@@ -520,11 +526,6 @@ llama-bench: examples/llama-bench/llama-bench.cpp build-info.h ggml_cublas.o ggm
 #window simple clinfo
 simpleclinfo: simpleclinfo.cpp
 	$(CXX) $(CXXFLAGS) $^ lib/OpenCL.lib lib/clblast.lib -o $@ $(LDFLAGS)
-
-#window simple clinfo
-simpleclinfo: simpleclinfo.cpp
-	$(CXX) $(CXXFLAGS) $^ lib/OpenCL.lib lib/clblast.lib -o $@ $(LDFLAGS)
-
 
 build-info.h:
 	$(DONOTHING)
