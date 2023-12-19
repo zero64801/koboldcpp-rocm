@@ -2440,15 +2440,19 @@ def get_latest_release_tag():
         return KcppVersion
 def compare_versions(current_version, latest_version):
     import re
-    try:
-        current_version_numbers = re.findall(r'\d+', current_version)
-        latest_version_numbers = re.findall(r'\d+', latest_version)
-        for current, latest in zip(current_version_numbers, latest_version_numbers):
-            if int(latest) > int(current):
-                return latest_version
-        return current_version
-    except Exception as e:
-        return
+    current_version_parts = current_version.split('.yr') # Split the version into main version and YellowRose's patch
+    latest_version_parts = latest_version.split('.yr')
+    current_version_numbers = re.findall(r'\d+', current_version_parts[0]) # Compare the main version numbers
+    latest_version_numbers = re.findall(r'\d+', latest_version_parts[0])
+    for current, latest in zip(current_version_numbers, latest_version_numbers):
+        if int(latest) > int(current):
+            return latest_version
+    if current_version_parts[0] == latest_version_parts[0]: # If the main version numbers are equal, check YellowRose's patch
+        current_yr_number = current_version_parts[1].split('-')[0]
+        latest_yr_number = latest_version_parts[1].split('-')[0]
+        if int(latest_yr_number) > int(current_yr_number):
+            return latest_version
+    return current_version
 def check_latest_version():
     from colorama import Fore, Style, init, deinit
     if os.name == "nt":
