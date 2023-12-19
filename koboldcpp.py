@@ -1394,15 +1394,11 @@ def show_new_gui():
 
         #autopick cublas if suitable, requires at least 3.5GB VRAM to auto pick
         global exitcounter
-        if exitcounter < 100 and MaxMemory[0]>3500000000 and ("Use CuBLAS" in runopts or "Use hipBLAS (ROCM)" in runopts) and (any(CUDevicesNames) or any(CLDevicesNames)):
+        if exitcounter < 100 and MaxMemory[0]>3500000000 and ("Use CuBLAS" in runopts and CUDevicesNames[0]!="" or "Use hipBLAS (ROCm)" in runopts) and (any(CUDevicesNames) or any(CLDevicesNames)):
             if "Use CuBLAS" in runopts:
                 runopts_var.set("Use CuBLAS")
-            elif "Use hipBLAS (ROCM)" in runopts:
-                runopts_var.set("Use hipBLAS (ROCM)")
-        try:
-            runopts_var.set("Use hipBLAS (ROCm)") # hard force
-        except Exception as e:
-            pass
+            elif "Use hipBLAS (ROCm)" in runopts:
+                runopts_var.set("Use hipBLAS (ROCm)")
 
         changed_gpu_choice_var()
         return
@@ -1831,11 +1827,10 @@ def show_new_gui():
                     runopts_var.set(clblast_option)
                     gpu_choice_var.set(str(["0 0", "1 0", "0 1", "1 1"].index(str(dict["useclblast"][0]) + " " + str(dict["useclblast"][1])) + 1))
         elif "usecublas" in dict and dict["usecublas"]:
-            if cublas_option is not None:
+            if cublas_option is not None or hipblas_option is not None:
                 if cublas_option:
                     runopts_var.set(cublas_option)
-            if hipblas_option is not None:
-                if hipblas_option:
+                elif hipblas_option:
                     runopts_var.set(hipblas_option)
                 lowvram_var.set(1 if "lowvram" in dict["usecublas"] else 0)
                 mmq_var.set(1 if "mmq" in dict["usecublas"] else 0)

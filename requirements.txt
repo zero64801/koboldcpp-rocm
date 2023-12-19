@@ -5,3 +5,4 @@ gguf>=0.1.0
 customtkinter>=5.1.0
 packaging>=23.2
 protobuf>=4.21.0
+urllib3
