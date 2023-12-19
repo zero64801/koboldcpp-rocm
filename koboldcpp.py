@@ -12,7 +12,6 @@ import ctypes
 import os
 import argparse
 import json, sys, http.server, time, asyncio, socket, threading
-#import re
 from concurrent.futures import ThreadPoolExecutor
 
 sampler_order_max = 7
@@ -395,7 +394,7 @@ maxhordelen = 256
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.52.2.yr0-ROCm"
+KcppVersion = "1.52.2.yr1-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -1108,6 +1107,7 @@ def show_new_gui():
     debugmode = ctk.IntVar()
     keepforeground = ctk.IntVar()
     quietmode = ctk.IntVar(value=0)
+    checkforupdates = ctk.IntVar()
 
     lowvram_var = ctk.IntVar()
     mmq_var = ctk.IntVar(value=1)
@@ -1694,6 +1694,7 @@ def show_new_gui():
     makecheckbox(network_tab, "Multiuser Mode", multiuser_var, 3)
     makecheckbox(network_tab, "Remote Tunnel", remotetunnel, 3, 1)
     makecheckbox(network_tab, "Quiet Mode", quietmode, 4)
+    makecheckbox(network_tab, "Check For Updates", checkforupdates, 4, 1)
 
     # horde
     makelabel(network_tab, "Horde:", 5).grid(pady=10)
@@ -1742,6 +1743,7 @@ def show_new_gui():
         args.remotetunnel = remotetunnel.get()==1
         args.foreground = keepforeground.get()==1
         args.quiet = quietmode.get()==1
+        args.checkforupdates = checkforupdates.get()
 
         gpuchoiceidx = 0
         if gpu_choice_var.get()!="All":
@@ -1818,6 +1820,7 @@ def show_new_gui():
         remotetunnel.set(1 if "remotetunnel" in dict and dict["remotetunnel"] else 0)
         keepforeground.set(1 if "foreground" in dict and dict["foreground"] else 0)
         quietmode.set(1 if "quiet" in dict and dict["quiet"] else 0)
+        checkforupdates.set(1 if "checkforupdates" in dict and dict["checkforupdates"] else 0)
         if "useclblast" in dict and dict["useclblast"]:
             if "noavx2" in dict and dict["noavx2"]:
                 if clblast_noavx2_option is not None:
@@ -1828,11 +1831,12 @@ def show_new_gui():
                     runopts_var.set(clblast_option)
                     gpu_choice_var.set(str(["0 0", "1 0", "0 1", "1 1"].index(str(dict["useclblast"][0]) + " " + str(dict["useclblast"][1])) + 1))
         elif "usecublas" in dict and dict["usecublas"]:
-            if cublas_option is not None or hipblas_option is not None:
+            if cublas_option is not None:
                 if cublas_option:
                     runopts_var.set(cublas_option)
-                elif hipblas_option:
-                    runopts_var.set(cublas_option)
+            if hipblas_option is not None:
+                if hipblas_option:
+                    runopts_var.set(hipblas_option)
                 lowvram_var.set(1 if "lowvram" in dict["usecublas"] else 0)
                 mmq_var.set(1 if "mmq" in dict["usecublas"] else 0)
                 gpu_choice_var.set("All")
@@ -2430,6 +2434,35 @@ def sanitize_string(input_string):
     sanitized_string = re.sub( r'[^\w\d\.\-_]', '', input_string)
     return sanitized_string
 
+def get_latest_release_tag():
+    import requests
+    try:
+        response = requests.get('https://api.github.com/repos/YellowRoseCx/koboldcpp-rocm/releases', verify=True)
+        data = response.json()
+        latest_release_tag = data[0]['tag_name']
+        return latest_release_tag
+    except Exception as e:
+        return KcppVersion
+def compare_versions(current_version, latest_version):
+    import re
+    try:
+        current_version_numbers = re.findall(r'\d+', current_version)
+        latest_version_numbers = re.findall(r'\d+', latest_version)
+        for current, latest in zip(current_version_numbers, latest_version_numbers):
+            if int(latest) > int(current):
+                return latest_version
+        return current_version
+    except Exception as e:
+        return
+def check_latest_version():
+    from colorama import Fore, Style
+    latest_version = get_latest_release_tag()
+    new_version = compare_versions(KcppVersion, latest_version)
+    if new_version != KcppVersion:
+        print(f"{Fore.CYAN}A new version of KoboldCpp-ROCm is available: {Fore.GREEN}**{new_version}**{Fore.CYAN}, current version is: {Fore.YELLOW}**{KcppVersion}**{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.CYAN}You are using the latest version.{Style.RESET_ALL}")
+
 def main(launch_args,start_server=True):
     global args, friendlymodelname
     args = launch_args
@@ -2619,6 +2652,8 @@ def main(launch_args,start_server=True):
     if start_server:
         if args.remotetunnel:
             setuptunnel()
+        if args.checkforupdates:
+            check_latest_version()
         print(f"======\nPlease connect to custom endpoint at {epurl}")
         asyncio.run(RunServerMultiThreaded(args.host, args.port, embedded_kailite, embedded_kcpp_docs))
     else:
@@ -2670,6 +2705,7 @@ if __name__ == '__main__':
     parser.add_argument("--foreground", help="Windows only. Sends the terminal to the foreground every time a new prompt is generated. This helps avoid some idle slowdown issues.", action='store_true')
     parser.add_argument("--preloadstory", help="Configures a prepared story json save file to be hosted on the server, which frontends (such as Kobold Lite) can access over the API.", default="")
     parser.add_argument("--quiet", help="Enable quiet mode, which hides generation inputs and outputs in the terminal. Quiet mode is automatically enabled when running --hordeconfig.", action='store_true')
+    parser.add_argument("--checkforupdates", help="Checks KoboldCpp-ROCm's release page on GitHub using HTTPS to see if there's a new update available.", action='store_true')
 
     # #deprecated hidden args. they do nothing. do not use
     # parser.add_argument("--psutil_set_threads", action='store_true', help=argparse.SUPPRESS)
