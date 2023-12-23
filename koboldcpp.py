@@ -995,10 +995,13 @@ def RunServerMultiThreaded(addr, port, embedded_kailite = None, embedded_kcpp_do
 
                     if args.ssl and sslvalid:
                         import ssl
+                        tlscontext = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                        tlscontext.minimum_version = ssl.TLSVersion.TLSv1_2
+                        tlscontext.maximum_version = ssl.TLSVersion.TLSv1_3
                         certpath = os.path.abspath(args.ssl[0])
                         keypath = os.path.abspath(args.ssl[1])
-                        self.httpd.socket = ssl.wrap_socket(self.httpd.socket, keyfile=keypath, certfile=certpath, server_side=True)
-
+                        tlscontext.load_cert_chain(certfile=certpath, keyfile=keypath)
+                        self.httpd.socket = tlscontext.wrap_socket(self.httpd.socket, server_side=True)
                     self.httpd.serve_forever()
                 except (KeyboardInterrupt,SystemExit):
                     exitcounter = 999
