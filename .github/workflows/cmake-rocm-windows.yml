@@ -97,8 +97,8 @@ jobs:
       - name: Create ZIP archive
         run: |
           Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm' 
-          Compress-Archive -Path .\klite.embd,.\winclinfo.exe,.\OpenCL.dll,.\kcpp_docs.embd,.\koboldcpp_default.dll,.\koboldcpp_openblas.dll,.\koboldcpp_failsafe.dll,.\koboldcpp_noavx2.dll,.\libopenblas.dll,.\koboldcpp_clblast.dll,.\koboldcpp_clblast_noavx2.dll,.\clblast.dll,.\koboldcpp_hipblas.dll,.\hipblas.dll,.\rocblas.dll,.\rwkv_vocab.embd,.\rwkv_world_vocab.embd,.\rocblas,.\msvcp140.dll,.\vcruntime140_1.dll,.\koboldcpp.py -DestinationPath koboldcpp_rocm_files.zip
-          copy "koboldcpp_rocm_files.zip" .\dist
+          Compress-Archive -Path  D:\a\koboldcpp-rocm\koboldcpp-rocm\klite.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\winclinfo.exe, D:\a\koboldcpp-rocm\koboldcpp-rocm\OpenCL.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\kcpp_docs.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_default.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_openblas.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_failsafe.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_noavx2.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\libopenblas.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_clblast.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_clblast_noavx2.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\clblast.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\hipblas.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\rwkv_vocab.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\rwkv_world_vocab.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas, D:\a\koboldcpp-rocm\koboldcpp-rocm\msvcp140.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\vcruntime140_1.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp.py -DestinationPath koboldcpp_rocm_files.zip
+          copy "koboldcpp_rocm_files.zip" D:\a\koboldcpp-rocm\koboldcpp-rocm\dist
 
 
       - uses: actions/upload-artifact@v3
@@ -127,6 +127,9 @@ jobs:
           tag: ${{ inputs.version }}
           make_latest: true
           overwrite: false
+
+
+
  
 #          Copy-Item 'D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll' '..\..\build'
 #  build_wheel:
