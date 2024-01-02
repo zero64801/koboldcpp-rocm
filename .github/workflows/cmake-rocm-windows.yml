@@ -122,7 +122,7 @@ jobs:
         continue-on-error: true
         with:
           file_glob: true
-          file: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\*.*
+          file: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\*.zip,*.exe
           release_name: KoboldCPP-${{ inputs.version }}
           tag: ${{ inputs.version }}
           make_latest: true
