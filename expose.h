@@ -81,7 +81,9 @@ struct generation_inputs
     const char * grammar;
     const bool grammar_retain_state;
     const bool quiet = false;
+    const float dynatemp_range = 0.0f;
     const logit_bias logit_biases[logit_bias_max];
+
 };
 struct generation_outputs
 {
@@ -102,5 +104,6 @@ extern bool generation_finished;
 extern float last_eval_time;
 extern float last_process_time;
 extern int last_token_count;
+extern int last_seed;
 extern int total_gens;
 extern stop_reason last_stop_reason;

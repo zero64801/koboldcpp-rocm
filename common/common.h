@@ -56,6 +56,8 @@ struct gpt_params {
     int32_t main_gpu                        = 0;     // the GPU that is used for scratch and small tensors
     float   tensor_split[LLAMA_MAX_DEVICES] = {0};   // how split tensors should be distributed across GPUs
     int32_t n_beams                         = 0;     // if non-zero then use beam search of given width.
+    int32_t grp_attn_n                      = 1;     // group-attention factor
+    int32_t grp_attn_w                      = 512;   // group-attention width
     float   rope_freq_base                  = 0.0f;  // RoPE base frequency
     float   rope_freq_scale                 = 0.0f;  // RoPE frequency scaling factor
     float   yarn_ext_factor                 = -1.0f; // YaRN extrapolation mix factor
@@ -80,6 +82,10 @@ struct gpt_params {
     int32_t mirostat          = 0;     // 0 = disabled, 1 = mirostat, 2 = mirostat 2.0
     float   mirostat_tau      = 5.00f; // target entropy
     float   mirostat_eta      = 0.10f; // learning rate
+
+    // DynaTemp!
+    float   dynatemp_range     = 0.0f;  // enables DynaTemp if greater than 0. dynatemp_min = temperature - dt_range, dynatemp_max = temperature + dt_range
+
     // // sampling parameters
     struct llama_sampling_params sparams;
 

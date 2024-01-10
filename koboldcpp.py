@@ -78,6 +78,7 @@ class generation_inputs(ctypes.Structure):
                 ("grammar", ctypes.c_char_p),
                 ("grammar_retain_state", ctypes.c_bool),
                 ("quiet", ctypes.c_bool),
+                ("dynatemp_range", ctypes.c_float),
                 ("logit_biases", logit_bias * logit_bias_max)]
 
 class generation_outputs(ctypes.Structure):
@@ -244,6 +245,7 @@ def init_library():
     handle.get_last_eval_time.restype = ctypes.c_float
     handle.get_last_process_time.restype = ctypes.c_float
     handle.get_last_token_count.restype = ctypes.c_int
+    handle.get_last_seed.restype = ctypes.c_int
     handle.get_total_gens.restype = ctypes.c_int
     handle.get_last_stop_reason.restype = ctypes.c_int
     handle.abort_generate.restype = ctypes.c_bool
@@ -327,7 +329,7 @@ def load_model(model_filename):
     ret = handle.load_model(inputs)
     return ret
 
-def generate(prompt, memory="", max_length=32, max_context_length=512, temperature=0.7, top_k=100, top_a=0.0, top_p=0.92, min_p=0.0, typical_p=1.0, tfs=1.0, rep_pen=1.1, rep_pen_range=128, presence_penalty=0.0, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=False, stream_sse=False, grammar='', grammar_retain_state=False, genkey='', trimstop=False, quiet=False, logit_biases={}):
+def generate(prompt, memory="", max_length=32, max_context_length=512, temperature=0.7, top_k=100, top_a=0.0, top_p=0.92, min_p=0.0, typical_p=1.0, tfs=1.0, rep_pen=1.1, rep_pen_range=128, presence_penalty=0.0, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=False, stream_sse=False, grammar='', grammar_retain_state=False, genkey='', trimstop=False, quiet=False, dynatemp_range=0.0, logit_biases={}):
     global maxctx, args, currentusergenkey, totalgens
     inputs = generation_inputs()
     outputs = ctypes.create_unicode_buffer(ctypes.sizeof(generation_outputs))
@@ -355,6 +357,7 @@ def generate(prompt, memory="", max_length=32, max_context_length=512, temperatu
     inputs.presence_penalty = presence_penalty
     inputs.stream_sse = stream_sse
     inputs.quiet = quiet
+    inputs.dynatemp_range = dynatemp_range
     inputs.grammar = grammar.encode("UTF-8")
     inputs.grammar_retain_state = grammar_retain_state
     inputs.unban_tokens_rt = not use_default_badwordsids
@@ -442,7 +445,7 @@ maxhordelen = 256
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.54.yr0-ROCm"
+KcppVersion = "1.55.yr0-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -564,7 +567,9 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 genkey=genparams.get('genkey', ''),
                 trimstop=genparams.get('trim_stop', False),
                 quiet=is_quiet,
-                logit_biases=genparams.get('logit_bias', {}))
+                dynatemp_range=genparams.get('dynatemp_range', 0.0),
+                logit_biases=genparams.get('logit_bias', {})
+                )
 
         recvtxt = ""
         if stream_flag:
@@ -581,9 +586,11 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             res = {"data": {"seqs":[recvtxt]}}
         elif api_format==3:
             res = {"id": "cmpl-1", "object": "text_completion", "created": 1, "model": friendlymodelname,
+            "usage": {"prompt_tokens": 100,"completion_tokens": 100,"total_tokens": 200},
             "choices": [{"text": recvtxt, "index": 0, "finish_reason": "length"}]}
         elif api_format==4:
             res = {"id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": friendlymodelname,
+            "usage": {"prompt_tokens": 100,"completion_tokens": 100,"total_tokens": 200},
             "choices": [{"index": 0, "message":{"role": "assistant", "content": recvtxt,}, "finish_reason": "length"}]}
         else:
             res = {"results": [{"text": recvtxt}]}
@@ -811,7 +818,8 @@ Enter Prompt:<br>
             lastc = handle.get_last_token_count()
             totalgens = handle.get_total_gens()
             stopreason = handle.get_last_stop_reason()
-            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "total_gens":totalgens, "stop_reason":stopreason, "queue":requestsinqueue, "idle":(0 if modelbusy.locked() else 1), "hordeexitcounter":exitcounter}).encode())
+            lastseed = handle.get_last_seed()
+            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "last_seed":lastseed, "total_gens":totalgens, "stop_reason":stopreason, "queue":requestsinqueue, "idle":(0 if modelbusy.locked() else 1), "hordeexitcounter":exitcounter}).encode())
 
         elif self.path.endswith('/api/extra/generate/check'):
             pendtxtStr = ""
@@ -2446,12 +2454,18 @@ def setuptunnel():
             tunnelproc.wait()
 
         if os.name == 'nt':
-            print("Downloading Cloudflare Tunnel for Windows...")
-            subprocess.run("curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -o cloudflared.exe", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
+            if os.path.exists("cloudflared.exe") and os.path.getsize("cloudflared.exe") > 100000:
+                print("Cloudflared file exists, reusing it...")
+            else:
+                print("Downloading Cloudflare Tunnel for Windows...")
+                subprocess.run("curl -fL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -o cloudflared.exe", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
         else:
-            print("Downloading Cloudflare Tunnel for Linux...")
-            subprocess.run("curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared-linux-amd64", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
-            subprocess.run("chmod +x 'cloudflared-linux-amd64'", shell=True)
+            if os.path.exists("cloudflared-linux-amd64") and os.path.getsize("cloudflared-linux-amd64") > 100000:
+                print("Cloudflared file exists, reusing it...")
+            else:
+                print("Downloading Cloudflare Tunnel for Linux...")
+                subprocess.run("curl -fL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared-linux-amd64", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
+                subprocess.run("chmod +x 'cloudflared-linux-amd64'", shell=True)
         tunnel_thread = threading.Thread(target=run_tunnel)
         tunnel_thread.start()
     except Exception as ex:
@@ -2519,6 +2533,7 @@ def unload_libs():
         del handle.get_last_eval_time
         del handle.get_last_process_time
         del handle.get_last_token_count
+        del handle.get_last_seed
         del handle.get_total_gens
         del handle.get_last_stop_reason
         del handle.abort_generate
