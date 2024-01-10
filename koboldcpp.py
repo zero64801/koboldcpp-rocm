@@ -125,6 +125,24 @@ lib_clblast_noavx2 = pick_existant_file("koboldcpp_clblast_noavx2.dll","koboldcp
 lib_cublas = pick_existant_file("koboldcpp_cublas.dll","koboldcpp_cublas.so")
 lib_hipblas = pick_existant_file("koboldcpp_hipblas.dll","koboldcpp_hipblas.so")
 
+def get_amd_gfx_vers_linux():
+    from subprocess import run
+    FetchedAMDgfxVersion = []
+    try: # Get AMD ROCm GPU gfx version
+        output = run(['rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+        gfx_version = None
+        for line in output.splitlines(): # read through the output line by line
+            line = line.strip()
+            if line.startswith("Name:"):
+                gfx_version = line.split(":", 1)[1].strip()
+            elif line.startswith("Device Type:") and "GPU" in line: # if the following Device Type is a GPU (not a CPU) then add it to devices list
+                FetchedAMDgfxVersion.append(gfx_version)
+            elif line.startswith("Device Type:") and "GPU" not in line:
+                gfx_version = None
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return []
+    return FetchedAMDgfxVersion
 
 def init_library():
     global handle, args
@@ -2561,6 +2579,13 @@ def check_latest_version():
 
 def main(launch_args,start_server=True):
     global args, friendlymodelname
+    try:
+        amd_gfx_vers = get_amd_gfx_vers_linux()
+        if any(item.startswith("gfx103") for item in amd_gfx_vers):
+            os.environ["HSA_OVERRIDE_GFX_VERSION"] = "10.3.0"
+            print(f"Set AMD HSA_OVERRIDE_GFX_VERSION to 10.3.0")
+    except Exception as e:
+        return
     args = launch_args
     embedded_kailite = None
     embedded_kcpp_docs = None
