@@ -130,7 +130,10 @@ def get_amd_gfx_vers_linux():
     from subprocess import run
     FetchedAMDgfxVersion = []
     try: # Get AMD ROCm GPU gfx version
-        output = run(['rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+        try:
+            output = run(['/opt/rocm/bin/rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+        except Exception as e:
+            return
         gfx_version = None
         for line in output.splitlines(): # read through the output line by line
             line = line.strip()
@@ -2593,14 +2596,17 @@ def check_latest_version():
         deinit()
 
 def main(launch_args,start_server=True):
+    import platform
     global args, friendlymodelname
-    try:
-        amd_gfx_vers = get_amd_gfx_vers_linux()
-        if any(item.startswith("gfx103") for item in amd_gfx_vers):
-            os.environ["HSA_OVERRIDE_GFX_VERSION"] = "10.3.0"
-            print(f"Set AMD HSA_OVERRIDE_GFX_VERSION to 10.3.0")
-    except Exception as e:
-        return
+    OS = platform.system()
+    if OS == "Linux":
+        try:
+            amd_gfx_vers = get_amd_gfx_vers_linux()
+            if any(item.startswith("gfx103") for item in amd_gfx_vers):
+                os.environ["HSA_OVERRIDE_GFX_VERSION"] = "10.3.0"
+                print(f"Set AMD HSA_OVERRIDE_GFX_VERSION to 10.3.0")
+        except Exception as e:
+            return
     args = launch_args
     embedded_kailite = None
     embedded_kcpp_docs = None
