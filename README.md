@@ -1,15 +1,15 @@
-##### Original ([llama.cpp rocm port](https://github.com/ggerganov/llama.cpp/pull/1087), [llama.cpp commit](https://github.com/ggerganov/llama.cpp/commit/6bbc598a632560cb45dd2c51ad403bda8723b629)) by SlyEcho, YellowRoseCx, ardfork, funnbot, Engininja2, Kerfuffle, jammm, and jdecourval.      
+##### Original ([llama.cpp rocm port](https://github.com/ggerganov/llama.cpp/pull/1087), [llama.cpp commit](https://github.com/ggerganov/llama.cpp/commit/6bbc598a632560cb45dd2c51ad403bda8723b629)) by SlyEcho, YellowRoseCx, ardfork, funnbot, Engininja2, Kerfuffle, jammm, and jdecourval.
 ##### Further modified and ported to KoboldCpp by YellowRoseCx.
 # koboldcpp-ROCM for AMD
-### Quick Linux install:              
+### Quick Linux install:
 To install, either use the file "[easy_KCPP-ROCm_install.sh](https://github.com/YellowRoseCx/koboldcpp-rocm/blob/main/easy_KCPP-ROCm_install.sh)" or navigate to the folder you want to download to in Terminal then run
-```        
+```
 git clone https://github.com/YellowRoseCx/koboldcpp-rocm.git -b main --depth 1 && \
 cd koboldcpp-rocm && \
 make LLAMA_HIPBLAS=1 -j4 && \
 ./koboldcpp.py
 ```
-When the KoboldCPP GUI appears, make sure to select "Use hipBLAS (ROCm)" and set GPU layers 
+When the KoboldCPP GUI appears, make sure to select "Use hipBLAS (ROCm)" and set GPU layers
 
 --------
 ### Quick Summary
@@ -45,27 +45,27 @@ My typical start command looks like this: ``python koboldcpp.py --threads 6 --bl
 - You're encouraged to use the .exe released, but if you want to compile your binaries from source at Windows, the easiest way is:
   - Use the latest release of w64devkit (https://github.com/skeeto/w64devkit). Be sure to use the "vanilla one", not i686 or other different stuff. If you try they will conflit with the precompiled libs!
   - Make sure you are using the w64devkit integrated terminal, (powershell should work for the cmake hipblas part)
-  - *This site may be useful, it has some patches for Windows ROCm to help it with compilation that I used, but I'm not sure if it's necessary.* https://streamhpc.com/blog/2023-08-01/how-to-get-full-cmake-support-for-amd-hip-sdk-on-windows-including-patches/ 
+  - *This site may be useful, it has some patches for Windows ROCm to help it with compilation that I used, but I'm not sure if it's necessary.* https://streamhpc.com/blog/2023-08-01/how-to-get-full-cmake-support-for-amd-hip-sdk-on-windows-including-patches/
   - (ROCm Required): https://rocm.docs.amd.com/en/latest/deploy/windows/quick_start.html
-    
-   Build command used:         
-  ``cd koboldcpp-rocm``        
+
+   Build command used:
+  ``cd koboldcpp-rocm``
   ``mkdir build && cd build``
 
-  ```cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DCMAKE_C_COMPILER="C:/Program Files/AMD/ROCm/5.5/bin/clang.exe" -DCMAKE_CXX_COMPILER="C:/Program Files/AMD/ROCm/5.5/bin/clang++.exe" -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"```
+  ```cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DHIP_PLATFORM=amd -DCMAKE_C_COMPILER="C:/Program Files/AMD/ROCm/5.7/bin/clang.exe" -DCMAKE_CXX_COMPILER="C:/Program Files/AMD/ROCm/5.7/bin/clang++.exe" -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"```
 
   ``cmake --build . -j 6`` (-j 6 means use 6 CPU cores, if you have more or less, feel free to change it to speed things up)
 
-  That puts koboldcpp_hipblas.dll inside of .\koboldcpp-rocm\build\bin           
-  copy koboldcpp_hipblas.dll to the main koboldcpp-rocm folder               
-  (You can run koboldcpp.py like this right away) like this:             
-  
+  That puts koboldcpp_hipblas.dll inside of .\koboldcpp-rocm\build\bin
+  copy koboldcpp_hipblas.dll to the main koboldcpp-rocm folder
+  (You can run koboldcpp.py like this right away) like this:
+
   ``python koboldcpp.py --usecublas mmq --threads 1 --contextsize 4096 --gpulayers 45 C:\Users\YellowRose\llama-2-7b-chat.Q8_0.gguf``
 
-  To make it into an exe, we use ``make_pyinstaller_exe_rocm_only.bat``          
-  which will attempt to build the exe for you and place it in /koboldcpp-rocm/dists/        
+  To make it into an exe, we use ``make_pyinstaller_exe_rocm_only.bat``
+  which will attempt to build the exe for you and place it in /koboldcpp-rocm/dists/
   **kobold_rocm_only.exe is built!**
-  
+
   -----
   If you'd like to do a full feature build with OPENBLAS and CLBLAST backends, you'll need [w64devkit](https://github.com/skeeto/w64devkit). Once downloaded, open w64devkit.exe and ``cd`` into the folder then run
   ``make LLAMA_OPENBLAS=1 LLAMA_CLBLAST=1 -j4`` then it will build the rest of the backend files.
@@ -78,12 +78,12 @@ My typical start command looks like this: ``python koboldcpp.py --threads 6 --bl
   - Also, replace the existing versions of the corresponding .dll files located in the project directory root (e.g. libopenblas.dll).
   - You can attempt a CuBLAS build with using the provided CMake file with visual studio. If you use the CMake file to build, copy the `koboldcpp_cublas.dll` generated into the same directory as the `koboldcpp.py` file. If you are bundling executables, you may need to include CUDA dynamic libraries (such as `cublasLt64_11.dll` and `cublas64_11.dll`) in order for the executable to work correctly on a different PC.
   - Make the KoboldCPP project using the instructions above.
-  - 
+  -
 ## Docker
 - KoboldCpp has a few unofficial third-party community created docker images. Feel free to try them out, but do not expect up-to-date support:
   - https://github.com/korewaChino/koboldCppDocker
   - https://github.com/noneabove1182/koboldcpp-docker
-  
+
 ## Arch Linux Packages
 There are 4 AUR packages available: [CPU-only](https://aur.archlinux.org/packages/koboldcpp-cpu), [CLBlast](https://aur.archlinux.org/packages/koboldcpp-clblast), [CUBLAS](https://aur.archlinux.org/packages/koboldcpp-cuda), and [HIPBLAS](https://aur.archlinux.org/packages/koboldcpp-hipblas). They are, respectively, for users with no GPU, users with a GPU (vendor-agnostic), users with NVIDIA GPUs, and users with a supported AMD GPU.
 
@@ -165,4 +165,3 @@ Comparison with OpenCL using 6800xt (old measurement)
   - GPT-NeoX / Pythia / StableLM / Dolly / RedPajama
   - MPT models
   - Falcon (GGUF only)
-
