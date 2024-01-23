@@ -133,6 +133,7 @@ def get_amd_gfx_vers_linux():
         try:
             output = run(['/opt/rocm/bin/rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
         except Exception as e:
+            print(f"An unexpected error occurred: {e}")
             return
         gfx_version = None
         for line in output.splitlines(): # read through the output line by line
@@ -2602,7 +2603,7 @@ def main(launch_args,start_server=True):
     if OS == "Linux":
         try:
             amd_gfx_vers = get_amd_gfx_vers_linux()
-            if any(item.startswith("gfx103") for item in amd_gfx_vers):
+            if any(item.startswith("gfx103") for item in amd_gfx_vers) and len(amd_gfx_vers) == 1:
                 os.environ["HSA_OVERRIDE_GFX_VERSION"] = "10.3.0"
                 print(f"Set AMD HSA_OVERRIDE_GFX_VERSION to 10.3.0")
         except Exception as e:
