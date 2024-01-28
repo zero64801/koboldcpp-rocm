@@ -85,7 +85,7 @@ My typical start command looks like this: ``python koboldcpp.py --threads 6 --bl
   - https://github.com/noneabove1182/koboldcpp-docker
   
 ## Arch Linux Packages
-There are 4 AUR packages available: [CPU-only](https://aur.archlinux.org/packages/koboldcpp-cpu), [CLBlast](https://aur.archlinux.org/packages/koboldcpp-clblast), [CUBLAS](https://aur.archlinux.org/packages/koboldcpp-cuda), and [HIPBLAS](https://aur.archlinux.org/packages/koboldcpp-hipblas). They are, respectively, for users with no GPU, users with a GPU (vendor-agnostic), users with NVIDIA GPUs, and users with a supported AMD GPU.
+There are 4 community made AUR packages (Maintained by @AlpinDale) available: [CPU-only](https://aur.archlinux.org/packages/koboldcpp-cpu), [CLBlast](https://aur.archlinux.org/packages/koboldcpp-clblast), [CUBLAS](https://aur.archlinux.org/packages/koboldcpp-cuda), and [HIPBLAS](https://aur.archlinux.org/packages/koboldcpp-hipblas). They are, respectively, for users with no GPU, users with a GPU (vendor-agnostic), users with NVIDIA GPUs, and users with a supported AMD GPU.
 
 The recommended installation method is through an AUR helper such as [paru](https://aur.archlinux.org/packages/paru) or [yay](https://aur.archlinux.org/packages/yay):
 
@@ -103,14 +103,28 @@ makepkg -si
 
 You can then run koboldcpp anywhere from the terminal by running `koboldcpp` to spawn the GUI, or `koboldcpp --help` to view the list of commands for commandline execution (in case the GUI does not work).
 
+
 ## Android (Termux) Alternative method
 - See https://github.com/ggerganov/llama.cpp/pull/1828/files
+
+## Compiling on Android (Termux Installation)
+- [Install and run Termux from F-Droid](https://f-droid.org/en/packages/com.termux/)
+- Enter the command `termux-change-repo` and choose `Mirror by BFSU`
+- Install dependencies with `pkg install wget git python` (plus any other missing packages)
+- Install dependencies `apt install openssl` (if needed)
+- Clone the repo `git clone https://github.com/LostRuins/koboldcpp.git`
+- Navigate to the koboldcpp folder `cd koboldcpp`
+- Build the project `make`
+- Grab a small GGUF model, such as `wget https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q2_K.gguf`
+- Start the python server `python koboldcpp.py --model phi-2.Q2_K.gguf`
+- Connect to `http://localhost:5001` on your mobile browser
+- If you encounter any errors, make sure your packages are up-to-date with `pkg up`
 
 ## AMD
 - Please check out https://github.com/YellowRoseCx/koboldcpp-rocm (you're already here 😊)
 
 ### Improving Performance
-- **(Nivida Only) GPU Acceleration**: If you're on Windows with an Nvidia GPU you can get CUDA support out of the box using the `--usecublas` flag, make sure you select the correct .exe with CUDA support.
+- **(Nvidia Only) GPU Acceleration**: If you're on Windows with an Nvidia GPU you can get CUDA support out of the box using the `--usecublas` flag, make sure you select the correct .exe with CUDA support.
 - **Any GPU Acceleration**: As a slightly slower alternative, try CLBlast with `--useclblast` flags for a slightly slower but more GPU compatible speedup.
 - **GPU Layer Offloading**: Want even more speedup? Combine one of the above GPU flags with `--gpulayers` to offload entire layers to the GPU! **Much faster, but uses more VRAM**. Experiment to determine number of layers to offload, and reduce by a few if you run out of memory.
 - **Increasing Context Size**: Try `--contextsize 4096` to 2x your context size! without much perplexity gain. Note that you'll have to increase the max context in the Kobold Lite UI as well (click and edit the number text field).
@@ -134,6 +148,7 @@ For more information, be sure to run the program with the `--help` flag, or [che
 - Since v1.15, requires CLBlast if enabled, the prebuilt windows binaries are included in this repo. If not found, it will fall back to a mode without CLBlast.
 - Since v1.33, you can set the context size to be above what the model supports officially. It does increases perplexity but should still work well below 4096 even on untuned models. (For GPT-NeoX, GPT-J, and LLAMA models) Customize this with `--ropeconfig`.
 - Since v1.42, supports GGUF models for LLAMA and Falcon
+- Since v1.55, lcuda paths on Linux are hardcoded and may require manual changes to the makefile if you do not use koboldcpp.sh for the compilation.
 - **I plan to keep backwards compatibility with ALL past llama.cpp AND alpaca.cpp models**. But you are also encouraged to reconvert/update your models if possible for best results.
 
 ## ROCm vs OpenCL (old comparison)
