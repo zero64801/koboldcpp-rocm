@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag of koboldcpp-rocm to build: v1.51.0.yr1-ROCm'
-        default: v1.54.0.yr1-ROCm
+        description: 'Version tag of koboldcpp-rocm to build: v1.56.yr1-ROCm'
+        default: v1.56.yr1-ROCm
         required: false
         type: string
   workflow_call:
     inputs:
       version:
-        description: 'Version tag of koboldcpp-rocm to build: v1.51.0.yr1-ROCm'
-        default: v1.54.0.yr1-ROCm
+        description: 'Version tag of koboldcpp-rocm to build: v1.56.yr1-ROCm'
+        default: v1.56.yr1-ROCm
         required: false
         type: string
 
@@ -91,8 +91,8 @@ jobs:
           robocopy "C:\Program Files\AMD\ROCm\5.7\bin\rocblas" .\rocblas /MIR
           pip install customtkinter
           PyInstaller --noconfirm --onefile --collect-all customtkinter --clean --console --icon ".\niko.ico" --add-data "./klite.embd;." --add-data "./winclinfo.exe;." --add-data "./OpenCL.dll;." --add-data "./kcpp_docs.embd;." --add-data "./koboldcpp_default.dll;." --add-data "./koboldcpp_openblas.dll;." --add-data "./koboldcpp_failsafe.dll;." --add-data "./koboldcpp_noavx2.dll;." --add-data "./libopenblas.dll;." --add-data "./koboldcpp_clblast.dll;." --add-data "./koboldcpp_clblast_noavx2.dll;." --add-data "./clblast.dll;." --add-data "D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll;." --add-data "./hipblas.dll;." --add-data "./rocblas.dll;." --add-data "./rwkv_vocab.embd;." --add-data "./rwkv_world_vocab.embd;." --add-data "./rocblas;." --add-data "C:/Windows/System32/msvcp140.dll;." --add-data "C:/Windows/System32/vcruntime140_1.dll;." "./koboldcpp.py" -n "koboldcpp_rocm.exe"
-#          curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.7z
-#          7z x gfx103132rocblasfiles.7z
+          curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx1031_tensileLib_01-30-2024.zip
+          7z x gfx1031_tensileLib_01-30-2024.zip
 
       - name: Create ZIP archive
         run: |
@@ -126,6 +126,7 @@ jobs:
           release_name: KoboldCPP-${{ inputs.version }}
           tag: ${{ inputs.version }}
           make_latest: true
+          prerelease: true
           overwrite: false
 
 
