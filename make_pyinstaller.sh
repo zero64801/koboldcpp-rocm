@@ -19,6 +19,7 @@ pyinstaller --noconfirm --onefile --clean --console --collect-all customtkinter 
 --add-data "./koboldcpp_hipblas.so:." \
 --add-data "/opt/rocm/lib/libhipblas.so:." \
 --add-data "/opt/rocm/lib/librocblas.so:." \
+--add-data "./koboldcpp_vulkan_noavx2.so:." \
 --add-data "./koboldcpp_vulkan.so:." \
 --add-data "./rwkv_vocab.embd:." \
 --add-data "./rwkv_world_vocab.embd:." \
