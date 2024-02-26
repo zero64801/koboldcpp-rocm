@@ -498,7 +498,7 @@ maxhordelen = 256
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.59.yr1-ROCm"
+KcppVersion = "1.59.1.yr1-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -1191,6 +1191,30 @@ def show_new_gui():
     gtooltip_box = None
     gtooltip_label = None
 
+    # trigger empty tooltip then remove it
+    def show_tooltip(event, tooltip_text=None):
+        nonlocal gtooltip_box, gtooltip_label
+        if not gtooltip_box and not gtooltip_label:
+            gtooltip_box = ctk.CTkToplevel(root)
+            gtooltip_box.configure(fg_color="#ffffe0")
+            gtooltip_box.withdraw()
+            gtooltip_box.overrideredirect(True)
+            gtooltip_label = ctk.CTkLabel(gtooltip_box, text=tooltip_text, text_color="#000000", fg_color="#ffffe0")
+            gtooltip_label.pack(expand=True, padx=2, pady=1)
+        else:
+            gtooltip_label.configure(text=tooltip_text)
+
+        x, y = root.winfo_pointerxy()
+        gtooltip_box.wm_geometry(f"+{x + 10}+{y + 10}")
+        gtooltip_box.deiconify()
+
+    def hide_tooltip(event):
+        nonlocal gtooltip_box
+        if gtooltip_box:
+            gtooltip_box.withdraw()
+    show_tooltip(None,"") #initialize tooltip objects
+    hide_tooltip(None)
+
     tabs = ctk.CTkFrame(root, corner_radius = 0, width=windowwidth, height=windowheight-50)
     tabs.grid(row=0, stick="nsew")
     tabnames= ["Quick Launch", "Hardware", "Tokens", "Model", "Network"]
@@ -1626,27 +1650,6 @@ def show_new_gui():
                         gui_layers_untouched = True
         except Exception as ex:
             pass
-
-    def show_tooltip(event, tooltip_text=None):
-        nonlocal gtooltip_box, gtooltip_label
-        if not gtooltip_box:
-            gtooltip_box = ctk.CTkToplevel(root)
-            gtooltip_box.configure(fg_color="#ffffe0")
-            gtooltip_box.withdraw()
-            gtooltip_box.overrideredirect(True)
-            gtooltip_label = ctk.CTkLabel(gtooltip_box, text=tooltip_text, text_color="#000000", fg_color="#ffffe0")
-            gtooltip_label.pack(expand=True, padx=2, pady=1)
-        else:
-            gtooltip_label.configure(text=tooltip_text)
-
-        x, y = root.winfo_pointerxy()
-        gtooltip_box.wm_geometry(f"+{x + 10}+{y + 10}")
-        gtooltip_box.deiconify()
-
-    def hide_tooltip(event):
-        nonlocal gtooltip_box
-        if gtooltip_box:
-            gtooltip_box.withdraw()
 
     def setup_backend_tooltip(parent):
         # backend count label with the tooltip function
@@ -3044,7 +3047,7 @@ if __name__ == '__main__':
     parser.add_argument("--forceversion", help="If the model file format detection fails (e.g. rogue modified model) you can set this to override the detected format (enter desired version, e.g. 401 for GPTNeoX-Type2).",metavar=('[version]'), type=int, default=0)
     parser.add_argument("--nommap", help="If set, do not use mmap to load newer models", action='store_true')
     parser.add_argument("--usemlock", help="For Apple Systems. Force system to keep model in RAM rather than swapping or compressing", action='store_true')
-    parser.add_argument("--noavx2", help="Do not use AVX2 instructions, a slower compatibility mode for older devices. Does not work with --clblast.", action='store_true')
+    parser.add_argument("--noavx2", help="Do not use AVX2 instructions, a slower compatibility mode for older devices.", action='store_true')
     parser.add_argument("--debugmode", help="Shows additional debug info in the terminal.", nargs='?', const=1, type=int, default=0)
     parser.add_argument("--skiplauncher", help="Doesn't display or use the GUI launcher.", action='store_true')
     parser.add_argument("--hordeconfig", help="Sets the display model name to something else, for easy use on AI Horde. Optional additional parameters set the horde max genlength, max ctxlen, API key and worker name.",metavar=('[hordemodelname]', '[hordegenlength] [hordemaxctx] [hordeapikey] [hordeworkername]'), nargs='+')

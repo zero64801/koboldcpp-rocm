@@ -44,6 +44,7 @@ CXXFLAGS = -I. -I./common -I./include -I./include/CL -I./otherarch -I./otherarch
 LDFLAGS  =
 #CC         := gcc-13
 #CXX        := g++-13
+FASTCFLAGS = $(subst -O3,-Ofast,$(CFLAGS))
 
 # these are used on windows, to build some libraries with extra old device compatibility
 SIMPLECFLAGS =
@@ -383,23 +384,23 @@ $(info )
 #
 
 ggml.o: ggml.c ggml.h ggml-cuda.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) -c $< -o $@
 ggml_v4_openblas.o: ggml.c ggml.h ggml-cuda.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(OPENBLAS_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(OPENBLAS_FLAGS) -c $< -o $@
 ggml_v4_failsafe.o: ggml.c ggml.h ggml-cuda.h
-	$(CC)  $(CFLAGS) $(NONECFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(NONECFLAGS) -c $< -o $@
 ggml_v4_noavx2.o: ggml.c ggml.h ggml-cuda.h
-	$(CC)  $(CFLAGS) $(SIMPLECFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(SIMPLECFLAGS) -c $< -o $@
 ggml_v4_clblast.o: ggml.c ggml.h ggml-cuda.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 ggml_v4_cublas.o: ggml.c ggml.h ggml-cuda.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
 ggml_v4_clblast_noavx2.o: ggml.c ggml.h ggml-cuda.h
-	$(CC)  $(CFLAGS) $(SIMPLECFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(SIMPLECFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 ggml_v4_vulkan.o: ggml.c ggml.h ggml-cuda.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(VULKAN_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(VULKAN_FLAGS) -c $< -o $@
 ggml_v4_vulkan_noavx2.o: ggml.c ggml.h ggml-cuda.h
-	$(CC)  $(CFLAGS) $(SIMPLECFLAGS) $(VULKAN_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(SIMPLECFLAGS) $(VULKAN_FLAGS) -c $< -o $@
 
 #quants
 ggml-quants.o: ggml-quants.c ggml.h ggml-quants.h ggml-cuda.h
@@ -418,41 +419,41 @@ ggml-backend.o: ggml-backend.c ggml.h ggml-backend.h
 
 #version 3 libs
 ggml_v3.o: otherarch/ggml_v3.c otherarch/ggml_v3.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) -c $< -o $@
 ggml_v3_openblas.o: otherarch/ggml_v3.c otherarch/ggml_v3.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(OPENBLAS_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(OPENBLAS_FLAGS) -c $< -o $@
 ggml_v3_failsafe.o: otherarch/ggml_v3.c otherarch/ggml_v3.h
-	$(CC)  $(CFLAGS) $(NONECFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(NONECFLAGS) -c $< -o $@
 ggml_v3_noavx2.o: otherarch/ggml_v3.c otherarch/ggml_v3.h
-	$(CC)  $(CFLAGS) $(SIMPLECFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(SIMPLECFLAGS) -c $< -o $@
 ggml_v3_clblast.o: otherarch/ggml_v3.c otherarch/ggml_v3.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 ggml_v3_cublas.o: otherarch/ggml_v3.c otherarch/ggml_v3.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
 ggml_v3_clblast_noavx2.o: otherarch/ggml_v3.c otherarch/ggml_v3.h
-	$(CC)  $(CFLAGS) $(SIMPLECFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(SIMPLECFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 
 #version 2 libs
 ggml_v2.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) -c $< -o $@
 ggml_v2_openblas.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(OPENBLAS_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(OPENBLAS_FLAGS) -c $< -o $@
 ggml_v2_failsafe.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
-	$(CC)  $(CFLAGS) $(NONECFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(NONECFLAGS) -c $< -o $@
 ggml_v2_noavx2.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
-	$(CC)  $(CFLAGS) $(SIMPLECFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(SIMPLECFLAGS) -c $< -o $@
 ggml_v2_clblast.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 ggml_v2_cublas.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
 ggml_v2_clblast_noavx2.o: otherarch/ggml_v2.c otherarch/ggml_v2.h
-	$(CC)  $(CFLAGS) $(SIMPLECFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(SIMPLECFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 
 #extreme old version compat
 ggml_v1.o: otherarch/ggml_v1.c otherarch/ggml_v1.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(FULLCFLAGS) -c $< -o $@
 ggml_v1_failsafe.o: otherarch/ggml_v1.c otherarch/ggml_v1.h
-	$(CC)  $(CFLAGS) $(NONECFLAGS) -c $< -o $@
+	$(CC)  $(FASTCFLAGS) $(NONECFLAGS) -c $< -o $@
 
 #opencl
 ggml-opencl.o: ggml-opencl.cpp ggml-opencl.h
