@@ -19,6 +19,7 @@ stop_token_max = 16
 ban_token_max = 16
 tensor_split_max = 16
 logit_bias_max = 16
+images_max = 4
 bias_min_value = -100.0
 bias_max_value = 100.0
 
@@ -41,6 +42,7 @@ class load_model_inputs(ctypes.Structure):
                 ("model_filename", ctypes.c_char_p),
                 ("lora_filename", ctypes.c_char_p),
                 ("lora_base", ctypes.c_char_p),
+                ("mmproj_filename", ctypes.c_char_p),
                 ("use_mmap", ctypes.c_bool),
                 ("use_mlock", ctypes.c_bool),
                 ("use_smartcontext", ctypes.c_bool),
@@ -61,6 +63,7 @@ class generation_inputs(ctypes.Structure):
     _fields_ = [("seed", ctypes.c_int),
                 ("prompt", ctypes.c_char_p),
                 ("memory", ctypes.c_char_p),
+                ("images", ctypes.c_char_p * images_max),
                 ("max_context_length", ctypes.c_int),
                 ("max_length", ctypes.c_int),
                 ("temperature", ctypes.c_float),
@@ -110,7 +113,8 @@ class sd_generation_inputs(ctypes.Structure):
                 ("width", ctypes.c_int),
                 ("height", ctypes.c_int),
                 ("seed", ctypes.c_int),
-                ("sample_method", ctypes.c_char_p)]
+                ("sample_method", ctypes.c_char_p),
+                ("quiet", ctypes.c_bool)]
 
 class sd_generation_outputs(ctypes.Structure):
     _fields_ = [("status", ctypes.c_int),
@@ -163,8 +167,10 @@ def get_amd_gfx_vers_linux():
         try:
             output = run(['/opt/rocm/bin/rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-            return
+            try:
+                output = run(['rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
         gfx_version = None
         for line in output.splitlines(): # read through the output line by line
             line = line.strip()
@@ -352,6 +358,17 @@ def set_backend_props(inputs):
         inputs.vulkan_info = "0".encode("UTF-8")
     return inputs
 
+def end_trim_to_sentence(input_text):
+    enders = ['.', '!', '?', '*', '"', ')', '}', '`', ']', ';', '…']
+    last = -1
+    for ender in enders:
+        last = max(last, input_text.rfind(ender))
+    nl = input_text.rfind("\n")
+    last = max(last, nl)
+    if last > 0:
+        return input_text[:last + 1].strip()
+    return input_text.strip()
+
 def load_model(model_filename):
     global args
     inputs = load_model_inputs()
@@ -372,6 +389,8 @@ def load_model(model_filename):
         inputs.use_mmap = False
         if len(args.lora) > 1:
             inputs.lora_base = args.lora[1].encode("UTF-8")
+
+    inputs.mmproj_filename = args.mmproj.encode("UTF-8") if args.mmproj else "".encode("UTF-8")
     inputs.use_smartcontext = args.smartcontext
     inputs.use_contextshift = (0 if args.noshift else 1)
     inputs.blasbatchsize = args.blasbatchsize
@@ -402,11 +421,16 @@ def load_model(model_filename):
     ret = handle.load_model(inputs)
     return ret
 
-def generate(prompt, memory="", max_length=32, max_context_length=512, temperature=0.7, top_k=100, top_a=0.0, top_p=0.92, min_p=0.0, typical_p=1.0, tfs=1.0, rep_pen=1.0, rep_pen_range=128, presence_penalty=0.0, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=False, stream_sse=False, grammar='', grammar_retain_state=False, genkey='', trimstop=False, quiet=False, dynatemp_range=0.0, dynatemp_exponent=1.0, smoothing_factor=0.0, logit_biases={}):
+def generate(prompt, memory="", images=[], max_length=32, max_context_length=512, temperature=0.7, top_k=100, top_a=0.0, top_p=0.92, min_p=0.0, typical_p=1.0, tfs=1.0, rep_pen=1.0, rep_pen_range=128, presence_penalty=0.0, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=False, stream_sse=False, grammar='', grammar_retain_state=False, genkey='', trimstop=False, quiet=False, dynatemp_range=0.0, dynatemp_exponent=1.0, smoothing_factor=0.0, logit_biases={}):
     global maxctx, args, currentusergenkey, totalgens, pendingabortkey
     inputs = generation_inputs()
     inputs.prompt = prompt.encode("UTF-8")
     inputs.memory = memory.encode("UTF-8")
+    for n in range(images_max):
+        if not images or n >= len(images):
+            inputs.images[n] = "".encode("UTF-8")
+        else:
+            inputs.images[n] = images[n].encode("UTF-8")
     if max_length >= (max_context_length-1):
         max_length = max_context_length-1
         print("\nWarning: You are trying to generate with max_length near or exceeding max_context_length. Most of the context will be removed, and your outputs will not be very coherent.")
@@ -533,15 +557,18 @@ def sd_generate(genparams):
     width = genparams.get("width", 512)
     height = genparams.get("height", 512)
     seed = genparams.get("seed", -1)
-    sample_method = genparams.get("sampler_name", "euler a")
+    sample_method = genparams.get("sampler_name", "k_euler_a")
+    is_quiet = True if args.quiet else False
+
 
     #clean vars
     width = width - (width%64)
     height = height - (height%64)
     cfg_scale = (1 if cfg_scale < 1 else (25 if cfg_scale > 25 else cfg_scale))
     sample_steps = (1 if sample_steps < 1 else (80 if sample_steps > 80 else sample_steps))
-    width = (128 if width < 128 else (1024 if width > 1024 else width))
-    height = (128 if height < 128 else (1024 if height > 1024 else height))
+    reslimit = 1024
+    width = (64 if width < 64 else width)
+    height = (64 if height < 64 else height)
 
     #quick mode
     if args.sdconfig and len(args.sdconfig)>1:
@@ -549,14 +576,20 @@ def sd_generate(genparams):
             cfg_scale = 1
             sample_steps = 7
             sample_method = "dpm++ 2m karras"
-            width = (512 if width > 512 else width)
-            height = (512 if height > 512 else height)
-            print("Image generation set to Quick Mode (Low Quality). Step counts, resolution, sampler, and cfg scale are fixed.")
+            reslimit = 512
+            print("\nSDConfig: Quick Mode (Low Quality). Step counts, resolution, sampler, and cfg scale are fixed.")
         elif args.sdconfig[1]=="clamped":
             sample_steps = (40 if sample_steps > 40 else sample_steps)
-            width = (512 if width > 512 else width)
-            height = (512 if height > 512 else height)
-            print("Image generation set to Clamped Mode (For Shared Use). Step counts and resolution are clamped.")
+            reslimit = 512
+            print("\nSDConfig: Clamped Mode (For Shared Use). Step counts and resolution are clamped.")
+
+    biggest = max(width,height)
+    if biggest > reslimit:
+        scaler = biggest / reslimit
+        width = int(width / scaler)
+        height = int(height / scaler)
+        width = width - (width%64)
+        height = height - (height%64)
 
     inputs = sd_generation_inputs()
     inputs.prompt = prompt.encode("UTF-8")
@@ -567,6 +600,7 @@ def sd_generate(genparams):
     inputs.height = height
     inputs.seed = seed
     inputs.sample_method = sample_method.lower().encode("UTF-8")
+    inputs.quiet = is_quiet
     ret = handle.sd_generate(inputs)
     outstr = ""
     if ret.status==1:
@@ -574,6 +608,10 @@ def sd_generate(genparams):
     return outstr
 
 def utfprint(str):
+    maxlen = 99999
+    strlength = len(str)
+    if strlength > maxlen: #limit max output len
+        str = str[:maxlen] + f"... (+{strlength-maxlen} chars)"
     try:
         print(str)
     except UnicodeEncodeError:
@@ -595,13 +633,15 @@ def bring_terminal_to_foreground():
 friendlymodelname = "inactive"
 friendlysdmodelname = "inactive"
 fullsdmodelpath = ""  #if empty, it's not initialized
+mmprojpath = "" #if empty, it's not initialized
+password = "" #if empty, no auth key required
 maxctx = 2048
 maxhordectx = 2048
 maxhordelen = 256
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.60.1.yr0-ROCm"
+KcppVersion = "1.61.2.yr0-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -683,6 +723,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                     user_message_end = adapter_obj.get("user_end", "")
                     assistant_message_start = adapter_obj.get("assistant_start", "\n### Response:\n")
                     assistant_message_end = adapter_obj.get("assistant_end", "")
+                    images_added = []
 
                     for message in messages_array:
                         if message['role'] == "system":
@@ -692,7 +733,17 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                         elif message['role'] == "assistant":
                             messages_string += assistant_message_start
 
-                        messages_string += message['content']
+                        # content can be a string or an array of objects
+                        curr_content = message['content']
+                        if isinstance(curr_content, str):
+                             messages_string += curr_content
+                        elif isinstance(curr_content, list): #is an array
+                            for item in curr_content:
+                                if item['type']=="text":
+                                     messages_string += item['text']
+                                elif item['type']=="image_url":
+                                    if item['image_url'] and item['image_url']['url'] and item['image_url']['url'].startswith("data:image"):
+                                        images_added.append(item['image_url']['url'].split(",", 1)[1])
 
                         if message['role'] == "system":
                             messages_string += system_message_end
@@ -703,10 +754,19 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
                     messages_string += assistant_message_start
                     genparams["prompt"] = messages_string
+                    if len(images_added)>0:
+                        genparams["images"] = images_added
+
+            elif api_format==5:
+                    firstimg = genparams.get('image', "")
+                    genparams["images"] = [firstimg]
+                    genparams["max_length"] = 32
+                    genparams["prompt"] = "### Instruction: In one sentence, write a descriptive caption for this image.\n### Response:"
 
             return generate(
                 prompt=genparams.get('prompt', ""),
                 memory=genparams.get('memory', ""),
+                images=genparams.get('images', []),
                 max_context_length=genparams.get('max_context_length', maxctx),
                 max_length=genparams.get('max_length', 100),
                 temperature=genparams.get('temperature', 0.7),
@@ -759,6 +819,8 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             res = {"id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": friendlymodelname,
             "usage": {"prompt_tokens": 100,"completion_tokens": 100,"total_tokens": 200},
             "choices": [{"index": 0, "message":{"role": "assistant", "content": recvtxt,}, "finish_reason": "length"}]}
+        elif api_format==5:
+            res = {"caption": end_trim_to_sentence(recvtxt)}
         else:
             res = {"results": [{"text": recvtxt}]}
 
@@ -862,6 +924,30 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             print(e)
 
+    def secure_endpoint(self): #returns false if auth fails. caller should exit
+        #handle password stuff
+        if password and password !="":
+            auth_header = None
+            auth_ok = False
+            if 'Authorization' in self.headers:
+                auth_header = self.headers['Authorization']
+            elif 'authorization' in self.headers:
+                auth_header = self.headers['authorization']
+            if auth_header != None and auth_header.startswith('Bearer '):
+                token = auth_header[len('Bearer '):].strip()
+                if token==password:
+                    auth_ok = True
+            if auth_ok==False:
+                self.send_response(401)
+                self.end_headers(content_type='application/json')
+                self.wfile.write(json.dumps({"detail": {
+                        "error": "Unauthorized",
+                        "msg": "Authentication key is missing or invalid.",
+                        "type": "unauthorized",
+                    }}).encode())
+                return False
+        return True
+
     def noscript_webui(self):
         global modelbusy
         import html
@@ -942,7 +1028,7 @@ Enter Prompt:<br>
         self.wfile.write(finalhtml)
 
     def do_GET(self):
-        global maxctx, maxhordelen, friendlymodelname, KcppVersion, totalgens, preloaded_story, exitcounter, currentusergenkey, friendlysdmodelname, fullsdmodelpath
+        global maxctx, maxhordelen, friendlymodelname, KcppVersion, totalgens, preloaded_story, exitcounter, currentusergenkey, friendlysdmodelname, fullsdmodelpath, mmprojpath, password
         self.path = self.path.rstrip('/')
         response_body = None
         content_type = 'application/json'
@@ -980,7 +1066,10 @@ Enter Prompt:<br>
             response_body = (json.dumps({"value": maxctx}).encode())
 
         elif self.path.endswith(('/api/extra/version')):
-            response_body = (json.dumps({"result":"KoboldCpp","version":KcppVersion}).encode())
+            has_txt2img = not (friendlysdmodelname=="inactive" or fullsdmodelpath=="")
+            has_vision = (mmprojpath!="")
+            has_password = (password!="")
+            response_body = (json.dumps({"result":"KoboldCpp","version":KcppVersion, "protected":has_password ,"txt2img":has_txt2img,"vision":has_vision}).encode())
 
         elif self.path.endswith(('/api/extra/perf')):
             lastp = handle.get_last_process_time()
@@ -993,6 +1082,8 @@ Enter Prompt:<br>
             response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "last_seed":lastseed, "total_gens":totalgens, "stop_reason":stopreason, "queue":requestsinqueue, "idle":(0 if modelbusy.locked() else 1), "hordeexitcounter":exitcounter, "uptime":uptime}).encode())
 
         elif self.path.endswith('/api/extra/generate/check'):
+            if not self.secure_endpoint():
+                return
             pendtxtStr = ""
             if requestsinqueue==0 and totalgens>0 and currentusergenkey=="":
                 pendtxt = handle.get_pending_output()
@@ -1064,6 +1155,8 @@ Enter Prompt:<br>
         response_code = 200
 
         if self.path.endswith(('/api/extra/tokencount')):
+            if not self.secure_endpoint():
+                return
             try:
                 genparams = json.loads(body)
                 countprompt = genparams.get('prompt', "")
@@ -1079,6 +1172,8 @@ Enter Prompt:<br>
                 response_body = (json.dumps({"value": -1}).encode())
 
         elif self.path.endswith('/api/extra/abort'):
+            if not self.secure_endpoint():
+                return
             multiuserkey = ""
             try:
                 tempbody = json.loads(body)
@@ -1087,7 +1182,6 @@ Enter Prompt:<br>
             except Exception as e:
                 multiuserkey = ""
                 pass
-
             if (multiuserkey=="" and requestsinqueue==0) or (multiuserkey!="" and multiuserkey==currentusergenkey):
                 ag = handle.abort_generate()
                 time.sleep(0.1) #short delay before replying
@@ -1100,6 +1194,8 @@ Enter Prompt:<br>
                 response_body = (json.dumps({"success": "false", "done":"false"}).encode())
 
         elif self.path.endswith('/api/extra/generate/check'):
+            if not self.secure_endpoint():
+                return
             pendtxtStr = ""
             multiuserkey = ""
             try:
@@ -1143,7 +1239,7 @@ Enter Prompt:<br>
         try:
             sse_stream_flag = False
 
-            api_format = 0 #1=basic,2=kai,3=oai,4=oai-chat
+            api_format = 0 #1=basic,2=kai,3=oai,4=oai-chat,5=interrogate
             is_txt2img = False
 
             if self.path.endswith('/request'):
@@ -1162,10 +1258,27 @@ Enter Prompt:<br>
             if self.path.endswith('/v1/chat/completions'):
                 api_format = 4
 
+            if self.path.endswith('/sdapi/v1/interrogate'):
+                has_vision = (mmprojpath!="")
+                if not has_vision:
+                    self.send_response(503)
+                    self.end_headers(content_type='application/json')
+                    self.wfile.write(json.dumps({"detail": {
+                            "msg": "No LLaVA model loaded",
+                            "type": "service_unavailable",
+                        }}).encode())
+                    return
+                api_format = 5
+
             if self.path.endswith('/sdapi/v1/txt2img'):
                 is_txt2img = True
 
             if is_txt2img or api_format > 0:
+
+                if not is_txt2img and api_format<5:
+                    if not self.secure_endpoint():
+                        return
+
                 genparams = None
                 try:
                     genparams = json.loads(body)
@@ -1361,7 +1474,7 @@ def show_new_gui():
 
     tabs = ctk.CTkFrame(root, corner_radius = 0, width=windowwidth, height=windowheight-50)
     tabs.grid(row=0, stick="nsew")
-    tabnames= ["Quick Launch", "Hardware", "Tokens", "Model", "Network","Image Gen"]
+    tabnames= ["Quick Launch", "Hardware", "Tokens", "Model Files", "Network", "Horde Worker","Image Gen"]
     navbuttons = {}
     navbuttonframe = ctk.CTkFrame(tabs, width=100, height=int(tabs.cget("height")))
     navbuttonframe.grid(row=0, column=0, padx=2,pady=2)
@@ -1431,7 +1544,7 @@ def show_new_gui():
     nocertifymode = ctk.IntVar(value=0)
 
     lowvram_var = ctk.IntVar()
-    mmq_var = ctk.IntVar(value=1)
+    mmq_var = ctk.IntVar(value=0)
     blas_threads_var = ctk.StringVar()
     blas_size_var = ctk.IntVar()
     version_var = ctk.StringVar(value="0")
@@ -1450,6 +1563,7 @@ def show_new_gui():
     lora_var = ctk.StringVar()
     lora_base_var = ctk.StringVar()
     preloadstory_var = ctk.StringVar()
+    mmproj_var = ctk.StringVar()
 
     port_var = ctk.StringVar(value=defaultport)
     host_var = ctk.StringVar(value="")
@@ -1462,6 +1576,7 @@ def show_new_gui():
     usehorde_var = ctk.IntVar()
     ssl_cert_var = ctk.StringVar()
     ssl_key_var = ctk.StringVar()
+    password_var = ctk.StringVar()
 
     sd_model_var = ctk.StringVar()
     sd_quick_var = ctk.IntVar(value=0)
@@ -1534,7 +1649,9 @@ def show_new_gui():
     def makefileentry(parent, text, searchtext, var, row=0, width=200, filetypes=[], onchoosefile=None, singlerow=False, tooltiptxt=""):
         makelabel(parent, text, row,0,tooltiptxt)
         def getfilename(var, text):
-            fnam = askopenfilename(title=text,filetypes=filetypes)
+            initialDir = os.path.dirname(var.get())
+            initialDir = initialDir if os.path.isdir(initialDir) else None
+            fnam = askopenfilename(title=text,filetypes=filetypes, initialdir=initialDir)
             if fnam:
                 var.set(fnam)
                 if onchoosefile:
@@ -2024,12 +2141,13 @@ def show_new_gui():
     togglerope(1,1,1)
 
     # Model Tab
-    model_tab = tabcontent["Model"]
+    model_tab = tabcontent["Model Files"]
 
     makefileentry(model_tab, "Model:", "Select GGML Model File", model_var, 1, onchoosefile=on_picked_model_file,tooltiptxt="Select a GGUF or GGML model file on disk to be loaded.")
     makefileentry(model_tab, "Lora:", "Select Lora File",lora_var, 3,tooltiptxt="Select an optional GGML LoRA adapter to use.\nLeave blank to skip.")
     makefileentry(model_tab, "Lora Base:", "Select Lora Base File", lora_base_var, 5,tooltiptxt="Select an optional F16 GGML LoRA base file to use.\nLeave blank to skip.")
-    makefileentry(model_tab, "Preloaded Story:", "Select Preloaded Story File", preloadstory_var, 7,tooltiptxt="Select an optional KoboldAI JSON savefile \nto be served on launch to any client.")
+    makefileentry(model_tab, "LLaVA mmproj:", "Select LLaVA mmproj File", mmproj_var, 7,tooltiptxt="Select a mmproj file to use for LLaVA.\nLeave blank to skip.")
+    makefileentry(model_tab, "Preloaded Story:", "Select Preloaded Story File", preloadstory_var, 9,tooltiptxt="Select an optional KoboldAI JSON savefile \nto be served on launch to any client.")
 
     # Network Tab
     network_tab = tabcontent["Network"]
@@ -2046,15 +2164,18 @@ def show_new_gui():
 
     makefileentry(network_tab, "SSL Cert:", "Select SSL cert.pem file",ssl_cert_var, 6, width=130 ,filetypes=[("Unencrypted Certificate PEM", "*.pem")], singlerow=True,tooltiptxt="Select your unencrypted .pem SSL certificate file for https.\nCan be generated with OpenSSL.")
     makefileentry(network_tab, "SSL Key:", "Select SSL key.pem file", ssl_key_var, 8, width=130, filetypes=[("Unencrypted Key PEM", "*.pem")], singlerow=True,tooltiptxt="Select your unencrypted .pem SSL key file for https.\nCan be generated with OpenSSL.")
+    makelabelentry(network_tab, "Password: ", password_var, 9, 150,tooltip="Enter a password required to use this instance.\nThis key will be required for all text endpoints.\nImage endpoints are not secured.")
 
-    # horde
-    makelabel(network_tab, "Horde:", 18,0,"Settings for embedded AI Horde worker").grid(pady=10)
 
-    horde_name_entry,  horde_name_label = makelabelentry(network_tab, "Horde Model Name:", horde_name_var, 20, 180,"The model name to be displayed on the AI Horde.")
-    horde_gen_entry,  horde_gen_label = makelabelentry(network_tab, "Gen. Length:", horde_gen_var, 21, 50,"The maximum amount to generate per request \nthat this worker will accept jobs for.")
-    horde_context_entry,  horde_context_label = makelabelentry(network_tab, "Max Context:",horde_context_var, 22, 50,"The maximum context length \nthat this worker will accept jobs for.")
-    horde_apikey_entry,  horde_apikey_label = makelabelentry(network_tab, "API Key (If Embedded Worker):",horde_apikey_var, 23, 180,"Your AI Horde API Key that you have registered.")
-    horde_workername_entry,  horde_workername_label = makelabelentry(network_tab, "Horde Worker Name:",horde_workername_var, 24, 180,"Your worker's name to be displayed.")
+    # Horde Tab
+    horde_tab = tabcontent["Horde Worker"]
+    makelabel(horde_tab, "Horde:", 18,0,"Settings for embedded AI Horde worker").grid(pady=10)
+
+    horde_name_entry,  horde_name_label = makelabelentry(horde_tab, "Horde Model Name:", horde_name_var, 20, 180,"The model name to be displayed on the AI Horde.")
+    horde_gen_entry,  horde_gen_label = makelabelentry(horde_tab, "Gen. Length:", horde_gen_var, 21, 50,"The maximum amount to generate per request \nthat this worker will accept jobs for.")
+    horde_context_entry,  horde_context_label = makelabelentry(horde_tab, "Max Context:",horde_context_var, 22, 50,"The maximum context length \nthat this worker will accept jobs for.")
+    horde_apikey_entry,  horde_apikey_label = makelabelentry(horde_tab, "API Key (If Embedded Worker):",horde_apikey_var, 23, 180,"Your AI Horde API Key that you have registered.")
+    horde_workername_entry,  horde_workername_label = makelabelentry(horde_tab, "Horde Worker Name:",horde_workername_var, 24, 180,"Your worker's name to be displayed.")
 
     def togglehorde(a,b,c):
         labels = [horde_name_label, horde_gen_label, horde_context_label, horde_apikey_label, horde_workername_label]
@@ -2069,7 +2190,7 @@ def show_new_gui():
             basefile = os.path.basename(model_var.get())
             horde_name_var.set(sanitize_string(os.path.splitext(basefile)[0]))
 
-    makecheckbox(network_tab, "Configure for Horde", usehorde_var, 19, command=togglehorde,tooltiptxt="Enable the embedded AI Horde worker.")
+    makecheckbox(horde_tab, "Configure for Horde", usehorde_var, 19, command=togglehorde,tooltiptxt="Enable the embedded AI Horde worker.")
     togglehorde(1,1,1)
 
     # Image Gen Tab
@@ -2161,8 +2282,10 @@ def show_new_gui():
         args.model_param = None if model_var.get() == "" else model_var.get()
         args.lora = None if lora_var.get() == "" else ([lora_var.get()] if lora_base_var.get()=="" else [lora_var.get(), lora_base_var.get()])
         args.preloadstory = None if preloadstory_var.get() == "" else preloadstory_var.get()
+        args.mmproj = None if mmproj_var.get() == "" else mmproj_var.get()
 
         args.ssl = None if (ssl_cert_var.get() == "" or ssl_key_var.get() == "") else ([ssl_cert_var.get(), ssl_key_var.get()])
+        args.password = None if (password_var.get() == "") else (password_var.get())
 
         args.port_param = defaultport if port_var.get()=="" else int(port_var.get())
         args.host = host_var.get()
@@ -2277,10 +2400,16 @@ def show_new_gui():
             else:
                 lora_var.set(dict["lora"][0])
 
+        if "mmproj" in dict and dict["mmproj"]:
+            mmproj_var.set(dict["mmproj"])
+
         if "ssl" in dict and dict["ssl"]:
             if len(dict["ssl"]) == 2:
                 ssl_cert_var.set(dict["ssl"][0])
                 ssl_key_var.set(dict["ssl"][1])
+
+        if "password" in dict and dict["password"]:
+            password_var.set(dict["password"])
 
         if "preloadstory" in dict and dict["preloadstory"]:
             preloadstory_var.set(dict["preloadstory"])
@@ -2326,7 +2455,7 @@ def show_new_gui():
         file_type = [("KoboldCpp Settings", "*.kcpps")]
         global runmode_untouched
         runmode_untouched = False
-        filename = askopenfilename(filetypes=file_type, defaultextension=file_type)
+        filename = askopenfilename(filetypes=file_type, defaultextension=file_type, initialdir=None)
         if not filename or filename=="":
             return
         with open(filename, 'r') as f:
@@ -2904,7 +3033,7 @@ def check_latest_version():
 
 def main(launch_args,start_server=True):
     import platform
-    global args, friendlymodelname, friendlysdmodelname, fullsdmodelpath
+    global args, friendlymodelname, friendlysdmodelname, fullsdmodelpath, mmprojpath, password
     OS = platform.system()
     if OS == "Linux":
         try:
@@ -2920,6 +3049,8 @@ def main(launch_args,start_server=True):
     if args.config and len(args.config)==1:
         if isinstance(args.config[0], str) and os.path.exists(args.config[0]):
            loadconfigfile(args.config[0])
+        elif args.ignoremissing:
+            print("Ignoring missing kcpp config file...")
         else:
             global exitcounter
             exitcounter = 999
@@ -3015,27 +3146,57 @@ def main(launch_args,start_server=True):
     #handle loading text model
     if args.model_param:
         if not os.path.exists(args.model_param):
-            exitcounter = 999
             print(f"Cannot find text model file: {args.model_param}")
-            time.sleep(3)
-            sys.exit(2)
+            if args.ignoremissing:
+                print(f"Ignoring missing model file...")
+                args.model_param = None
+            else:
+                exitcounter = 999
+                time.sleep(3)
+                sys.exit(2)
 
         if args.lora and args.lora[0]!="":
             if not os.path.exists(args.lora[0]):
-                exitcounter = 999
                 print(f"Cannot find lora file: {args.lora[0]}")
-                time.sleep(3)
-                sys.exit(2)
+                if args.ignoremissing:
+                    print(f"Ignoring missing lora file...")
+                    args.lora = None
+                else:
+                    exitcounter = 999
+                    time.sleep(3)
+                    sys.exit(2)
             else:
                 args.lora[0] = os.path.abspath(args.lora[0])
                 if len(args.lora) > 1:
                     if not os.path.exists(args.lora[1]):
-                        exitcounter = 999
                         print(f"Cannot find lora base: {args.lora[1]}")
-                        time.sleep(3)
-                        sys.exit(2)
+                        if args.ignoremissing:
+                            print(f"Ignoring missing lora file...")
+                            args.lora = None
+                        else:
+                            exitcounter = 999
+                            time.sleep(3)
+                            sys.exit(2)
                     else:
                         args.lora[1] = os.path.abspath(args.lora[1])
+
+        if args.mmproj and args.mmproj!="":
+            if not os.path.exists(args.mmproj):
+                print(f"Cannot find mmproj file: {args.mmproj}")
+                if args.ignoremissing:
+                    print(f"Ignoring missing mmproj file...")
+                    args.mmproj = None
+                else:
+                    exitcounter = 999
+                    time.sleep(3)
+                    sys.exit(2)
+            else:
+                global mmprojpath
+                args.mmproj = os.path.abspath(args.mmproj)
+                mmprojpath = args.mmproj
+
+        if args.password and args.password!="":
+            password = args.password.strip()
 
         if not args.blasthreads or args.blasthreads <= 0:
             args.blasthreads = args.threads
@@ -3058,22 +3219,27 @@ def main(launch_args,start_server=True):
     if args.sdconfig:
         imgmodel = args.sdconfig[0]
         if not imgmodel or not os.path.exists(imgmodel):
-            exitcounter = 999
             print(f"Cannot find image model file: {imgmodel}")
-            time.sleep(3)
-            sys.exit(2)
-        imgmodel = os.path.abspath(imgmodel)
-        fullsdmodelpath = imgmodel
-        friendlysdmodelname = os.path.basename(imgmodel)
-        friendlysdmodelname = os.path.splitext(friendlysdmodelname)[0]
-        friendlysdmodelname = sanitize_string(friendlysdmodelname)
-        loadok = sd_load_model(imgmodel)
-        print("Load Image Model OK: " + str(loadok))
-        if not loadok:
-            exitcounter = 999
-            print("Could not load image model: " + imgmodel)
-            time.sleep(3)
-            sys.exit(3)
+            if args.ignoremissing:
+                print(f"Ignoring missing sdconfig img model file...")
+                args.sdconfig = None
+            else:
+                exitcounter = 999
+                time.sleep(3)
+                sys.exit(2)
+        else:
+            imgmodel = os.path.abspath(imgmodel)
+            fullsdmodelpath = imgmodel
+            friendlysdmodelname = os.path.basename(imgmodel)
+            friendlysdmodelname = os.path.splitext(friendlysdmodelname)[0]
+            friendlysdmodelname = sanitize_string(friendlysdmodelname)
+            loadok = sd_load_model(imgmodel)
+            print("Load Image Model OK: " + str(loadok))
+            if not loadok:
+                exitcounter = 999
+                print("Could not load image model: " + imgmodel)
+                time.sleep(3)
+                sys.exit(3)
 
     #load embedded lite
     try:
@@ -3138,12 +3304,12 @@ def main(launch_args,start_server=True):
         timer_thread = threading.Timer(1, onready_subprocess) #1 second delay
         timer_thread.start()
 
-    if args.model_param and args.benchmark is not None:
+    if args.model_param and args.benchmark:
         from datetime import datetime, timezone
         global libname
         start_server = False
         save_to_file = (args.benchmark!="stdout" and args.benchmark!="")
-        benchmaxctx =  (2048 if maxctx>2048 else maxctx)
+        benchmaxctx =  (16384 if maxctx>16384 else maxctx)
         benchlen = 100
         benchmodel = sanitize_string(os.path.splitext(os.path.basename(modelname))[0])
         if os.path.exists(args.benchmark) and os.path.getsize(args.benchmark) > 1000000:
@@ -3157,7 +3323,7 @@ def main(launch_args,start_server=True):
         benchprompt = "11111111"
         for i in range(0,10): #generate massive prompt
             benchprompt += benchprompt
-        result = generate(benchprompt,memory="",max_length=benchlen,max_context_length=benchmaxctx,temperature=0.1,top_k=1,rep_pen=1,use_default_badwordsids=True)
+        result = generate(benchprompt,memory="",images=[],max_length=benchlen,max_context_length=benchmaxctx,temperature=0.1,top_k=1,rep_pen=1,use_default_badwordsids=True)
         result = (result[:5] if len(result)>5 else "")
         resultok = (result=="11111")
         t_pp = float(handle.get_last_process_time())*float(benchmaxctx-benchlen)*0.001
@@ -3287,5 +3453,8 @@ if __name__ == '__main__':
     parser.add_argument("--ssl", help="Allows all content to be served over SSL instead. A valid UNENCRYPTED SSL cert and key .pem files must be provided", metavar=('[cert_pem]', '[key_pem]'), nargs='+')
     parser.add_argument("--nocertify", help="Allows insecure SSL connections. Use this if you have cert errors and need to bypass certificate restrictions.", action='store_true')
     parser.add_argument("--sdconfig", help="Specify a stable diffusion safetensors model to enable image generation. If quick is specified, force optimal generation settings for speed.",metavar=('[sd_filename]', '[normal|quick|clamped] [threads] [quant|noquant]'), nargs='+')
+    parser.add_argument("--mmproj", help="Select a multimodal projector file for LLaVA.", default="")
+    parser.add_argument("--password", help="Enter a password required to use this instance. This key will be required for all text endpoints. Image endpoints are not secured.", default=None)
+    parser.add_argument("--ignoremissing", help="Ignores all missing non-essential files, just skipping them instead.", action='store_true')
 
     main(parser.parse_args(),start_server=True)

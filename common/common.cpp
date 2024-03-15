@@ -484,6 +484,12 @@ bool gpt_params_parse_ex(int argc, char ** argv, gpt_params & params) {
                 break;
             }
             params.n_batch = std::stoi(argv[i]);
+        } else if (arg == "-ub" || arg == "--ubatch-size") {
+            if (++i >= argc) {
+                invalid_param = true;
+                break;
+            }
+            params.n_ubatch = std::stoi(argv[i]);
         } else if (arg == "--keep") {
             if (++i >= argc) {
                 invalid_param = true;
@@ -978,7 +984,9 @@ void gpt_print_usage(int /*argc*/, char ** argv, const gpt_params & params) {
     printf("                        binary file containing multiple choice tasks.\n");
     printf("  -n N, --n-predict N   number of tokens to predict (default: %d, -1 = infinity, -2 = until context filled)\n", params.n_predict);
     printf("  -c N, --ctx-size N    size of the prompt context (default: %d, 0 = loaded from model)\n", params.n_ctx);
-    printf("  -b N, --batch-size N  batch size for prompt processing (default: %d)\n", params.n_batch);
+    printf("  -b N, --batch-size N  logical maximum batch size (default: %d)\n", params.n_batch);
+    printf("  -ub N, --ubatch-size N\n");
+    printf("                        physical maximum batch size (default: %d)\n", params.n_ubatch);
     printf("  --samplers            samplers that will be used for generation in the order, separated by \';\'\n");
     printf("                        (default: %s)\n", sampler_type_names.c_str());
     printf("  --sampling-seq        simplified sequence for samplers that will be used (default: %s)\n", sampler_type_chars.c_str());
@@ -1288,7 +1296,9 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     auto cparams = llama_context_default_params();
 
     cparams.n_ctx             = params.n_ctx;
+    cparams.n_seq_max         = params.n_parallel;
     cparams.n_batch           = params.n_batch;
+    cparams.n_ubatch          = params.n_ubatch;
     cparams.n_threads         = params.n_threads;
     cparams.n_threads_batch   = params.n_threads_batch == -1 ? params.n_threads : params.n_threads_batch;
     cparams.seed              = params.seed;
@@ -1379,6 +1389,7 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
         std::vector<llama_token> tmp = { llama_token_bos(model), llama_token_eos(model), };
         llama_decode(lctx, llama_batch_get_one(tmp.data(), std::min(tmp.size(), (size_t) params.n_batch), 0, 0));
         llama_kv_cache_clear(lctx);
+        llama_synchronize(lctx);
         llama_reset_timings(lctx);
     }
 
@@ -1786,17 +1797,17 @@ void dump_kv_cache_view(const llama_kv_cache_view & view, int row_size) {
     static const char slot_chars[] = ".123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+";
 
     printf("=== Dumping KV cache. total cells %d, max sequences per cell %d, populated cells %d, total tokens in cache %d, largest empty slot=%d @ %d",
-        view.n_cells, view.n_max_seq, view.used_cells, view.token_count, view.max_contiguous, view.max_contiguous_idx);
+        view.n_cells, view.n_seq_max, view.used_cells, view.token_count, view.max_contiguous, view.max_contiguous_idx);
 
     llama_kv_cache_view_cell * c_curr = view.cells;
     llama_seq_id * cs_curr = view.cells_sequences;
 
-    for (int i = 0; i < view.n_cells; i++, c_curr++, cs_curr += view.n_max_seq) {
+    for (int i = 0; i < view.n_cells; i++, c_curr++, cs_curr += view.n_seq_max) {
         if (i % row_size == 0) {
             printf("\n%5d: ", i);
         }
         int seq_count = 0;
-        for (int j = 0; j < view.n_max_seq; j++) {
+        for (int j = 0; j < view.n_seq_max; j++) {
             if (cs_curr[j] >= 0) { seq_count++; }
         }
         putchar(slot_chars[std::min(sizeof(slot_chars) - 2, size_t(seq_count))]);
@@ -1809,14 +1820,14 @@ void dump_kv_cache_view_seqs(const llama_kv_cache_view & view, int row_size) {
     static const char slot_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     printf("=== Dumping KV cache. total cells %d, max sequences per cell %d, populated cells %d, total tokens in cache %d, largest empty slot=%d @ %d\n",
-        view.n_cells, view.n_max_seq, view.used_cells, view.token_count, view.max_contiguous, view.max_contiguous_idx);
+        view.n_cells, view.n_seq_max, view.used_cells, view.token_count, view.max_contiguous, view.max_contiguous_idx);
 
     std::unordered_map<llama_seq_id, size_t> seqs;
     llama_kv_cache_view_cell * c_curr = view.cells;
     llama_seq_id * cs_curr = view.cells_sequences;
 
-    for (int i = 0; i < view.n_cells; i++, c_curr++, cs_curr += view.n_max_seq) {
-        for (int j = 0; j < view.n_max_seq; j++) {
+    for (int i = 0; i < view.n_cells; i++, c_curr++, cs_curr += view.n_seq_max) {
+        for (int j = 0; j < view.n_seq_max; j++) {
             if (cs_curr[j] < 0) { continue; }
             if (seqs.find(cs_curr[j]) == seqs.end()) {
                 if (seqs.size() + 1 >= sizeof(slot_chars)) { break; }
@@ -1835,11 +1846,11 @@ void dump_kv_cache_view_seqs(const llama_kv_cache_view & view, int row_size) {
 
     c_curr = view.cells;
     cs_curr = view.cells_sequences;
-    for (int i = 0; i < view.n_cells; i++, c_curr++, cs_curr += view.n_max_seq) {
+    for (int i = 0; i < view.n_cells; i++, c_curr++, cs_curr += view.n_seq_max) {
         if (i % row_size == 0) {
             printf("\n%5d: ", i);
         }
-        for (int j = 0; j < view.n_max_seq; j++) {
+        for (int j = 0; j < view.n_seq_max; j++) {
             if (cs_curr[j] >= 0) {
                 const auto & it = seqs.find(cs_curr[j]);
                 putchar(it != seqs.end() ? int(slot_chars[it->second]) : '+');
@@ -1852,3 +1863,18 @@ void dump_kv_cache_view_seqs(const llama_kv_cache_view & view, int row_size) {
 
     printf("\n=== Done dumping\n");
 }
+
+void llama_embd_normalize(const float * inp, float * out, int n) {
+    double sum = 0.0;
+    for (int i = 0; i < n; i++) {
+        sum += inp[i] * inp[i];
+    }
+    sum = sqrt(sum);
+
+    const float norm = sum > 0.0 ? 1.0f / sum : 0.0f;
+
+    for (int i = 0; i < n; i++) {
+        out[i] = inp[i] * norm;
+    }
+}
+
