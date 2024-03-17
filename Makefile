@@ -216,18 +216,14 @@ endif # LLAMA_CUBLAS
 ifdef LLAMA_HIPBLAS
 	ifeq ($(wildcard /opt/rocm),)
 		ROCM_PATH	?= /usr
-		GPU_TARGETS ?= $(shell $(shell which amdgpu-arch))
+		GPU_TARGETS ?= gfx803 gfx900 gfx906 gfx908 gfx90a gfx1010 gfx1030 gfx1031 gfx1032 gfx1100 gfx1101 gfx1102 $(shell $(shell which amdgpu-arch))
 		HCC         := $(ROCM_PATH)/bin/hipcc
 		HCXX        := $(ROCM_PATH)/bin/hipcc
 	else
 		ROCM_PATH	?= /opt/rocm
 		HCC         := $(ROCM_PATH)/llvm/bin/clang
 		HCXX        := $(ROCM_PATH)/llvm/bin/clang++
-	ifdef ALL_AMD_GPU
 		GPU_TARGETS ?= gfx803 gfx900 gfx906 gfx908 gfx90a gfx1010 gfx1030 gfx1031 gfx1032 gfx1100 gfx1101 gfx1102 $(shell $(ROCM_PATH)/llvm/bin/amdgpu-arch)
-	else	
-		GPU_TARGETS ?= $(shell $(ROCM_PATH)/llvm/bin/amdgpu-arch)
-	endif
 	endif
 	LLAMA_CUDA_DMMV_X ?= 32
 	LLAMA_CUDA_MMV_Y ?= 1
