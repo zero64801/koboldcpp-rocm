@@ -79,10 +79,6 @@ My typical start command looks like this: ``python koboldcpp.py --threads 6 --bl
   - You can attempt a CuBLAS build with using the provided CMake file with visual studio. If you use the CMake file to build, copy the `koboldcpp_cublas.dll` generated into the same directory as the `koboldcpp.py` file. If you are bundling executables, you may need to include CUDA dynamic libraries (such as `cublasLt64_11.dll` and `cublas64_11.dll`) in order for the executable to work correctly on a different PC.
   - Make the KoboldCPP project using the instructions above.
   -
-## Docker
-- KoboldCpp has a few unofficial third-party community created docker images. Feel free to try them out, but do not expect up-to-date support:
-  - https://github.com/korewaChino/koboldCppDocker
-  - https://github.com/noneabove1182/koboldcpp-docker
 
 ## Arch Linux Packages
 There are 4 community made AUR packages (Maintained by @AlpinDale) available: [CPU-only](https://aur.archlinux.org/packages/koboldcpp-cpu), [CLBlast](https://aur.archlinux.org/packages/koboldcpp-clblast), [CUBLAS](https://aur.archlinux.org/packages/koboldcpp-cuda), and [HIPBLAS](https://aur.archlinux.org/packages/koboldcpp-hipblas). They are, respectively, for users with no GPU, users with a GPU (vendor-agnostic), users with NVIDIA GPUs, and users with a supported AMD GPU.
@@ -138,6 +134,12 @@ For more information, be sure to run the program with the `--help` flag, or [che
 - KoboldCpp now has an **official Colab GPU Notebook**! This is an easy way to get started without installing anything in a minute or two. [Try it here!](https://colab.research.google.com/github/LostRuins/koboldcpp/blob/concedo/colab.ipynb).
 - Note that KoboldCpp is not responsible for your usage of this Colab Notebook, you should ensure that your own usage complies with Google Colab's terms of use.
 
+## Docker
+- The official docker can be found at https://hub.docker.com/r/koboldai/koboldcpp
+- KoboldCpp also has a few unofficial third-party community created docker images. Feel free to try them out, but do not expect up-to-date support:
+  - https://github.com/korewaChino/koboldCppDocker
+  - https://github.com/noneabove1182/koboldcpp-docker
+- If you're building your own docker, remember to set CUDA_DOCKER_ARCH or enable LLAMA_PORTABLE
 
 ## Questions and Help
 - **First, please check out [The KoboldCpp FAQ and Knowledgebase](https://github.com/LostRuins/koboldcpp/wiki) which may already have answers to your questions! Also please search through past issues and discussions.**
