@@ -131,10 +131,8 @@ if (LLAMA_CUBLAS)
 endif()
 
 if (LLAMA_HIPBLAS)
-    if (MSVC)
-        execute_process(COMMAND 
-            powershell.exe 
-            "-Command \"Get-ChildItem 'C:/Program Files/AMD/ROCm/' | Sort-Object { version } | Select-Object -Last 1 | ForEach-Object { Write-Output $_.FullName }\""
+    if (CMAKE_HOST_WIN32)
+		execute_process(COMMAND powershell.exe -Command "Get-ChildItem 'C:/Program Files/AMD/ROCm/' | Sort-Object {$_.Version} | Select-Object -Last 1 | ForEach-Object { Write-Output $_.FullName }"
             OUTPUT_VARIABLE ROCM_PATH
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
@@ -150,7 +148,6 @@ if (LLAMA_HIPBLAS)
     if (NOT ${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
         message(WARNING "Only LLVM is supported for HIP, hint: CXX=/opt/rocm/llvm/bin/clang++")
     endif()
-
     find_package(hip)
     find_package(hipblas)
     find_package(rocblas)
@@ -161,13 +158,14 @@ if (LLAMA_HIPBLAS)
         list(APPEND GGML_SOURCES_ROCM "ggml-cuda.cu")
         add_compile_definitions(GGML_USE_HIPBLAS GGML_USE_CUDA SD_USE_CUBLAS)
         add_library(ggml-rocm OBJECT ${GGML_SOURCES_CUDA})
+		target_include_directories(ggml-rocm PUBLIC . ./otherarch ./otherarch/tools)
         if (LLAMA_CUDA_FORCE_DMMV)
             target_compile_definitions(ggml-rocm PUBLIC GGML_CUDA_FORCE_DMMV)
         endif()
         target_compile_definitions(ggml-rocm PUBLIC GGML_CUDA_DMMV_X=${LLAMA_CUDA_DMMV_X})
         target_compile_definitions(ggml-rocm PUBLIC GGML_CUDA_MMV_Y=${LLAMA_CUDA_MMV_Y})
         target_compile_definitions(ggml-rocm PUBLIC K_QUANTS_PER_ITERATION=${LLAMA_CUDA_KQUANTS_ITER})
-        set_source_files_properties(${GGML_SOURCES_ROCM} PROPERTIES LANGUAGE CXX)
+        set_source_files_properties(${GGML_SOURCES_CUDA} PROPERTIES LANGUAGE CXX)
         target_link_libraries(ggml-rocm PUBLIC hip::device hip::host roc::rocblas roc::hipblas)
 
 
@@ -398,7 +396,7 @@ add_library(ggml OBJECT
             ggml-quants.h
             sgemm.cpp
             sgemm.h
-            ${GGML_SOURCES_CUDA})
+			)
 target_include_directories(ggml PUBLIC . ./otherarch ./otherarch/tools)
 target_compile_features(ggml PUBLIC c_std_11) # don't bump
 target_link_libraries(ggml PUBLIC Threads::Threads ${LLAMA_EXTRA_LIBS})
