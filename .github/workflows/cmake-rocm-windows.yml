@@ -22,7 +22,7 @@ permissions:
 jobs:
   build_libs:
     name: Build ROCm Lib
-    runs-on: windows-2019
+    runs-on: windows-latest
     defaults:
       run:
         shell: pwsh
