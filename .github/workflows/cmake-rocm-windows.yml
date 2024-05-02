@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag of koboldcpp-rocm to build: v1.62.2.yr0-ROCm-dev'
-        default: v1.63.yr1-ROCm
+        description: 'Version tag of koboldcpp-rocm to build: v1.64.yr0-ROCm-dev'
+        default: v1.64.yr0-ROCm
         required: false
         type: string
   workflow_call:
     inputs:
       version:
         description: 'Version tag of koboldcpp-rocm to build: v1.62.2.yr0-ROCm-dev'
-        default: v1.63.yr1-ROCm
+        default: v1.64.yr0-ROCm
         required: false
         type: string
 
@@ -113,17 +113,17 @@ jobs:
           copy "koboldcpp_rocm_files.zip" D:\a\koboldcpp-rocm\koboldcpp-rocm\dist
 
 
-      - uses: actions/upload-artifact@v4.1.6
+      - uses: actions/upload-artifact@v4.3.3
         with:
           name: koboldcpp_hipblas-${{ inputs.version }}
           path: D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll
 
-      - uses: actions/upload-artifact@v4.1.6
+      - uses: actions/upload-artifact@v4.3.3
         with:
           name: koboldcpp_rocm_only-${{ inputs.version }}
           path: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm.exe
 
-      - uses: actions/upload-artifact@v4.1.6
+      - uses: actions/upload-artifact@v4.3.3
         with:
           name: koboldcpp_rocm_zip-${{ inputs.version }}
           path: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_files.zip
