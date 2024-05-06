@@ -41,8 +41,16 @@ My typical start command looks like this: ``python koboldcpp.py --threads 6 --bl
 - By default, you can connect to http://localhost:5001
 - You can also run it using the command line. For info, please check `koboldcpp.exe --help` or `python koboldcpp.py --help`
 
+- **(Nvidia Only) GPU Acceleration**: If you're on Windows with an Nvidia GPU you can get CUDA support out of the box using the `--usecublas` flag, make sure you select the correct .exe with CUDA support.
+- **Any GPU Acceleration**: As a slightly slower alternative, try CLBlast with `--useclblast` flags for a slightly slower but more GPU compatible speedup.
+- **GPU Layer Offloading**: Want even more speedup? Combine one of the above GPU flags with `--gpulayers` to offload entire layers to the GPU! **Much faster, but uses more VRAM**. Experiment to determine number of layers to offload, and reduce by a few if you run out of memory.
+- **Increasing Context Size**: Try `--contextsize 4096` to 2x your context size! without much perplexity gain. Note that you'll have to increase the max context in the Kobold Lite UI as well (click and edit the number text field).
+- If you are having crashes or issues, you can try turning off BLAS with the `--noblas` flag. You can also try running in a non-avx2 compatibility mode with `--noavx2`. Lastly, you can try turning off mmap with `--nommap`.
+
+For more information, be sure to run the program with the `--help` flag, or [check the wiki](https://github.com/LostRuins/koboldcpp/wiki).
+
+
 ## Compiling for AMD on Windows
-- You're encouraged to use the .exe released, but if you want to compile your binaries from source at Windows, the easiest way is:
   - Use the latest release of w64devkit (https://github.com/skeeto/w64devkit). Be sure to use the "vanilla one", not i686 or other different stuff. If you try they will conflit with the precompiled libs!
   - Make sure you are using the w64devkit integrated terminal, (powershell should work for the cmake hipblas part)
   - *This site may be useful, it has some patches for Windows ROCm to help it with compilation that I used, but I'm not sure if it's necessary.* https://streamhpc.com/blog/2023-08-01/how-to-get-full-cmake-support-for-amd-hip-sdk-on-windows-including-patches/
@@ -111,8 +119,8 @@ You can then run koboldcpp anywhere from the terminal by running `koboldcpp` to 
 - Clone the repo `git clone https://github.com/LostRuins/koboldcpp.git`
 - Navigate to the koboldcpp folder `cd koboldcpp`
 - Build the project `make`
-- Grab a small GGUF model, such as `wget https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q2_K.gguf`
-- Start the python server `python koboldcpp.py --model phi-2.Q2_K.gguf`
+- Grab a small GGUF model, such as `wget https://huggingface.co/concedo/KobbleTinyV2-1.1B-GGUF/resolve/main/KobbleTiny-Q4_K.gguf`
+- Start the python server `python koboldcpp.py --model KobbleTiny-Q4_K.gguf`
 - Connect to `http://localhost:5001` on your mobile browser
 - If you encounter any errors, make sure your packages are up-to-date with `pkg up`
 - GPU acceleration for Termux may be possible but I have not explored it. If you find a good cross-device solution, do share or PR it.
