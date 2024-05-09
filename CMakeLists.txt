@@ -9,6 +9,10 @@ message(STATUS "============== ============== ==============")
 
 cmake_minimum_required(VERSION 3.12) # Don't bump this version for no reason
 project("llama.cpp" C CXX)
+# HIP on Windows: xhip is required with clang++ to get __half defined
+if (WIN32)
+  add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-xhip>")
+endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS 1)
