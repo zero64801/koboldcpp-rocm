@@ -131,6 +131,7 @@ if (LLAMA_CUBLAS)
 endif()
 
 if (LLAMA_HIPBLAS)
+add_compile_options(-mcode-object-version=4)
     if (CMAKE_HOST_WIN32)
 		execute_process(COMMAND powershell.exe -Command "Get-ChildItem 'C:/Program Files/AMD/ROCm/' | Sort-Object {$_.Version} | Select-Object -Last 1 | ForEach-Object { Write-Output $_.FullName }"
             OUTPUT_VARIABLE ROCM_PATH
