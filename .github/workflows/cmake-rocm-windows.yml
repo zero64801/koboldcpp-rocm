@@ -5,14 +5,14 @@ on:
     inputs:
       version:
         description: 'Version tag of koboldcpp-rocm to build: v1.64.yr0-ROCm-dev'
-        default: v1.64.yr0-ROCm
+        default: v1.64.1.yr1-ROCm
         required: false
         type: string
   workflow_call:
     inputs:
       version:
         description: 'Version tag of koboldcpp-rocm to build: v1.62.2.yr0-ROCm-dev'
-        default: v1.64.yr0-ROCm
+        default: v1.64.1.yr1-ROCm
         required: false
         type: string
 
@@ -138,7 +138,7 @@ jobs:
           release_name: KoboldCPP-${{ inputs.version }}
           tag: ${{ inputs.version }}
           make_latest: true
-          prerelease: false
+          prerelease: true
           overwrite: false
 
 
