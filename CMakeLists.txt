@@ -27,10 +27,11 @@ set(LLAMA_GPROF OFF)
 set(LLAMA_SANITIZE_THREAD OFF)
 set(LLAMA_SANITIZE_ADDRESS OFF)
 set(LLAMA_SANITIZE_UNDEFINED OFF)
+
 set(LLVM_CC "C:/Program Files/LLVM/bin/clang.exe")
 set(LLVM_CXX "C:/Program Files/LLVM/bin/clang++.exe")
-set(ROCM_CC "C:/Program Files/AMD\ROCm/5.7/bin/clang.exe")
-set(ROCM_CXX "C:/Program Files/AMD\ROCm/5.7/bin/clang++.exe")
+set(ROCM_CC "C:/Program Files/AMD/ROCm/5.7/bin/clang.exe")
+set(ROCM_CXX "C:/Program Files/AMD/ROCm/5.7/bin/clang++.exe")
 
 # instruction set specific
 option(LLAMA_AVX                    "llama: enable AVX"                                     ON)
