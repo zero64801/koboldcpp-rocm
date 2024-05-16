@@ -10,9 +10,6 @@ message(STATUS "============== ============== ==============")
 cmake_minimum_required(VERSION 3.12) # Don't bump this version for no reason
 project("llama.cpp" C CXX)
 # HIP on Windows: xhip is required with clang++ to get __half defined
-if (WIN32)
-  add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-xhip>")
-endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS 1)
@@ -30,6 +27,10 @@ set(LLAMA_GPROF OFF)
 set(LLAMA_SANITIZE_THREAD OFF)
 set(LLAMA_SANITIZE_ADDRESS OFF)
 set(LLAMA_SANITIZE_UNDEFINED OFF)
+set(LLVM_CC "C:/Program Files/LLVM/bin/clang.exe")
+set(LLVM_CXX "C:/Program Files/LLVM/bin/clang++.exe")
+set(ROCM_CC "C:\Program Files\AMD\ROCm\5.7\bin\clang.exe")
+set(ROCM_CXX "C:\Program Files\AMD\ROCm\5.7\bin\clang++.exe")
 
 # instruction set specific
 option(LLAMA_AVX                    "llama: enable AVX"                                     ON)
@@ -137,12 +138,14 @@ if (LLAMA_CUBLAS)
 endif()
 
 if (LLAMA_HIPBLAS)
+
     if (CMAKE_HOST_WIN32)
 		execute_process(COMMAND powershell.exe -Command "Get-ChildItem 'C:/Program Files/AMD/ROCm/' | Sort-Object {$_.Version} | Select-Object -Last 1 | ForEach-Object { Write-Output $_.FullName }"
             OUTPUT_VARIABLE ROCM_PATH
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
         list(APPEND CMAKE_PREFIX_PATH ${ROCM_PATH})
+        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-xhip>")
         message(STATUS "ROCM_PATH: ${ROCM_PATH}") 
     else()
         list(APPEND CMAKE_PREFIX_PATH /opt/rocm)
@@ -163,7 +166,14 @@ if (LLAMA_HIPBLAS)
         file(GLOB GGML_SOURCES_CUDA "ggml-cuda/*.cu")
         list(APPEND GGML_SOURCES_CUDA "ggml-cuda.cu")
         add_compile_definitions(GGML_USE_HIPBLAS GGML_USE_CUDA SD_USE_CUBLAS)
+
         add_library(ggml-rocm OBJECT ${GGML_SOURCES_CUDA})
+
+        set_property(TARGET ggml-rocm PROPERTY C_STANDARD 11)
+        set_property(TARGET ggml-rocm PROPERTY CXX_STANDARD 11)
+        set_property(TARGET ggml-rocm PROPERTY C_COMPILER ${ROCM_CC})
+        set_property(TARGET ggml-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
+
         target_compile_options(ggml-rocm PRIVATE -O2)
 		target_include_directories(ggml-rocm PUBLIC . ./otherarch ./otherarch/tools)
         if (LLAMA_CUDA_FORCE_DMMV)
@@ -177,6 +187,12 @@ if (LLAMA_HIPBLAS)
 
 
         add_library(ggml-v2-rocm OBJECT ${GGML_V2_CUDA_SOURCES})
+
+        set_property(TARGET ggml-v2-rocm PROPERTY C_STANDARD 11)
+        set_property(TARGET ggml-v2-rocm PROPERTY CXX_STANDARD 11)
+        set_property(TARGET ggml-v2-rocm PROPERTY C_COMPILER ${ROCM_CC})
+        set_property(TARGET ggml-v2-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
+
         target_compile_options(ggml-v2-rocm PRIVATE -O2)
         if (LLAMA_CUDA_FORCE_DMMV)
             target_compile_definitions(ggml-v2-rocm PUBLIC GGML_CUDA_FORCE_DMMV)
@@ -188,6 +204,12 @@ if (LLAMA_HIPBLAS)
         target_link_libraries(ggml-v2-rocm PUBLIC hip::device hip::host roc::rocblas roc::hipblas)
 
         add_library(ggml-v3-rocm OBJECT ${GGML_V3_CUDA_SOURCES})
+
+        set_property(TARGET ggml-v3-rocm PROPERTY C_STANDARD 11)
+        set_property(TARGET ggml-v3-rocm PROPERTY CXX_STANDARD 11)
+        set_property(TARGET ggml-v3-rocm PROPERTY C_COMPILER ${ROCM_CC})
+        set_property(TARGET ggml-v3-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
+
         target_compile_options(ggml-v3-rocm PRIVATE -O2)
         if (LLAMA_CUDA_FORCE_DMMV)
             target_compile_definitions(ggml-v3-rocm PUBLIC GGML_CUDA_FORCE_DMMV)
@@ -199,6 +221,12 @@ if (LLAMA_HIPBLAS)
         target_link_libraries(ggml-v3-rocm PUBLIC hip::device hip::host roc::rocblas roc::hipblas)
 
         add_library(ggml-v2-legacy-rocm OBJECT ${GGML_V2_LEGACY_CUDA_SOURCES})
+
+        set_property(TARGET ggml-v2-legacy-rocm PROPERTY C_STANDARD 11)
+        set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_STANDARD 11)
+        set_property(TARGET ggml-v2-legacy-rocm PROPERTY C_COMPILER ${ROCM_CC})
+        set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
+
         target_compile_options(ggml-v2-legacy-rocm PRIVATE -O2)
         if (LLAMA_CUDA_FORCE_DMMV)
             target_compile_definitions(ggml-v2-legacy-rocm PUBLIC GGML_CUDA_FORCE_DMMV)
@@ -220,6 +248,9 @@ if (LLAMA_HIPBLAS)
         message(WARNING "hipBLAS or HIP not found. Try setting CMAKE_PREFIX_PATH=/opt/rocm")
     endif()
 endif()
+
+set(CMAKE_C_COMPILER ${LLVM_CC})
+set(CMAKE_CXX_COMPILER ${LLVM_CXX})
 
 if (LLAMA_ALL_WARNINGS)
     if (NOT MSVC)
@@ -467,21 +498,16 @@ target_compile_features(gpttype_adapter PUBLIC cxx_std_11) # don't bump
 target_link_libraries(gpttype_adapter PRIVATE common2 ggml ${LLAMA_EXTRA_LIBS})
 set_target_properties(gpttype_adapter PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-if (LLAMA_CUBLAS)
-    set(TARGET koboldcpp_cublas)
-    add_library(${TARGET} SHARED expose.cpp expose.h)
-    target_include_directories(${TARGET} PUBLIC . ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./examples ./common)
-    target_compile_features(${TARGET} PUBLIC cxx_std_11) # don't bump
-    set_target_properties(${TARGET} PROPERTIES PREFIX "")
-    set_target_properties(${TARGET} PROPERTIES OUTPUT_NAME "koboldcpp_cublas")
-    set_target_properties(${TARGET} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    target_link_libraries(${TARGET} PUBLIC Threads::Threads ggml ggml_v1 ggml_v2 ggml_v3 common2 gpttype_adapter sdtype_adapter ${LLAMA_EXTRA_LIBS})
-    target_compile_features(${TARGET} PRIVATE cxx_std_11)
-endif()
-
 if (LLAMA_HIPBLAS)
     set(TARGET koboldcpp_hipblas)
     add_library(${TARGET} SHARED expose.cpp expose.h)
+
+    # Set ROCm compilers for koboldcpp_hipblas
+    set_property(TARGET ${TARGET} PROPERTY C_STANDARD 11)
+    set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 11)
+    set_property(TARGET ${TARGET} PROPERTY C_COMPILER ${ROCM_CC})
+    set_property(TARGET ${TARGET} PROPERTY CXX_COMPILER ${ROCM_CXX})
+
     target_include_directories(${TARGET} PUBLIC . ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./examples ./common)
     target_compile_features(${TARGET} PUBLIC cxx_std_11) # don't bump
     set_target_properties(${TARGET} PROPERTIES PREFIX "")
