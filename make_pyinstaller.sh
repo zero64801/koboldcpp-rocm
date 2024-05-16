@@ -10,6 +10,7 @@ make LLAMA_HIPBLAS=1 LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1 -j$NUMCPUS && \
 pyinstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all libclblast-dev --collect-all libopenblas-dev --collect-all clinfo --icon ".\niko.ico" \
 --add-data "./klite.embd:." \
 --add-data "./kcpp_docs.embd:." \
+--add-data "./kcpp_sdui.embd:." \
 --add-data "./koboldcpp_default.so:." \
 --add-data "./koboldcpp_openblas.so:." \
 --add-data "./koboldcpp_failsafe.so:." \
