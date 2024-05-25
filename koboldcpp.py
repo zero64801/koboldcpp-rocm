@@ -671,7 +671,7 @@ maxhordelen = 256
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.66.yr0-ROCm"
+KcppVersion = "1.66.1.yr1-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -1732,10 +1732,7 @@ def show_new_gui():
     contextshift = ctk.IntVar(value=1)
     remotetunnel = ctk.IntVar(value=0)
     smartcontext = ctk.IntVar()
-    if os.name == "nt":
-        flashattention = ctk.IntVar(value=1)
-    else:
-        flashattention = ctk.IntVar(value=0)
+    flashattention = ctk.IntVar(value=0)
     context_var = ctk.IntVar()
     customrope_var = ctk.IntVar()
     customrope_scale = ctk.StringVar(value="1.0")
