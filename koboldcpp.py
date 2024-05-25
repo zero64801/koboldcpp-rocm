@@ -1732,7 +1732,10 @@ def show_new_gui():
     contextshift = ctk.IntVar(value=1)
     remotetunnel = ctk.IntVar(value=0)
     smartcontext = ctk.IntVar()
-    flashattention = ctk.IntVar(value=0)
+    if os.name == "nt":
+        flashattention = ctk.IntVar(value=1)
+    else:
+        flashattention = ctk.IntVar(value=0)
     context_var = ctk.IntVar()
     customrope_var = ctk.IntVar()
     customrope_scale = ctk.StringVar(value="1.0")
