@@ -45,6 +45,7 @@ class load_model_inputs(ctypes.Structure):
                 ("mmproj_filename", ctypes.c_char_p),
                 ("use_mmap", ctypes.c_bool),
                 ("use_mlock", ctypes.c_bool),
+                ("use_smartcontext", ctypes.c_bool),
                 ("use_contextshift", ctypes.c_bool),
                 ("clblast_info", ctypes.c_int),
                 ("cublas_info", ctypes.c_int),
@@ -74,6 +75,7 @@ class generation_inputs(ctypes.Structure):
                 ("tfs", ctypes.c_float),
                 ("rep_pen", ctypes.c_float),
                 ("rep_pen_range", ctypes.c_int),
+                ("rep_pen_slope", ctypes.c_float),
                 ("presence_penalty", ctypes.c_float),
                 ("mirostat", ctypes.c_int),
                 ("mirostat_tau", ctypes.c_float),
@@ -101,11 +103,16 @@ class generation_outputs(ctypes.Structure):
 
 class sd_load_model_inputs(ctypes.Structure):
     _fields_ = [("model_filename", ctypes.c_char_p),
+                ("executable_path", ctypes.c_char_p),
                 ("clblast_info", ctypes.c_int),
                 ("cublas_info", ctypes.c_int),
                 ("vulkan_info", ctypes.c_char_p),
                 ("threads", ctypes.c_int),
                 ("quant", ctypes.c_int),
+                ("taesd", ctypes.c_bool),
+                ("vae_filename", ctypes.c_char_p),
+                ("lora_filename", ctypes.c_char_p),
+                ("lora_multiplier", ctypes.c_float),
                 ("debugmode", ctypes.c_int)]
 
 class sd_generation_inputs(ctypes.Structure):
@@ -119,6 +126,7 @@ class sd_generation_inputs(ctypes.Structure):
                 ("height", ctypes.c_int),
                 ("seed", ctypes.c_int),
                 ("sample_method", ctypes.c_char_p),
+                ("clip_skip", ctypes.c_int),
                 ("quiet", ctypes.c_bool)]
 
 class sd_generation_outputs(ctypes.Structure):
@@ -396,6 +404,7 @@ def load_model(model_filename):
             inputs.lora_base = args.lora[1].encode("UTF-8")
 
     inputs.mmproj_filename = args.mmproj.encode("UTF-8") if args.mmproj else "".encode("UTF-8")
+    inputs.use_smartcontext = args.smartcontext
     inputs.use_contextshift = (0 if args.noshift else 1)
     inputs.flash_attention = args.flashattention
     inputs.blasbatchsize = args.blasbatchsize
@@ -420,7 +429,7 @@ def load_model(model_filename):
     ret = handle.load_model(inputs)
     return ret
 
-def generate(prompt, memory="", images=[], max_length=32, max_context_length=512, temperature=0.7, top_k=100, top_a=0.0, top_p=0.92, min_p=0.0, typical_p=1.0, tfs=1.0, rep_pen=1.0, rep_pen_range=128, presence_penalty=0.0, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=False, stream_sse=False, grammar='', grammar_retain_state=False, genkey='', trimstop=False, quiet=False, dynatemp_range=0.0, dynatemp_exponent=1.0, smoothing_factor=0.0, logit_biases={}, render_special=False, banned_tokens=[], bypass_eos_token=False):
+def generate(prompt, memory="", images=[], max_length=32, max_context_length=512, temperature=0.7, top_k=100, top_a=0.0, top_p=0.92, min_p=0.0, typical_p=1.0, tfs=1.0, rep_pen=1.0, rep_pen_range=128, rep_pen_slope=1.0, presence_penalty=0.0, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=False, stream_sse=False, grammar='', grammar_retain_state=False, genkey='', trimstop=False, quiet=False, dynatemp_range=0.0, dynatemp_exponent=1.0, smoothing_factor=0.0, logit_biases={}, render_special=False, banned_tokens=[], bypass_eos_token=False):
     global maxctx, args, currentusergenkey, totalgens, pendingabortkey
     inputs = generation_inputs()
     inputs.prompt = prompt.encode("UTF-8")
@@ -450,6 +459,7 @@ def generate(prompt, memory="", images=[], max_length=32, max_context_length=512
     inputs.tfs = tfs
     inputs.rep_pen = rep_pen
     inputs.rep_pen_range = rep_pen_range
+    inputs.rep_pen_slope = rep_pen_slope
     inputs.presence_penalty = presence_penalty
     inputs.stream_sse = stream_sse
     inputs.quiet = quiet
@@ -535,10 +545,11 @@ def generate(prompt, memory="", images=[], max_length=32, max_context_length=512
         return {"text":outstr,"status":ret.status,"stopreason":ret.stopreason}
 
 
-def sd_load_model(model_filename):
+def sd_load_model(model_filename,vae_filename,lora_filename):
     global args
     inputs = sd_load_model_inputs()
     inputs.debugmode = args.debugmode
+    inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
     inputs.model_filename = model_filename.encode("UTF-8")
     thds = args.threads
     quant = 0
@@ -552,6 +563,10 @@ def sd_load_model(model_filename):
 
     inputs.threads = thds
     inputs.quant = quant
+    inputs.taesd = True if args.sdvaeauto else False
+    inputs.vae_filename = vae_filename.encode("UTF-8")
+    inputs.lora_filename = lora_filename.encode("UTF-8")
+    inputs.lora_multiplier = args.sdloramult
     inputs = set_backend_props(inputs)
     ret = handle.sd_load_model(inputs)
     return ret
@@ -570,6 +585,7 @@ def sd_generate(genparams):
     seed = genparams.get("seed", -1)
     sample_method = genparams.get("sampler_name", "k_euler_a")
     is_quiet = True if args.quiet else False
+    clip_skip = genparams.get("clip_skip", -1)
 
     #clean vars
     width = width - (width%64)
@@ -605,6 +621,7 @@ def sd_generate(genparams):
     inputs.seed = seed
     inputs.sample_method = sample_method.lower().encode("UTF-8")
     inputs.quiet = is_quiet
+    inputs.clip_skip = clip_skip
     ret = handle.sd_generate(inputs)
     outstr = ""
     if ret.status==1:
@@ -654,7 +671,7 @@ maxhordelen = 256
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.65.yr0-ROCm"
+KcppVersion = "1.66.yr0-ROCm"
 showdebug = True
 showsamplerwarning = True
 showmaxctxwarning = True
@@ -822,6 +839,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 tfs=genparams.get('tfs', 1.0),
                 rep_pen=genparams.get('rep_pen', 1.0),
                 rep_pen_range=genparams.get('rep_pen_range', 256),
+                rep_pen_slope=genparams.get('rep_pen_slope', 1.0),
                 presence_penalty=genparams.get('presence_penalty', 0.0),
                 mirostat=genparams.get('mirostat', 0),
                 mirostat_tau=genparams.get('mirostat_tau', 5.0),
@@ -1204,7 +1222,7 @@ Enter Prompt:<br>
             else:
                 response_body = embedded_kcpp_docs
 
-        elif self.path=="/sdui":
+        elif self.path.startswith(("/sdui")):
             content_type = 'text/html'
             if embedded_kcpp_sdui is None:
                 response_body = (f"KoboldCpp API is running, but KCPP SDUI is not loaded").encode()
@@ -1564,7 +1582,6 @@ def show_new_gui():
     root = ctk.CTk()
     root.geometry(str(windowwidth) + "x" + str(windowheight))
     root.title("KoboldCpp v"+KcppVersion)
-    root.resizable(True,True)
 
     gtooltip_box = None
     gtooltip_label = None
@@ -1601,7 +1618,11 @@ def show_new_gui():
                     root.geometry(str(windowwidth) + "x" + str(windowheight) + str(lastpos))
                     ctk.set_widget_scaling(smallratio)
 
-    root.bind("<Configure>", on_resize)
+    if sys.platform=="darwin":
+        root.resizable(False,False)
+    else:
+        root.resizable(True,True)
+        root.bind("<Configure>", on_resize)
     global using_gui_launcher
     using_gui_launcher = True
 
@@ -1710,6 +1731,7 @@ def show_new_gui():
 
     contextshift = ctk.IntVar(value=1)
     remotetunnel = ctk.IntVar(value=0)
+    smartcontext = ctk.IntVar()
     flashattention = ctk.IntVar(value=0)
     context_var = ctk.IntVar()
     customrope_var = ctk.IntVar()
@@ -1737,6 +1759,10 @@ def show_new_gui():
     password_var = ctk.StringVar()
 
     sd_model_var = ctk.StringVar()
+    sd_lora_var = ctk.StringVar()
+    sd_loramult_var = ctk.StringVar(value="1.0")
+    sd_vae_var = ctk.StringVar()
+    sd_vaeauto_var = ctk.IntVar(value=0)
     sd_clamped_var = ctk.IntVar(value=0)
     sd_threads_var = ctk.StringVar(value=str(default_threads))
     sd_quant_var = ctk.IntVar(value=0)
@@ -1805,7 +1831,7 @@ def show_new_gui():
 
 
     def makefileentry(parent, text, searchtext, var, row=0, width=200, filetypes=[], onchoosefile=None, singlerow=False, tooltiptxt=""):
-        makelabel(parent, text, row,0,tooltiptxt)
+        label = makelabel(parent, text, row,0,tooltiptxt)
         def getfilename(var, text):
             initialDir = os.path.dirname(var.get())
             initialDir = initialDir if os.path.isdir(initialDir) else None
@@ -1822,7 +1848,7 @@ def show_new_gui():
         else:
             entry.grid(row=row+1, column=0, padx=8, stick="nw")
             button.grid(row=row+1, column=1, stick="nw")
-        return
+        return label, entry, button
 
     # from subprocess import run, CalledProcessError
     # def get_device_names():
@@ -1965,7 +1991,7 @@ def show_new_gui():
             return get_amd_gpu_info_linux() # End get_amd_gpu_info()
         
     def auto_gpu_heuristics():
-        from subprocess import run, CalledProcessError
+        import subprocess
         FetchedCUdevices = []
         FetchedCUdeviceMem = []
         try: # Get OpenCL GPU names on windows using a special binary. overwrite at known index if found.
@@ -1973,10 +1999,10 @@ def show_new_gui():
             output = ""
             data = None
             try:
-                output = run(["clinfo","--json"], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+                output = subprocess.run(["clinfo","--json"], capture_output=True, text=True, check=True, encoding='utf-8').stdout
                 data = json.loads(output)
             except Exception as e1:
-                output = run([((os.path.join(basepath, "winclinfo.exe")) if os.name == 'nt' else "clinfo"),"--json"], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+                output = subprocess.run([((os.path.join(basepath, "winclinfo.exe")) if os.name == 'nt' else "clinfo"),"--json"], capture_output=True, text=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS, encoding='utf-8').stdout
                 data = json.loads(output)
             plat = 0
             dev = 0
@@ -1999,7 +2025,7 @@ def show_new_gui():
             pass
 
         try: # Get NVIDIA GPU names
-            output = run(['nvidia-smi','--query-gpu=name,memory.total','--format=csv,noheader'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+            output = subprocess.run(['nvidia-smi','--query-gpu=name,memory.total','--format=csv,noheader'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
             FetchedCUdevices = [line.split(",")[0].strip() for line in output.splitlines()]
             FetchedCUdeviceMem = [line.split(",")[1].strip().split(" ")[0].strip() for line in output.splitlines()]
         except Exception as e:
@@ -2009,7 +2035,7 @@ def show_new_gui():
             FetchedCUdevices, FetchedCUdeviceMem = get_amd_gpu_info()
 
         try: # Get Vulkan names
-            output = run(['vulkaninfo','--summary'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+            output = subprocess.run(['vulkaninfo','--summary'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
             devicelist = [line.split("=")[1].strip() for line in output.splitlines() if "deviceName" in line]
             idx = 0
             for dname in devicelist:
@@ -2124,7 +2150,10 @@ def show_new_gui():
     gpulayers_var.trace("w", changed_gpulayers)
 
     def togglectxshift(a,b,c):
-        pass
+        if contextshift.get()==0:
+            smartcontextbox.grid(row=1, column=0, padx=8, pady=1,  stick="nw")
+        else:
+            smartcontextbox.grid_forget()
 
     def guibench():
         args.benchmark = "stdout"
@@ -2203,7 +2232,7 @@ def show_new_gui():
     quick_gpuname_label = ctk.CTkLabel(quick_tab, text="")
     quick_gpuname_label.grid(row=3, column=1, padx=75, sticky="W")
     quick_gpuname_label.configure(text_color="#ffff00")
-    quick_gpu_layers_entry,quick_gpu_layers_label = makelabelentry(quick_tab,"GPU Layers:", gpulayers_var, 6, 50,"How many layers to offload onto the GPU.\nVRAM intensive, usage increases with model and context size.\nRequires some trial and error to find the best fit value.")
+    quick_gpu_layers_entry,quick_gpu_layers_label = makelabelentry(quick_tab,"GPU Layers:", gpulayers_var, 6, 50,"How many layers to offload onto the GPU.\nVRAM intensive, usage increases with model and context size.\nRequires some trial and error to find the best fit value.\n\nCommon values for total layers, accuracy not guaranteed.\n\nLlama/Mistral 7b/8b: 33\nSolar 10.7b/11b: 49\nLlama 13b: 41\nLlama 20b(stack): 63\nLlama/Yi 34b: 61\nMixtral 8x7b: 33\nLlama 70b: 81")
     quick_mmq_box = makecheckbox(quick_tab,  "Use QuantMatMul (mmq)", mmq_var, 4,1,tooltiptxt="Enable MMQ mode instead of CuBLAS for prompt processing. Read the wiki. Speed may vary.")
 
 
@@ -2240,7 +2269,7 @@ def show_new_gui():
     gpuname_label = ctk.CTkLabel(hardware_tab, text="")
     gpuname_label.grid(row=3, column=1, padx=75, sticky="W")
     gpuname_label.configure(text_color="#ffff00")
-    gpu_layers_entry,gpu_layers_label = makelabelentry(hardware_tab,"GPU Layers:", gpulayers_var, 6, 50,"How many layers to offload onto the GPU.\nVRAM intensive, usage increases with model and context size.\nRequires some trial and error to find the best fit value.")
+    gpu_layers_entry,gpu_layers_label = makelabelentry(hardware_tab,"GPU Layers:", gpulayers_var, 6, 50,"How many layers to offload onto the GPU.\nVRAM intensive, usage increases with model and context size.\nRequires some trial and error to find the best fit value.\n\nCommon values for total layers, accuracy not guaranteed.\n\nLlama/Mistral 7b/8b: 33\nSolar 10.7b/11b: 49\nLlama 13b: 41\nLlama 20b(stack): 63\nLlama/Yi 34b: 61\nMixtral 8x7b: 33\nLlama 70b: 81")
     tensor_split_entry,tensor_split_label = makelabelentry(hardware_tab, "Tensor Split:", tensor_split_str_vars, 8, 80, tooltip='When using multiple GPUs this option controls how large tensors should be split across all GPUs.\nUses a comma-separated list of non-negative values that assigns the proportion of data that each GPU should get in order.\nFor example, "3,2" will assign 60% of the data to GPU 0 and 40% to GPU 1.')
     lowvram_box = makecheckbox(hardware_tab,  "Low VRAM (No KV offload)", lowvram_var, 4,0, tooltiptxt='Avoid offloading KV Cache or scratch buffers to VRAM.\nAllows more layers to fit, but may result in a speed loss.')
     mmq_box = makecheckbox(hardware_tab,  "Use QuantMatMul (mmq)", mmq_var, 4,1, tooltiptxt="Enable MMQ mode to use finetuned kernels instead of default CuBLAS/HipBLAS for prompt processing.\nRead the wiki. Speed may vary.")
@@ -2278,6 +2307,7 @@ def show_new_gui():
     # Tokens Tab
     tokens_tab = tabcontent["Tokens"]
     # tokens checkboxes
+    smartcontextbox = makecheckbox(tokens_tab, "Use SmartContext", smartcontext, 1,tooltiptxt="Uses SmartContext. Now considered outdated and not recommended.\nCheck the wiki for more info.")
     makecheckbox(tokens_tab, "Use ContextShift", contextshift, 2,tooltiptxt="Uses Context Shifting to reduce reprocessing.\nRecommended. Check the wiki for more info.", command=togglectxshift)
     togglectxshift(1,1,1)
 
@@ -2352,11 +2382,41 @@ def show_new_gui():
     togglehorde(1,1,1)
 
     # Image Gen Tab
+
     images_tab = tabcontent["Image Gen"]
     makefileentry(images_tab, "Stable Diffusion Model (safetensors/gguf):", "Select Stable Diffusion Model File", sd_model_var, 1, filetypes=[("*.safetensors *.gguf","*.safetensors *.gguf")], tooltiptxt="Select a .safetensors or .gguf Stable Diffusion model file on disk to be loaded.")
     makecheckbox(images_tab, "Clamped Mode (Limit Resolution)", sd_clamped_var, 4,tooltiptxt="Limit generation steps and resolution settings for shared use.")
-    makelabelentry(images_tab, "Image threads:" , sd_threads_var, 6, 50,"How many threads to use during image generation.\nIf left blank, uses same value as threads.")
-    makecheckbox(images_tab, "Compress Weights (Saves Memory)", sd_quant_var, 8,tooltiptxt="Quantizes the SD model weights to save memory. May degrade quality.")
+    makelabelentry(images_tab, "Image Threads:" , sd_threads_var, 6, 50,"How many threads to use during image generation.\nIf left blank, uses same value as threads.")
+
+    sdloritem1,sdloritem2,sdloritem3 = makefileentry(images_tab, "Image LoRA (Must be non-quant):", "Select SD lora file",sd_lora_var, 10 ,filetypes=[("*.safetensors *.gguf", "*.safetensors *.gguf")],tooltiptxt="Select a .safetensors or .gguf SD LoRA model file to be loaded.")
+    sdloritem4,sdloritem5 = makelabelentry(images_tab, "Image LoRA Multiplier:" , sd_loramult_var, 12, 50,"What mutiplier value to apply the SD LoRA with.")
+    def togglesdquant(a,b,c):
+        if sd_quant_var.get()==1:
+            sdloritem1.grid_forget()
+            sdloritem2.grid_forget()
+            sdloritem3.grid_forget()
+            sdloritem4.grid_forget()
+            sdloritem5.grid_forget()
+        else:
+            sdloritem1.grid(row=10,column=0,padx=8,stick="nw")
+            sdloritem2.grid(row=11,column=0,padx=8,stick="nw")
+            sdloritem3.grid(row=11,column=1,stick="nw")
+            sdloritem4.grid(row=12,column=1,stick="nw")
+            sdloritem5.grid(row=12,column=0,padx=8,stick="nw")
+    makecheckbox(images_tab, "Compress Weights (Saves Memory)", sd_quant_var, 8,command=togglesdquant,tooltiptxt="Quantizes the SD model weights to save memory. May degrade quality.")
+
+
+    sdvaeitem1,sdvaeitem2,sdvaeitem3 = makefileentry(images_tab, "Image VAE:", "Select SD VAE file",sd_vae_var, 14, filetypes=[("*.safetensors *.gguf", "*.safetensors *.gguf")],tooltiptxt="Select a .safetensors or .gguf SD VAE file to be loaded.")
+    def toggletaesd(a,b,c):
+        if sd_vaeauto_var.get()==1:
+            sdvaeitem1.grid_forget()
+            sdvaeitem2.grid_forget()
+            sdvaeitem3.grid_forget()
+        else:
+            sdvaeitem1.grid(row=14,column=0,padx=8,stick="nw")
+            sdvaeitem2.grid(row=15,column=0,padx=8,stick="nw")
+            sdvaeitem3.grid(row=15,column=1,stick="nw")
+    makecheckbox(images_tab, "Use TAE SD (AutoFix Bad VAE)", sd_vaeauto_var, 16,command=toggletaesd,tooltiptxt="Replace VAE with TAESD. May fix bad VAE.")
 
     # launch
     def guilaunch():
@@ -2376,6 +2436,7 @@ def show_new_gui():
         args.launch     = launchbrowser.get()==1
         args.highpriority = highpriority.get()==1
         args.nommap = disablemmap.get()==1
+        args.smartcontext = smartcontext.get()==1
         args.flashattention = flashattention.get()==1
         args.noshift = contextshift.get()==0
         args.remotetunnel = remotetunnel.get()==1
@@ -2461,11 +2522,27 @@ def show_new_gui():
 
         if sd_model_var.get() != "":
             args.sdmodel = sd_model_var.get()
+
+        args.sdthreads = (0 if sd_threads_var.get()=="" else int(sd_threads_var.get()))
         if sd_clamped_var.get()==1:
             args.sdclamped = True
-        args.sdthreads = (0 if sd_threads_var.get()=="" else int(sd_threads_var.get()))
+        if sd_vaeauto_var.get()==1:
+            args.sdvaeauto = True
+            args.sdvae = ""
+        else:
+            args.sdvaeauto = False
+            args.sdvae = ""
+            if sd_vae_var.get() != "":
+                args.sdvae = sd_vae_var.get()
         if sd_quant_var.get()==1:
             args.sdquant = True
+            args.sdlora = ""
+        else:
+            if sd_lora_var.get() != "":
+                args.sdlora = sd_lora_var.get()
+                args.sdloramult = float(sd_loramult_var.get())
+            else:
+                args.sdlora = ""
 
     def import_vars(dict):
         dict = convert_outdated_args(dict)
@@ -2478,6 +2555,7 @@ def show_new_gui():
         launchbrowser.set(1 if "launch" in dict and dict["launch"] else 0)
         highpriority.set(1 if "highpriority" in dict and dict["highpriority"] else 0)
         disablemmap.set(1 if "nommap" in dict and dict["nommap"] else 0)
+        smartcontext.set(1 if "smartcontext" in dict and dict["smartcontext"] else 0)
         flashattention.set(1 if "flashattention" in dict and dict["flashattention"] else 0)
         contextshift.set(0 if "noshift" in dict and dict["noshift"] else 1)
         remotetunnel.set(1 if "remotetunnel" in dict and dict["remotetunnel"] else 0)
@@ -2600,6 +2678,10 @@ def show_new_gui():
         sd_clamped_var.set(1 if ("sdclamped" in dict and dict["sdclamped"]) else 0)
         sd_threads_var.set(str(dict["sdthreads"]) if ("sdthreads" in dict and dict["sdthreads"]) else str(default_threads))
         sd_quant_var.set(1 if ("sdquant" in dict and dict["sdquant"]) else 0)
+        sd_vae_var.set(dict["sdvae"] if ("sdvae" in dict and dict["sdvae"]) else "")
+        sd_vaeauto_var.set(1 if ("sdvaeauto" in dict and dict["sdvaeauto"]) else 0)
+        sd_lora_var.set(dict["sdlora"] if ("sdlora" in dict and dict["sdlora"]) else "")
+        sd_loramult_var.set(str(dict["sdloramult"]) if ("sdloramult" in dict and dict["sdloramult"]) else "1.0")
 
     def save_config():
         file_type = [("KoboldCpp Settings", "*.kcpps")]
@@ -3046,7 +3128,7 @@ def check_deprecation_warning():
     if using_outdated_flags:
         print(f"\n=== !!! IMPORTANT WARNING !!! ===")
         print("You are using one or more OUTDATED config files or launch flags!")
-        print("The flags --smartcontext, --hordeconfig and --sdconfig have been DEPRECATED, and MAY be REMOVED in future!")
+        print("The flags --hordeconfig and --sdconfig have been DEPRECATED, and MAY be REMOVED in future!")
         print("They will still work for now, but you SHOULD switch to the updated flags instead, to avoid future issues!")
         print("New flags are: --hordemodelname --hordeworkername --hordekey --hordemaxctx --hordegenlen --sdmodel --sdthreads --sdquant --sdclamped")
         print("For more information on these flags, please check --help")
@@ -3362,6 +3444,23 @@ def main(launch_args,start_server=True):
             print(f"Warning: Chat Completions Adapter {args.chatcompletionsadapter} invalid or not found.")
 
 
+    if args.model_param and args.model_param!="":
+        if args.model_param.endswith("?download=true"):
+            args.model_param = args.model_param.replace("?download=true","")
+        if (args.model_param.startswith("http://") or args.model_param.startswith("https://")) and (args.model_param.endswith(".gguf") or args.model_param.endswith(".bin")):
+            import subprocess
+            mdlfilename = os.path.basename(args.model_param)
+            #check if file already exists
+            if mdlfilename:
+                if not os.path.exists(mdlfilename):
+                    print(f"Downloading model from external URL at {args.model_param}")
+                    subprocess.run(f"curl -fL {args.model_param} -o {mdlfilename}", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
+                    print(f"Download {mdlfilename} completed...", flush=True)
+                    args.model_param = mdlfilename
+                else:
+                    print(f"Model file {mdlfilename} already exists, not redownloading.")
+                    args.model_param = mdlfilename
+
     # sanitize and replace the default vanity name. remember me....
     if args.model_param and args.model_param!="":
         newmdldisplayname = os.path.basename(args.model_param)
@@ -3511,12 +3610,25 @@ def main(launch_args,start_server=True):
                 time.sleep(3)
                 sys.exit(2)
         else:
+            imglora = ""
+            imgvae = ""
+            if args.sdlora:
+                if os.path.exists(args.sdlora):
+                    imglora = os.path.abspath(args.sdlora)
+                else:
+                    print(f"Missing SD LORA model file...")
+            if args.sdvae:
+                if os.path.exists(args.sdvae):
+                    imgvae = os.path.abspath(args.sdvae)
+                else:
+                    print(f"Missing SD VAE model file...")
+
             imgmodel = os.path.abspath(imgmodel)
             fullsdmodelpath = imgmodel
             friendlysdmodelname = os.path.basename(imgmodel)
             friendlysdmodelname = os.path.splitext(friendlysdmodelname)[0]
             friendlysdmodelname = sanitize_string(friendlysdmodelname)
-            loadok = sd_load_model(imgmodel)
+            loadok = sd_load_model(imgmodel,imgvae,imglora)
             print("Load Image Model OK: " + str(loadok))
             if not loadok:
                 exitcounter = 999
@@ -3623,7 +3735,6 @@ def main(launch_args,start_server=True):
         genout = generate(benchprompt,memory="",images=[],max_length=benchlen,max_context_length=benchmaxctx,temperature=0.1,top_k=1,rep_pen=1,use_default_badwordsids=True)
         result = genout['text']
         result = (result[:5] if len(result)>5 else "")
-        resultok = (result=="11111")
         t_pp = float(handle.get_last_process_time())*float(benchmaxctx-benchlen)*0.001
         t_gen = float(handle.get_last_eval_time())*float(benchlen)*0.001
         s_pp = float(benchmaxctx-benchlen)/t_pp
@@ -3641,15 +3752,14 @@ def main(launch_args,start_server=True):
         print(f"GenerationTime: {t_gen:.2f}s")
         print(f"GenerationSpeed: {s_gen:.2f}T/s")
         print(f"TotalTime: {(t_pp+t_gen):.2f}s")
-        print(f"Coherent: {resultok}")
         print(f"Output: {result}\n-----")
         if save_to_file:
             try:
                 with open(args.benchmark, "a") as file:
                     file.seek(0, 2)
                     if file.tell() == 0: #empty file
-                        file.write(f"Timestamp,Backend,Layers,Model,MaxCtx,GenAmount,ProcessingTime,ProcessingSpeed,GenerationTime,GenerationSpeed,TotalTime,Coherent,Output")
-                    file.write(f"\n{datetimestamp},{libname},{args.gpulayers},{benchmodel},{benchmaxctx},{benchlen},{t_pp:.2f},{s_pp:.2f},{t_gen:.2f},{s_gen:.2f},{(t_pp+t_gen):.2f},{resultok},{result}")
+                        file.write(f"Timestamp,Backend,Layers,Model,MaxCtx,GenAmount,ProcessingTime,ProcessingSpeed,GenerationTime,GenerationSpeed,TotalTime,Output")
+                    file.write(f"\n{datetimestamp},{libname},{args.gpulayers},{benchmodel},{benchmaxctx},{benchlen},{t_pp:.2f},{s_pp:.2f},{t_gen:.2f},{s_gen:.2f},{(t_pp+t_gen):.2f},{result}")
             except Exception as e:
                 print(f"Error writing benchmark to file: {e}")
         global using_gui_launcher
@@ -3723,6 +3833,7 @@ if __name__ == '__main__':
     if os.cpu_count()!=None and os.cpu_count()>1:
         physical_core_limit = int(os.cpu_count()/2)
     default_threads = (physical_core_limit if physical_core_limit<=3 else max(3,physical_core_limit-1))
+    default_threads = (8 if default_threads > 8 else default_threads) #there is zero reason to exceed 8 threads by default. this helps avoid e-cores.
     parser.add_argument("--threads", metavar=('[threads]'), help="Use a custom number of threads if specified. Otherwise, uses an amount based on CPU cores", type=int, default=default_threads)
     compatgroup = parser.add_mutually_exclusive_group()
     compatgroup.add_argument("--usecublas", help="Use CuBLAS for GPU Acceleration. Requires CUDA. Select lowvram to not allocate VRAM scratch buffer. Enter a number afterwards to select and use 1 GPU. Leaving no number will use all GPUs. For hipBLAS binaries, please check YellowRoseCx rocm fork.", nargs='*',metavar=('[lowvram|normal] [main GPU ID] [mmq] [rowsplit]'), choices=['normal', 'lowvram', '0', '1', '2', '3', 'mmq', 'rowsplit'])
@@ -3753,7 +3864,7 @@ if __name__ == '__main__':
     advparser.add_argument("--highpriority", help="Experimental flag. If set, increases the process CPU priority, potentially speeding up generation. Use caution.", action='store_true')
     advparser.add_argument("--foreground", help="Windows only. Sends the terminal to the foreground every time a new prompt is generated. This helps avoid some idle slowdown issues.", action='store_true')
     advparser.add_argument("--preloadstory", help="Configures a prepared story json save file to be hosted on the server, which frontends (such as Kobold Lite) can access over the API.", default="")
-    advparser.add_argument("--quiet", help="Enable quiet mode, which hides generation inputs and outputs in the terminal. Quiet mode is automatically enabled when running --hordeconfig.", action='store_true')
+    advparser.add_argument("--quiet", help="Enable quiet mode, which hides generation inputs and outputs in the terminal. Quiet mode is automatically enabled when running a horde worker.", action='store_true')
     advparser.add_argument("--ssl", help="Allows all content to be served over SSL instead. A valid UNENCRYPTED SSL cert and key .pem files must be provided", metavar=('[cert_pem]', '[key_pem]'), nargs='+')
     advparser.add_argument("--nocertify", help="Allows insecure SSL connections. Use this if you have cert errors and need to bypass certificate restrictions.", action='store_true')
     advparser.add_argument("--mmproj", help="Select a multimodal projector file for LLaVA.", default="")
@@ -3762,11 +3873,7 @@ if __name__ == '__main__':
     advparser.add_argument("--chatcompletionsadapter", help="Select an optional ChatCompletions Adapter JSON file to force custom instruct tags.", default="")
     advparser.add_argument("--flashattention", help="Enables flash attention (Experimental).", action='store_true')
     advparser.add_argument("--forceversion", help="If the model file format detection fails (e.g. rogue modified model) you can set this to override the detected format (enter desired version, e.g. 401 for GPTNeoX-Type2).",metavar=('[version]'), type=int, default=0)
-
-    deprecatedgroup = parser.add_argument_group('Deprecated Commands, DO NOT USE!')
-    deprecatedgroup.add_argument("--smartcontext", help="Command is DEPRECATED and should NOT be used! Instead, use --noshift instead to toggle smartcontext off on old GGML models.", action='store_true')
-    deprecatedgroup.add_argument("--hordeconfig", help="Command is DEPRECATED and should NOT be used! Instead, use non-positional flags --hordemodelname --hordeworkername --hordekey --hordemaxctx --hordegenlen instead.", nargs='+')
-    deprecatedgroup.add_argument("--sdconfig", help="Command is DEPRECATED and should NOT be used! Instead, use non-positional flags --sdmodel --sdthreads --sdquant --sdclamped instead.", nargs='+')
+    advparser.add_argument("--smartcontext", help="Reserving a portion of context to try processing less frequently. Not recommended.", action='store_true')
 
     hordeparsergroup = parser.add_argument_group('Horde Worker Commands')
     hordeparsergroup.add_argument("--hordemodelname", metavar=('[name]'), help="Sets your AI Horde display model name.", default="")
@@ -3778,7 +3885,17 @@ if __name__ == '__main__':
     sdparsergroup = parser.add_argument_group('Image Generation Commands')
     sdparsergroup.add_argument("--sdmodel", metavar=('[filename]'), help="Specify a stable diffusion safetensors or gguf model to enable image generation.", default="")
     sdparsergroup.add_argument("--sdthreads", metavar=('[threads]'), help="Use a different number of threads for image generation if specified. Otherwise, has the same value as --threads.", type=int, default=0)
-    sdparsergroup.add_argument("--sdquant", help="If specified, loads the model quantized to save memory.", action='store_true')
     sdparsergroup.add_argument("--sdclamped", help="If specified, limit generation steps and resolution settings for shared use.", action='store_true')
+    sdparsergroupvae = sdparsergroup.add_mutually_exclusive_group()
+    sdparsergroupvae.add_argument("--sdvae", metavar=('[filename]'), help="Specify a stable diffusion safetensors VAE which replaces the one in the model.", default="")
+    sdparsergroupvae.add_argument("--sdvaeauto", help="Uses a built-in VAE via TAE SD, which is very fast, and fixed bad VAEs.", action='store_true')
+    sdparsergrouplora = sdparsergroup.add_mutually_exclusive_group()
+    sdparsergrouplora.add_argument("--sdquant", help="If specified, loads the model quantized to save memory.", action='store_true')
+    sdparsergrouplora.add_argument("--sdlora", metavar=('[filename]'), help="Specify a stable diffusion LORA safetensors model to be applied. Cannot be used with quant models.", default="")
+    sdparsergroup.add_argument("--sdloramult", metavar=('[amount]'), help="Multiplier for the LORA model to be applied.", type=float, default=1.0)
+
+    deprecatedgroup = parser.add_argument_group('Deprecated Commands, DO NOT USE!')
+    deprecatedgroup.add_argument("--hordeconfig", help=argparse.SUPPRESS, nargs='+')
+    deprecatedgroup.add_argument("--sdconfig", help=argparse.SUPPRESS, nargs='+')
 
     main(parser.parse_args(),start_server=True)
