@@ -51,6 +51,7 @@ For more information, be sure to run the program with the `--help` flag, or [che
 
 
 ## Compiling for AMD on Windows
+(More in depth guide below)
   - Use the latest release of w64devkit (https://github.com/skeeto/w64devkit). Be sure to use the "vanilla one", not i686 or other different stuff. If you try they will conflit with the precompiled libs!
   - Make sure you are using the w64devkit integrated terminal, (powershell should work for the cmake hipblas part)
   - *This site may be useful, it has some patches for Windows ROCm to help it with compilation that I used, but I'm not sure if it's necessary.* https://streamhpc.com/blog/2023-08-01/how-to-get-full-cmake-support-for-amd-hip-sdk-on-windows-including-patches/
@@ -73,6 +74,47 @@ For more information, be sure to run the program with the `--help` flag, or [che
   To make it into an exe, we use ``make_pyinstaller_exe_rocm_only.bat``
   which will attempt to build the exe for you and place it in /koboldcpp-rocm/dists/
   **kobold_rocm_only.exe is built!**
+  ### More in depth AMD for Windows compilation guide:
+  It seems like there's an issue with the commands you used because everything has escape slashes in it and the build process tries to use a different compiler than the one in the code before building the app
+
+I'm not 100% sure if using w64devkit is still needed, using the Windows Terminal might work just as well.
+
+Before starting,
+
+1. Make sure when you type `python --version` it shows at least "*Python 3.10"*, I don't recommend using Python 3.11 or 3.12 for this; if its below Python 3.10, please upgrade Python. [Use the Windows Installer (64 bit) File on this page](https://www.python.org/downloads/release/python-31011/). After updating close out of Windows Terminal or w64devkit and reopen it, typing `python --version` should show "*Python 3.10.11*".
+2. Make sure you have AMD ROCm 5.7 installed before doing this. Also, I recommend changing the "*AMDGPU\_TARGETS*" to only the one you're using as it will speed up compilation time significantly.
+
+Then you can double check that CLang is set to the right version by using `clang --version` which should show "*AMD clang version 17.0.0*"
+
+After that, you should be able to run the following build procedure:
+
+    cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DHIP_PLATFORM=amd -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
+    cmake --build . --config Release -j2
+
+Everything should be fine and dandy then. After that, you'll need to copy "*koboldcpp\_hipblas.dll*" from "\\*koboldcpp-rocm\\build\\bin\\koboldcpp\_hipblas.dll*" to the main folder "/koboldcpp-rocm".
+
+If you are using a AMD RX 6800 or 6900 variant or RX 7800 or 7900 variant, You should be able to run it directly with either `python koboldcpp.py` (for the GUI) or `python koboldcpp.py --usecublas mmq --threads 1 --contextsize 4096 --gpulayers 45 C:\Users\USERNAME\llama-2-7b-chat.Q8_0.gguf` for starting via command line.
+
+If you have an AMD GPU that's a RX6600 or RX6700 variant, you'll either need to compile the ROCm tensile library files yourself (in lazy mode IIRC?) or use the community provided tensile libraries here: [https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.zip](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.zip)
+
+I've never done it *this* way, but if you're not compiling the exe, extract that zip file into *C:/Program Files/AMD/ROCm/5.7/bin/* it should merge with the "rocblas" folder that's already in there.
+
+To build the exe, you *should* be able to use *"make\_pyinstaller\_exe\_rocm\_only.bat"* otherwise, make sure you're in the main /koboldcpp-rocm folder and you can do this:
+
+    copy "C:\Program Files\AMD\ROCm\5.7\bin\hipblas.dll" .\ /Y
+    copy "C:\Program Files\AMD\ROCm\5.7\bin\rocblas.dll" .\ /Y
+    xcopy /E /I "C:\Program Files\AMD\ROCm\5.7\bin\rocblas" .\rocblas\ /Y
+
+Then with that *gfx103132rocblasfiles.zip* file, extract the "rocblas" folder into /koboldcpp-rocm, the previous command will have copied the ROCm rocblas folder into /koboldcpp-rocm and you are merging the .zip files into that same folder. It can be done by hand, or by code like:
+
+    curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.zip
+    tar -xf gfx103132rocblasfiles.zip -C .\ --strip-components=1
+
+Then you should be able to make the .exe file with this command:
+
+    PyInstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all psutil --icon "./niko.ico" --add-data "./winclinfo.exe;." --add-data "./klite.embd;." --add-data "./kcpp_docs.embd;." --add-data="./kcpp_sdui.embd;." --add-data="./taesd.embd;." --add-data="./taesd_xl.embd;." --add-data "./rwkv_vocab.embd;." --add-data "./rwkv_world_vocab.embd;." --add-data "./koboldcpp_hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/rocblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/rocblas;." --add-data "C:/Windows/System32/msvcp140.dll;." --add-data "C:/Windows/System32/vcruntime140_1.dll;." "./koboldcpp.py" -n "koboldcpp_rocm.exe"
+
+
 
   -----
   If you'd like to do a full feature build with OPENBLAS and CLBLAST backends, you'll need [w64devkit](https://github.com/skeeto/w64devkit). Once downloaded, open w64devkit.exe and ``cd`` into the folder then run
