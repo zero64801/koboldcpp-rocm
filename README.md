@@ -34,15 +34,14 @@ My typical start command looks like this: ``python koboldcpp.py --threads 6 --bl
 
 ## Windows Usage
 - **[Download the latest .exe release here](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/latest)** or clone the git repo.
-- Windows binaries are provided in the form of **koboldcpp.exe**, which is a pyinstaller wrapper for a few **.dll** files and **koboldcpp.py**. You can also rebuild it yourself with the provided makefiles and scripts.
+- Windows binaries are provided in the form of **koboldcpp_rocm.exe**, which is a pyinstaller wrapper for a few **.dll** files and **koboldcpp.py**. You can also rebuild it yourself with the provided makefiles and scripts.
 - Weights are not included, you can use the official llama.cpp `quantize.exe` to generate them from your official weight files (or download them from other places such as [TheBloke's Huggingface](https://huggingface.co/TheBloke).
-- To run, simply execute **koboldcpp.exe**.
+- To run, simply execute **koboldcpp_rocm.exe**.
 - Launching with no command line arguments displays a GUI containing a subset of configurable settings. Generally you dont have to change much besides the `Presets` and `GPU Layers`. Read the `--help` for more info about each settings.
 - By default, you can connect to http://localhost:5001
 - You can also run it using the command line. For info, please check `koboldcpp.exe --help` or `python koboldcpp.py --help`
 
-- **(Nvidia Only) GPU Acceleration**: If you're on Windows with an Nvidia GPU you can get CUDA support out of the box using the `--usecublas` flag, make sure you select the correct .exe with CUDA support.
-- **Any GPU Acceleration**: As a slightly slower alternative, try CLBlast with `--useclblast` flags for a slightly slower but more GPU compatible speedup.
+- **AMD GPU Acceleration**: If you're on Windows with an AMD GPU you can get CUDA/ROCm HIPblas support out of the box using the `--usecublas` flag.
 - **GPU Layer Offloading**: Want even more speedup? Combine one of the above GPU flags with `--gpulayers` to offload entire layers to the GPU! **Much faster, but uses more VRAM**. Experiment to determine number of layers to offload, and reduce by a few if you run out of memory.
 - **Increasing Context Size**: Try `--contextsize 4096` to 2x your context size! without much perplexity gain. Note that you'll have to increase the max context in the Kobold Lite UI as well (click and edit the number text field).
 - If you are having crashes or issues, you can try turning off BLAS with the `--noblas` flag. You can also try running in a non-avx2 compatibility mode with `--noavx2`. Lastly, you can try turning off mmap with `--nommap`.
@@ -54,7 +53,7 @@ For more information, be sure to run the program with the `--help` flag, or [che
 (More in depth guide below)
   - Use the latest release of w64devkit (https://github.com/skeeto/w64devkit). Be sure to use the "vanilla one", not i686 or other different stuff. If you try they will conflit with the precompiled libs!
   - Make sure you are using the w64devkit integrated terminal, (powershell should work for the cmake hipblas part)
-  - *This site may be useful, it has some patches for Windows ROCm to help it with compilation that I used, but I'm not sure if it's necessary.* https://streamhpc.com/blog/2023-08-01/how-to-get-full-cmake-support-for-amd-hip-sdk-on-windows-including-patches/
+  - *This site may be useful, it has some patches for Windows ROCm to help it with compilation that I used, but I'm not sure if it's necessary with ROCm v5.7.* https://streamhpc.com/blog/2023-08-01/how-to-get-full-cmake-support-for-amd-hip-sdk-on-windows-including-patches/
   - (ROCm Required): https://rocm.docs.amd.com/en/latest/deploy/windows/quick_start.html
 
    Build command used:
@@ -73,7 +72,7 @@ For more information, be sure to run the program with the `--help` flag, or [che
 
   To make it into an exe, we use ``make_pyinstaller_exe_rocm_only.bat``
   which will attempt to build the exe for you and place it in /koboldcpp-rocm/dists/
-  **kobold_rocm_only.exe is built!**
+  **kobold_rocm.exe is built!**
   ### More in depth AMD for Windows compilation guide:
   It seems like there's an issue with the commands you used because everything has escape slashes in it and the build process tries to use a different compiler than the one in the code before building the app
 
