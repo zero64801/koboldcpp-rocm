@@ -82,7 +82,16 @@ Before starting,
 
 1. Make sure when you type `python --version` it shows at least "*Python 3.10"*, I don't recommend using Python 3.11 or 3.12 for this; if its below Python 3.10, please upgrade Python. [Use the Windows Installer (64 bit) File on this page](https://www.python.org/downloads/release/python-31011/). After updating close out of Windows Terminal or w64devkit and reopen it, typing `python --version` should show "*Python 3.10.11*".
 2. Make sure you have AMD ROCm 5.7 installed before doing this. Also, I recommend changing the "*AMDGPU\_TARGETS*" to only the one you're using as it will speed up compilation time significantly.
+```
+git clone https://github.com/YellowRoseCx/koboldcpp-rocm
+cd koboldcpp-rocm
+mkdir build && cd build
+python -m pip install cmake ninja pyinstaller==6.4.0 psutil customtkinter
 
+set CC=C:\Program Files\AMD\ROCm\5.7\bin\clang.exe
+set CXX=C:\Program Files\AMD\ROCm\5.7\bin\clang++.exe
+set CMAKE_PREFIX_PATH=C:\Program Files\AMD\ROCm\5.7
+```
 Then you can double check that CLang is set to the right version by using `clang --version` which should show "*AMD clang version 17.0.0*"
 
 After that, you should be able to run the following build procedure:
@@ -90,7 +99,7 @@ After that, you should be able to run the following build procedure:
     cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DHIP_PLATFORM=amd -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
     cmake --build . --config Release -j2
 
-Everything should be fine and dandy then. After that, you'll need to copy "*koboldcpp\_hipblas.dll*" from "\\*koboldcpp-rocm\\build\\bin\\koboldcpp\_hipblas.dll*" to the main folder "/koboldcpp-rocm".
+Everything should be fine and dandy then. After that, you'll need to copy "*koboldcpp\_hipblas.dll*" from "\*koboldcpp-rocm\build\bin\koboldcpp\hipblas.dll*" to the main folder "/koboldcpp-rocm".
 
 If you are using a AMD RX 6800 or 6900 variant or RX 7800 or 7900 variant, You should be able to run it directly with either `python koboldcpp.py` (for the GUI) or `python koboldcpp.py --usecublas mmq --threads 1 --contextsize 4096 --gpulayers 45 C:\Users\USERNAME\llama-2-7b-chat.Q8_0.gguf` for starting via command line.
 
