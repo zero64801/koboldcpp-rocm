@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag of koboldcpp-rocm to build: v1.64.yr0-ROCm-dev'
-        default: v1.65.yr0-ROCm
+        description: 'Version tag of koboldcpp-rocm to build: v1.67.yr0-ROCm'
+        default: v1.67.yr0-ROCm
         required: false
         type: string
   workflow_call:
     inputs:
       version:
-        description: 'Version tag of koboldcpp-rocm to build: v1.62.2.yr0-ROCm-dev'
-        default: v1.65.yr0-ROCm
+        description: 'Version tag of koboldcpp-rocm to build: v1.67.yr0-ROCm'
+        default: v1.67.yr0-ROCm
         required: false
         type: string
 
@@ -80,6 +80,11 @@ jobs:
 
       - name: Build Lib
         run: |
+          Set-Location 'C:\Program Files\AMD\ROCm\5.7\bin'
+          Get-Location
+          curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.zip
+          7z x gfx103132rocblasfiles.zip
+          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'
           $env:CC = 'C:\Program Files\AMD\ROCm\5.7\bin\clang.exe'
           $env:CXX = 'C:\Program Files\AMD\ROCm\5.7\bin\clang++.exe'
           $env:CMAKE_PREFIX_PATH = 'C:\Program Files\AMD\ROCm\5.7'
@@ -90,7 +95,7 @@ jobs:
           Get-Location
           cmake --version
           clang --version
-          cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DHIP_PLATFORM=amd -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
+          cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DHIP_PLATFORM=amd -DAMDGPU_TARGETS="gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
           cmake --build . --config Release -j ${env:NUMBER_OF_PROCESSORS}
 # -DCMAKE_C_COMPILER="C:\Program Files\AMD\ROCm\5.7\bin\clang.exe" -DCMAKE_CXX_COMPILER="C:\Program Files\AMD\ROCm\5.7\bin\clang++.exe"
       - name: Copy ROCm DLLs and Run PyInstaller
@@ -99,9 +104,7 @@ jobs:
           Get-Location
           copy "C:\Program Files\AMD\ROCm\5.7\bin\hipblas.dll" .\
           copy "C:\Program Files\AMD\ROCm\5.7\bin\rocblas.dll" .\
-          robocopy "C:\Program Files\AMD\ROCm\5.7\bin\rocblas" .\rocblas /MIR
-          curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.zip
-          7z x gfx103132rocblasfiles.zip          
+          robocopy "C:\Program Files\AMD\ROCm\5.7\bin\rocblas" .\rocblas /MIR 
           pip install customtkinter
           PyInstaller --noconfirm --onefile --collect-all customtkinter --clean --console --icon ".\niko.ico" --add-data "./klite.embd;." --add-data "./winclinfo.exe;." --add-data "./OpenCL.dll;." --add-data "./kcpp_docs.embd;." --add-data "./koboldcpp_default.dll;." --add-data "./koboldcpp_openblas.dll;." --add-data "./koboldcpp_failsafe.dll;." --add-data "./koboldcpp_noavx2.dll;." --add-data "./libopenblas.dll;." --add-data "./koboldcpp_clblast.dll;." --add-data "./koboldcpp_clblast_noavx2.dll;." --add-data "./clblast.dll;." --add-data "./koboldcpp_vulkan.dll;." --add-data "./vulkan-1.dll;." --add-data "D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll;." --add-data "./hipblas.dll;." --add-data "./rocblas.dll;." --add-data "./rwkv_vocab.embd;." --add-data "./rwkv_world_vocab.embd;." --add-data "./rocblas;." --add-data "C:/Windows/System32/msvcp140.dll;." --add-data "C:/Windows/System32/vcruntime140_1.dll;." "./koboldcpp.py" -n "koboldcpp_rocm.exe"
 

@@ -233,6 +233,7 @@ ifdef LLAMA_HIPBLAS
 			GPU_TARGETS ?= gfx803 gfx900 gfx906 gfx908 gfx90a gfx1010 gfx1030 gfx1031 gfx1032 gfx1100 gfx1101 gfx1102 $(shell $(shell which amdgpu-arch))
 		else
 			GPU_TARGETS ?= $(shell $(shell which amdgpu-arch))
+		endif
 		HCC         := $(ROCM_PATH)/bin/hipcc
 		HCXX        := $(ROCM_PATH)/bin/hipcc
 	else
@@ -243,6 +244,7 @@ ifdef LLAMA_HIPBLAS
 			GPU_TARGETS ?= gfx803 gfx900 gfx906 gfx908 gfx90a gfx1010 gfx1030 gfx1031 gfx1032 gfx1100 gfx1101 gfx1102 $(shell $(ROCM_PATH)/llvm/bin/amdgpu-arch)
 		else
 			GPU_TARGETS ?= $(shell $(ROCM_PATH)/llvm/bin/amdgpu-arch)
+		endif
 	endif
 	LLAMA_CUDA_DMMV_X ?= 32
 	LLAMA_CUDA_MMV_Y ?= 1
