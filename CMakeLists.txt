@@ -184,8 +184,8 @@ if (LLAMA_HIPBLAS)
 
         set_property(TARGET ggml-rocm PROPERTY C_STANDARD 11)
         set_property(TARGET ggml-rocm PROPERTY CXX_STANDARD 11)
-        set_property(TARGET ggml-rocm PROPERTY C_COMPILER ${ROCM_CC})
-        set_property(TARGET ggml-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
+        set_property(TARGET ggml-rocm PROPERTY C_COMPILER ${LLVM_CC})
+        set_property(TARGET ggml-rocm PROPERTY CXX_COMPILER ${LLVM_CXX})
 
         target_compile_options(ggml-rocm PRIVATE -O2)
 		target_include_directories(ggml-rocm PUBLIC . ./otherarch ./otherarch/tools)
@@ -211,8 +211,8 @@ if (LLAMA_HIPBLAS)
 
         set_property(TARGET ggml-v2-rocm PROPERTY C_STANDARD 11)
         set_property(TARGET ggml-v2-rocm PROPERTY CXX_STANDARD 11)
-        set_property(TARGET ggml-v2-rocm PROPERTY C_COMPILER ${ROCM_CC})
-        set_property(TARGET ggml-v2-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
+        set_property(TARGET ggml-v2-rocm PROPERTY C_COMPILER ${LLVM_CC})
+        set_property(TARGET ggml-v2-rocm PROPERTY CXX_COMPILER ${LLVM_CXX})
 
         target_compile_options(ggml-v2-rocm PRIVATE -O2)
         if (LLAMA_CUDA_FORCE_DMMV)
@@ -228,8 +228,8 @@ if (LLAMA_HIPBLAS)
 
         set_property(TARGET ggml-v3-rocm PROPERTY C_STANDARD 11)
         set_property(TARGET ggml-v3-rocm PROPERTY CXX_STANDARD 11)
-        set_property(TARGET ggml-v3-rocm PROPERTY C_COMPILER ${ROCM_CC})
-        set_property(TARGET ggml-v3-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
+        set_property(TARGET ggml-v3-rocm PROPERTY C_COMPILER ${LLVM_CC})
+        set_property(TARGET ggml-v3-rocm PROPERTY CXX_COMPILER ${LLVM_CXX})
 
         target_compile_options(ggml-v3-rocm PRIVATE -O2)
         if (LLAMA_CUDA_FORCE_DMMV)
@@ -245,8 +245,8 @@ if (LLAMA_HIPBLAS)
 
         set_property(TARGET ggml-v2-legacy-rocm PROPERTY C_STANDARD 11)
         set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_STANDARD 11)
-        set_property(TARGET ggml-v2-legacy-rocm PROPERTY C_COMPILER ${ROCM_CC})
-        set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
+        set_property(TARGET ggml-v2-legacy-rocm PROPERTY C_COMPILER ${LLVM_CC})
+        set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_COMPILER ${LLVM_CXX})
 
         target_compile_options(ggml-v2-legacy-rocm PRIVATE -O2)
         if (LLAMA_CUDA_FORCE_DMMV)
@@ -544,8 +544,8 @@ if (LLAMA_HIPBLAS)
     # Set ROCm compilers for koboldcpp_hipblas
     set_property(TARGET ${TARGET} PROPERTY C_STANDARD 11)
     set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 11)
-    set_property(TARGET ${TARGET} PROPERTY C_COMPILER ${ROCM_CC})
-    set_property(TARGET ${TARGET} PROPERTY CXX_COMPILER ${ROCM_CXX})
+    set_property(TARGET ${TARGET} PROPERTY C_COMPILER ${LLVM_CC})
+    set_property(TARGET ${TARGET} PROPERTY CXX_COMPILER ${LLVM_CXX})
 
     target_include_directories(${TARGET} PUBLIC . ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./examples ./common)
     target_compile_features(${TARGET} PUBLIC cxx_std_11) # don't bump
