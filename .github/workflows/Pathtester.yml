@@ -40,6 +40,10 @@ jobs:
           curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/ROCmLibs4all.zip
           7z x ROCmLibs4all.zip -aoa
           ls
+          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas'
+          ls
+          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas\library'
+          ls
 
 
 
