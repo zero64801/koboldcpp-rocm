@@ -36,8 +36,9 @@ jobs:
 
       - name: Copy ROCm DLLs and Run PyInstaller
         run: |
+          mkdir rocblas
           curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/ROCmLibs4all.zip
-          7z x ROCmLibs4all.zip
+          7z x ROCmLibs4all.zip -aoa
           ls
 
 
