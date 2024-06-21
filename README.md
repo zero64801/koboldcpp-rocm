@@ -11,9 +11,7 @@ make LLAMA_HIPBLAS=1 -j4 && \
 ```
 When the KoboldCPP GUI appears, make sure to select "Use hipBLAS (ROCm)" and set GPU layers
 
---------
-### Quick Summary
-KoboldCpp is an easy-to-use AI text-generation software for GGML and GGUF models. It's a single self contained distributable from Concedo, that builds off llama.cpp, and adds a versatile Kobold API endpoint, additional format support, Stable Diffusion image generation, backward compatibility, as well as a fancy UI with persistent stories, editing tools, save formats, memory, world info, author's note, characters, scenarios and everything Kobold and Kobold Lite have to offer.
+KoboldCpp-ROCm is an easy-to-use AI text-generation software for GGML and GGUF models. It's an AI inference software from Concedo, maintained for AMD GPUs using ROCm by YellowRose, that builds off llama.cpp, and adds a versatile Kobold API endpoint, additional format support, Stable Diffusion image generation, backward compatibility, as well as a fancy UI with persistent stories, editing tools, save formats, memory, world info, author's note, characters, scenarios and everything KoboldAI and KoboldAI Lite have to offer.
 
 ![Preview](media/preview.png)
 ![Preview](media/preview2.png)
@@ -43,7 +41,7 @@ My typical start command looks like this: ``python koboldcpp.py --threads 6 --bl
 
 - **AMD GPU Acceleration**: If you're on Windows with an AMD GPU you can get CUDA/ROCm HIPblas support out of the box using the `--usecublas` flag.
 - **GPU Layer Offloading**: Want even more speedup? Combine one of the above GPU flags with `--gpulayers` to offload entire layers to the GPU! **Much faster, but uses more VRAM**. Experiment to determine number of layers to offload, and reduce by a few if you run out of memory.
-- **Increasing Context Size**: Try `--contextsize 4096` to 2x your context size! without much perplexity gain. Note that you'll have to increase the max context in the Kobold Lite UI as well (click and edit the number text field).
+- **Increasing Context Size**: Try `--contextsize 4096` to 2x your context size! without much perplexity gain. Note that you'll have to increase the max context in the KoboldAI Lite UI as well (click and edit the number text field).
 - If you are having crashes or issues, you can try turning off BLAS with the `--noblas` flag. You can also try running in a non-avx2 compatibility mode with `--noavx2`. Lastly, you can try turning off mmap with `--nommap`.
 
 For more information, be sure to run the program with the `--help` flag, or [check the wiki](https://github.com/LostRuins/koboldcpp/wiki).
@@ -227,7 +225,7 @@ Comparison with OpenCL using 6800xt (old measurement)
 
 ## License
 - The original GGML library and llama.cpp by ggerganov are licensed under the MIT License
-- However, Kobold Lite is licensed under the AGPL v3.0 License
+- However, KoboldAI Lite is licensed under the AGPL v3.0 License
 - The other files are also under the AGPL v3.0 License unless otherwise stated
 
 ## Notes
