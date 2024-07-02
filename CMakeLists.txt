@@ -185,7 +185,7 @@ if (LLAMA_HIPBLAS)
     if (${hipblas_FOUND} AND ${hip_FOUND})
         message(STATUS "HIP and hipBLAS found")
         file(GLOB GGML_SOURCES_CUDA "ggml/src/ggml-cuda/*.cu")
-        list(APPEND GGML_SOURCES_CUDA "ggml/src/ggml-cuda/ggml-cuda.cu")
+        list(APPEND GGML_SOURCES_CUDA "ggml/src/ggml-cuda.cu")
         file(GLOB SRCS "ggml/src/ggml-cuda/template-instances/fattn-wmma*.cu")
         list(APPEND GGML_SOURCES_CUDA ${SRCS})
 
