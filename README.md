@@ -20,7 +20,8 @@ KoboldCpp-ROCm is an easy-to-use AI text-generation software for GGML and GGUF m
 
 ## Linux
 - You will have to compile your binaries from source. A makefile is provided, simply run `make`.
-- Arch Linux users can install koboldcpp via the AUR package provided by @AlpinDale. Please see [below](#arch-linux) for more details.
+- Fedora users need some additional preparations for compiling koboldcpp with the ROCm feature. Please see [below](#fedora) for more details.
+- Arch Linux users can install koboldcpp via the AUR package provided by @AlpinDale. Please see [below](#arch-linux-packages) for more details.
 - For an ROCm only build, do ``make LLAMA_HIPBLAS=1 -j4`` (-j4 means it will use 4 cores of your CPU; you can adjust accordingly or leave it off altogether)
 - Alternatively, if you want a full-featured build, you can also link CLBlast and or OpenBLAS by adding `LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1` to the make command, for this you will need to obtain and link OpenCL and CLBlast libraries.
   - For Arch Linux: Install `cblas` `openblas` and `clblast`.
@@ -135,6 +136,26 @@ Then you should be able to make the .exe file with this command:
   - You can attempt a CuBLAS build with using the provided CMake file with visual studio. If you use the CMake file to build, copy the `koboldcpp_cublas.dll` generated into the same directory as the `koboldcpp.py` file. If you are bundling executables, you may need to include CUDA dynamic libraries (such as `cublasLt64_11.dll` and `cublas64_11.dll`) in order for the executable to work correctly on a different PC.
   - Make the KoboldCPP project using the instructions above.
   -
+
+## Fedora
+
+On other Linux distributions, ROCm development files come with copies of LLVM tools like clang and clang++ in `/opt/rocm`, which is what the makefile expects. On Fedora, however, the ROCm packages do not do that. By running `hipcc --version` you can find out where the LLVM tools are, which should be located at `/usr/lib64/llvm17/bin`. Because of this, you need to make symbolic links:
+- `/opt/rocm/llvm/bin/clang` to `/usr/lib64/llvm17/bin/clang`
+- `/opt/rocm/llvm/bin/clang++` to `/usr/lib64/llvm17/bin/clang++`
+
+This can be done with the following snippet:
+```sh
+sudo mkdir /opt/rocm/llvm &&
+sudo mkdir /opt/rocm/llvm/bin &&
+sudo ln -s /usr/lib64/llvm17/bin/clang /opt/rocm/llvm/bin/clang &&
+sudo ln -s /usr/lib64/llvm17/bin/clang++ /opt/rocm/llvm/bin/clang++
+```
+
+The packages you need are `rocblas-devel` and `hipblas-devel`, installed with `sudo dnf install rocblas-devel hipblas-devel`. All ROCm-related packages in the Fedora repositories may be found [here](https://fedoraproject.org/wiki/SIGs/HC#Package_status).
+
+This will allow the program to be compiled, but if you have RX 6700 XT then you also need to run `make` with `GPU_TARGETS=gfx1030`, so `make LLAMA_HIPBLAS=1 GPU_TARGETS=gfx1030 -j$(nproc)`. Otherwise koboldcpp will crash with a CUDA-related error after loading the model into memory. You can check which `GPU_TARGETS` you need with `rocminfo | grep "Name" | grep "gfx"`, which will give you the `gfxXXXX` platform information.
+
+With these changes, the program should be readily compilable on Fedora 40 and Fedora 39. You can now follow the rest of the instructions in the README.
 
 ## Arch Linux Packages
 There are some community made AUR packages (Maintained by @AlpinDale) available: [HIPBLAS](https://aur.archlinux.org/packages/koboldcpp-hipblas) and [CUBLAS](https://aur.archlinux.org/packages/koboldcpp-cuda).
