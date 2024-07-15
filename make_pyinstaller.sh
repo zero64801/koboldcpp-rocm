@@ -9,6 +9,7 @@ pip install pyinstaller customtkinter && make clean && \
 make LLAMA_HIPBLAS=1 LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1 -j$NUMCPUS && \
 pyinstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all psutil --collect-all libclblast-dev --collect-all libopenblas-dev --collect-all clinfo --icon ".\niko.ico" \
 --add-data "./kcpp_adapters:./kcpp_adapters" \
+--add-data "./koboldcpp.py:." \
 --add-data "./klite.embd:." \
 --add-data "./kcpp_docs.embd:." \
 --add-data "./kcpp_sdui.embd:." \
