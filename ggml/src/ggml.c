@@ -3361,7 +3361,7 @@ bool ggml_are_same_stride(const struct ggml_tensor * t0, const struct ggml_tenso
 }
 
 // check if t1 can be represented as a repeatition of t0
-static inline bool ggml_can_repeat(const struct ggml_tensor * t0, const struct ggml_tensor * t1) {
+bool ggml_can_repeat(const struct ggml_tensor * t0, const struct ggml_tensor * t1) {
     static_assert(GGML_MAX_DIMS == 4, "GGML_MAX_DIMS is not 4 - update this function");
 
     return ggml_is_empty(t0) ? ggml_is_empty(t1) :
@@ -13753,6 +13753,7 @@ static void ggml_compute_forward_soft_max(
     }
 }
 
+
 // ggml_compute_forward_soft_max_back
 
 static void ggml_compute_forward_soft_max_back_f32(
@@ -19077,7 +19078,7 @@ void ggml_graph_export(const struct ggml_cgraph * cgraph, const char * fname) {
         FILE * fout = ggml_fopen(fname, "wb");
 
         if (!fout) {
-            fprintf(stderr, "%s: failed to open %s\n", __func__, fname);
+            fprintf(stderr, "%s: failed to open %s: %s\n", __func__, fname, strerror(errno));
             return;
         }
 
@@ -19214,7 +19215,7 @@ struct ggml_cgraph * ggml_graph_import(const char * fname, struct ggml_context *
     {
         FILE * fin = ggml_fopen(fname, "rb");
         if (!fin) {
-            fprintf(stderr, "%s: failed to open %s\n", __func__, fname);
+            fprintf(stderr, "%s: failed to open %s: %s\n", __func__, fname, strerror(errno));
             return result;
         }
 
@@ -19537,7 +19538,7 @@ void ggml_graph_dump_dot(const struct ggml_cgraph * gb, const struct ggml_cgraph
 
     fprintf(fp, "digraph G {\n");
     fprintf(fp, "  newrank = true;\n");
-    fprintf(fp, "  rankdir = LR;\n");
+    fprintf(fp, "  rankdir = TB;\n");
 
     for (int i = 0; i < gb->n_nodes; i++) {
         struct ggml_tensor * node = gb->nodes[i];
@@ -19599,7 +19600,7 @@ void ggml_graph_dump_dot(const struct ggml_cgraph * gb, const struct ggml_cgraph
         }
 
         fprintf(fp, "CONST %d [%" PRId64 ", %" PRId64 "]", i, node->ne[0], node->ne[1]);
-        if (ggml_nelements(node) < 5) {
+        if (ggml_nelements(node) < 5 && node->data != NULL) {
             fprintf(fp, " | (");
             for (int j = 0; j < ggml_nelements(node); j++) {
                 if (node->type == GGML_TYPE_I8 || node->type == GGML_TYPE_I16 || node->type == GGML_TYPE_I32) {
@@ -20902,6 +20903,7 @@ struct gguf_context * gguf_init_empty(void) {
 struct gguf_context * gguf_init_from_file(const char * fname, struct gguf_init_params params) {
     FILE * file = ggml_fopen(fname, "rb");
     if (!file) {
+        fprintf(stderr, "%s: failed to open '%s': '%s'\n", __func__, fname, strerror(errno));
         return NULL;
     }
 
@@ -21116,7 +21118,7 @@ struct gguf_context * gguf_init_from_file(const char * fname, struct gguf_init_p
             gguf_tensor_info_sanitize(info);
 
             // make sure there is no duplicated tensor names
-            for (uint64_t j = 0; j < i; ++j) {
+            for (uint64_t j = 0; j < i && ok; ++j) {
                 if (strcmp(info->name.data, ctx->infos[j].name.data) == 0) {
                     fprintf(stderr, "%s: duplicated tensor name %s\n", __func__, info->name.data);
                     ok = false;
@@ -22100,6 +22102,14 @@ int ggml_cpu_has_sycl(void) {
 
 int ggml_cpu_has_rpc(void) {
 #if defined(GGML_USE_RPC)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int ggml_cpu_has_cann(void) {
+#if defined(GGML_USE_CANN)
     return 1;
 #else
     return 0;

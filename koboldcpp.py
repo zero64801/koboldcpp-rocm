@@ -16,6 +16,7 @@ import base64
 import json, sys, http.server, time, asyncio, socket, threading
 from concurrent.futures import ThreadPoolExecutor
 
+# constants
 sampler_order_max = 7
 stop_token_max = 16
 ban_token_max = 16
@@ -25,6 +26,59 @@ dry_seq_break_max = 16
 images_max = 4
 bias_min_value = -100.0
 bias_max_value = 100.0
+
+# global vars
+handle = None
+friendlymodelname = "inactive"
+friendlysdmodelname = "inactive"
+fullsdmodelpath = ""  #if empty, it's not initialized
+mmprojpath = "" #if empty, it's not initialized
+password = "" #if empty, no auth key required
+fullwhispermodelpath = "" #if empty, it's not initialized
+maxctx = 4096
+maxhordectx = 4096
+maxhordelen = 350
+modelbusy = threading.Lock()
+requestsinqueue = 0
+defaultport = 5001
+KcppVersion = "1.71-ROCm"
+showdebug = True
+guimode = False
+showsamplerwarning = True
+showmaxctxwarning = True
+session_kudos_earned = 0
+session_jobs = 0
+session_starttime = None
+exitcounter = -1
+punishcounter = 0 #causes a timeout if too many errors
+rewardcounter = 0 #reduces error counts for successful jobs
+totalgens = 0
+currentusergenkey = "" #store a special key so polled streaming works even in multiuser
+pendingabortkey = "" #if an abort is received for the non-active request, remember it (at least 1) to cancel later
+args = None #global args
+gui_layers_untouched = True
+runmode_untouched = True
+preloaded_story = None
+chatcompl_adapter = None
+embedded_kailite = None
+embedded_kcpp_docs = None
+embedded_kcpp_sdui = None
+sslvalid = False
+nocertify = False
+start_time = time.time()
+last_req_time = time.time()
+last_non_horde_req_time = time.time()
+currfinishreason = "null"
+using_gui_launcher = False
+using_outdated_flags = False
+
+CLDevices = ["1","2","3","4"]
+CUDevices = ["1","2","3","4","All"]
+CLDevicesNames = ["","","",""]
+CUDevicesNames = ["","","","",""]
+VKDevicesNames = ["","","",""]
+VKIsDGPU = [0,0,0,0]
+MaxMemory = [0]
 
 class logit_bias(ctypes.Structure):
     _fields_ = [("token_id", ctypes.c_int32),
@@ -160,14 +214,22 @@ class whisper_generation_outputs(ctypes.Structure):
     _fields_ = [("status", ctypes.c_int),
                 ("data", ctypes.c_char_p)]
 
-handle = None
-
 def getdirpath():
     return os.path.dirname(os.path.realpath(__file__))
 def getabspath():
     return os.path.dirname(os.path.abspath(__file__))
 def file_exists(filename):
     return os.path.exists(os.path.join(getdirpath(), filename))
+
+def get_default_threads():
+    physical_core_limit = 1
+    if os.cpu_count()!=None and os.cpu_count()>1:
+        physical_core_limit = os.cpu_count() // 2
+    default_threads = (physical_core_limit if physical_core_limit<=3 else max(3,physical_core_limit-1))
+    processor = platform.processor()
+    if 'Intel' in processor:
+        default_threads = (8 if default_threads > 8 else default_threads) #this helps avoid e-cores.
+    return default_threads
 
 def pick_existant_file(ntoption,nonntoption):
     precompiled_prefix = "precompiled_"
@@ -199,6 +261,19 @@ lib_hipblas = pick_existant_file("koboldcpp_hipblas.dll","koboldcpp_hipblas.so")
 lib_vulkan = pick_existant_file("koboldcpp_vulkan.dll","koboldcpp_vulkan.so")
 lib_vulkan_noavx2 = pick_existant_file("koboldcpp_vulkan_noavx2.dll","koboldcpp_vulkan_noavx2.so")
 libname = ""
+lib_option_pairs = [
+    (lib_openblas, "Use OpenBLAS"),
+    (lib_default, "Use No BLAS"),
+    (lib_clblast, "Use CLBlast"),
+    (lib_cublas, "Use CuBLAS"),
+    (lib_hipblas, "Use hipBLAS (ROCm)"),
+    (lib_vulkan, "Use Vulkan"),
+    (lib_noavx2, "NoAVX2 Mode (Old CPU)"),
+    (lib_clblast_noavx2, "CLBlast NoAVX2 (Old CPU)"),
+    (lib_vulkan_noavx2, "Vulkan NoAVX2 (Old CPU)"),
+    (lib_failsafe, "Failsafe Mode (Old CPU)")]
+openblas_option, default_option, clblast_option, cublas_option, hipblas_option, vulkan_option, noavx2_option, clblast_noavx2_option, vulkan_noavx2_option, failsafe_option = (opt if file_exists(lib) or (os.name == 'nt' and file_exists(opt + ".dll")) else None for lib, opt in lib_option_pairs)
+runopts = [opt for lib, opt in lib_option_pairs if file_exists(lib)]
 
 def get_amd_gfx_vers_linux():
     from subprocess import run
@@ -260,12 +335,6 @@ def init_library():
                 print("!!! Attempting to use FAILSAFE MODE !!!")
             else:
                 print("Attempting to use non-avx2 compatibility library.")
-    elif args.useclblast:
-        if not file_exists(lib_clblast) or (os.name=='nt' and not file_exists("clblast.dll")):
-            print("Warning: CLBlast library file not found. Non-BLAS library will be used.")
-        else:
-            print("Attempting to use CLBlast library for faster prompt ingestion. A compatible clblast will be required.")
-            use_clblast = True
     elif (args.usecublas is not None):
         if not file_exists(lib_cublas) and not file_exists(lib_hipblas):
             print("Warning: CuBLAS library file not found. Non-BLAS library will be used.")
@@ -282,7 +351,12 @@ def init_library():
         else:
             print("Attempting to use Vulkan library for faster prompt ingestion. A compatible Vulkan will be required.")
             use_vulkan = True
-
+    elif args.useclblast:
+        if not file_exists(lib_clblast) or (os.name=='nt' and not file_exists("clblast.dll")):
+            print("Warning: CLBlast library file not found. Non-BLAS library will be used.")
+        else:
+            print("Attempting to use CLBlast library for faster prompt ingestion. A compatible clblast will be required.")
+            use_clblast = True
     else:
         if not file_exists(lib_openblas) or (os.name=='nt' and not file_exists("libopenblas.dll")):
             print("Warning: OpenBLAS library file not found. Non-BLAS library will be used.")
@@ -444,6 +518,8 @@ def unpack_to_dir(destpath = ""):
             for item in os.listdir(srcpath):
                 s = os.path.join(srcpath, item)
                 d = os.path.join(destpath, item)
+                if item.endswith('.pyd'):  # Skip .pyd files
+                    continue
                 if os.path.isdir(s):
                     shutil.copytree(s, d, False, None)
                 else:
@@ -462,6 +538,212 @@ def unpack_to_dir(destpath = ""):
             print(f"The target folder is not empty or invalid. Please select an empty folder.")
         else:
             messagebox.showwarning("Invalid Selection", "The target folder is not empty or invalid. Please select an empty folder.")
+
+def exit_with_error(code, message, title="Error"):
+    global guimode
+    print("")
+    time.sleep(1)
+    if guimode:
+        show_gui_msgbox(title, message)
+    else:
+        print(message, flush=True)
+    time.sleep(2)
+    sys.exit(code)
+
+def utfprint(str):
+    maxlen = 32000
+    if args.debugmode >= 1:
+        maxlen = 64000
+    strlength = len(str)
+    if strlength > maxlen: #limit max output len
+        str = str[:maxlen] + f"... (+{strlength-maxlen} chars)"
+    try:
+        print(str)
+    except UnicodeEncodeError:
+        # Replace or omit the problematic character
+        utf_string = str.encode('ascii', 'ignore').decode('ascii',"ignore")
+        utf_string = utf_string.replace('\a', '') #remove bell characters
+        print(utf_string)
+
+def bring_terminal_to_foreground():
+    if os.name=='nt':
+        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 9)
+        ctypes.windll.user32.SetForegroundWindow(ctypes.windll.kernel32.GetConsoleWindow())
+
+def string_contains_sequence_substring(inputstr,sequences):
+    if inputstr.strip()=="":
+        return False
+    for s in sequences:
+        if s.strip()=="":
+            continue
+        if s.strip() in inputstr.strip() or inputstr.strip() in s.strip():
+            return True
+    return False
+
+import struct
+
+def read_gguf_metadata(file_path):
+    chunk_size = 8192  # read only first 8kb of file
+    try:
+        def read_gguf_key(keyname,data,maxval):
+            keylen = len(keyname)
+            index = data.find(keyname)  # Search for the magic number, Read 2 chunks of 4 byte numbers
+            if index != -1 and index + keylen + 8 <= chunk_size:
+                start_index = index + keylen
+                first_value_bytes = data[start_index:start_index + 4]
+                second_value_bytes = data[start_index + 4:start_index + 8]
+                # Unpack each 4 bytes as an unsigned int32 in little-endian format
+                value1 = struct.unpack('<I', first_value_bytes)[0] #4 means its a uint32
+                value2 = struct.unpack('<I', second_value_bytes)[0]
+                if value1 == 4 and value2 > 0 and value2 <= maxval:
+                    return value2 #contains the desired value
+                return 0
+            else:
+                return 0 #not found
+
+        fsize = os.path.getsize(file_path)
+        if fsize < 10000: #ignore files under 10kb
+            return None
+        with open(file_path, 'rb') as f:
+            file_header = f.read(4)
+            if file_header != b'GGUF': #file is not GGUF
+                return None
+            data = f.read(chunk_size)
+            layercount = read_gguf_key(b'.block_count',data,512)
+            head_count_kv = read_gguf_key(b'.attention.head_count_kv',data,8192)
+            key_length = read_gguf_key(b'.attention.key_length',data,8192)
+            val_length = read_gguf_key(b'.attention.value_length',data,8192)
+            return [layercount,head_count_kv, max(key_length,val_length)]
+    except Exception as ex:
+        return None
+
+def autoset_gpu_layers(filepath,ctxsize,gpumem): #shitty algo to determine how many layers to use
+    try:
+        layerlimit = 0
+        fsize = os.path.getsize(filepath)
+        if fsize>10000000: #dont bother with models < 10mb
+            cs = ctxsize
+            mem = gpumem
+            csmul = 1.0
+            if cs:
+                csmul = (cs/4096) if cs >= 8192 else 1.8 if cs > 4096 else 1.2 if cs > 2048 else 1.0
+            ggufmeta = read_gguf_metadata(filepath)
+            if not ggufmeta or ggufmeta[0]==0: #fail to read or no layers
+                sizeperlayer = fsize*csmul*0.052
+                layerlimit = int(min(200,mem/sizeperlayer))
+            else:
+                layers = ggufmeta[0]
+                headcount = ggufmeta[1]
+                headkvlen = (ggufmeta[2] if ggufmeta[2] > 0 else 128)
+                ratio = mem/(fsize*csmul*1.5)
+                computemem = layers*4*headkvlen*cs*4*1.4 # For now the first 4 is the hardcoded result for a blasbatchsize of 512. Ideally we automatically calculate blasbatchsize / 4 but I couldn't easily grab the value yet - Henk
+                contextmem = layers*headcount*headkvlen*cs*4
+                reservedmem = 1.5*1024*1024*1024 # Users often don't have their GPU's VRAM worth of memory, we assume 500MB to avoid driver swapping + 500MB for the OS + 500MB for background apps / browser - Henk
+                if headcount > 0:
+                    ratio = max(ratio, (mem - reservedmem - computemem) / (fsize + contextmem))
+                layerlimit = min(int(ratio*layers), (layers + 3))
+        return layerlimit
+    except Exception as ex:
+        return 0
+
+def fetch_gpu_properties(testCL,testCU,testVK):
+    import subprocess
+    if testCL:
+        try: # Get OpenCL GPU names on windows using a special binary. overwrite at known index if found.
+            basepath = os.path.abspath(os.path.dirname(__file__))
+            output = ""
+            data = None
+            try:
+                output = subprocess.run(["clinfo","--json"], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+                data = json.loads(output)
+            except Exception as e1:
+                output = subprocess.run([((os.path.join(basepath, "winclinfo.exe")) if os.name == 'nt' else "clinfo"),"--json"], capture_output=True, text=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS, encoding='utf-8').stdout
+                data = json.loads(output)
+            plat = 0
+            dev = 0
+            lowestclmem = 0
+            for platform in data["devices"]:
+                dev = 0
+                for device in platform["online"]:
+                    dname = device["CL_DEVICE_NAME"]
+                    dmem = int(device["CL_DEVICE_GLOBAL_MEM_SIZE"])
+                    idx = plat+dev*2
+                    if idx<len(CLDevices):
+                        CLDevicesNames[idx] = dname
+                        lowestclmem = dmem if lowestclmem==0 else (dmem if dmem<lowestclmem else lowestclmem)
+                    dev += 1
+                plat += 1
+            MaxMemory[0] = lowestclmem
+        except Exception as e:
+            pass
+
+    if testCU:
+        FetchedCUdevices = []
+        FetchedCUdeviceMem = []
+        AMDgpu = None
+        try: # Get NVIDIA GPU names
+            output = subprocess.run(['nvidia-smi','--query-gpu=name,memory.total','--format=csv,noheader'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+            FetchedCUdevices = [line.split(",")[0].strip() for line in output.splitlines()]
+            FetchedCUdeviceMem = [line.split(",")[1].strip().split(" ")[0].strip() for line in output.splitlines()]
+        except Exception as e:
+            pass
+        if len(FetchedCUdevices)==0:
+            try: # Get AMD ROCm GPU names
+                output = subprocess.run(['rocminfo'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+                device_name = None
+                for line in output.splitlines(): # read through the output line by line
+                    line = line.strip()
+                    if line.startswith("Marketing Name:"): device_name = line.split(":", 1)[1].strip() # if we find a named device, temporarily save the name
+                    elif line.startswith("Device Type:") and "GPU" in line and device_name is not None: # if the following Device Type is a GPU (not a CPU) then add it to devices list
+                        FetchedCUdevices.append(device_name)
+                        AMDgpu = True
+                    elif line.startswith("Device Type:") and "GPU" not in line: device_name = None
+                if FetchedCUdevices:
+                    getamdvram = subprocess.run(['rocm-smi', '--showmeminfo', 'vram', '--csv'], capture_output=True, text=True, check=True, encoding='utf-8').stdout # fetch VRAM of devices
+                    FetchedCUdeviceMem = [line.split(",")[1].strip() for line in getamdvram.splitlines()[1:] if line.strip()]
+            except Exception as e:
+                pass
+        for idx in range(0,4):
+            if(len(FetchedCUdevices)>idx):
+                CUDevicesNames[idx] = FetchedCUdevices[idx]
+                if AMDgpu:
+                    MaxMemory[0] = max(int(FetchedCUdeviceMem[idx]),MaxMemory[0])
+                else:
+                    MaxMemory[0] = max(int(FetchedCUdeviceMem[idx])*1024*1024,MaxMemory[0])
+
+    if testVK:
+        try: # Get Vulkan names
+            output = subprocess.run(['vulkaninfo','--summary'], capture_output=True, text=True, check=True, encoding='utf-8').stdout
+            devicelist = [line.split("=")[1].strip() for line in output.splitlines() if "deviceName" in line]
+            devicetypes = [line.split("=")[1].strip() for line in output.splitlines() if "deviceType" in line]
+            idx = 0
+            for dname in devicelist:
+                if idx<len(VKDevicesNames):
+                    VKDevicesNames[idx] = dname
+                    idx += 1
+            if len(devicetypes) == len(devicelist):
+                idx = 0
+                for dvtype in devicetypes:
+                    if idx<len(VKIsDGPU):
+                        VKIsDGPU[idx] = (1 if dvtype=="PHYSICAL_DEVICE_TYPE_DISCRETE_GPU" else 0)
+                        idx += 1
+        except Exception as e:
+            pass
+    return
+
+def auto_set_backend_cli():
+    print("\nA .kcppt template was selected from CLI - automatically selecting your backend...")
+    fetch_gpu_properties(False,True,True)
+    if exitcounter < 100 and MaxMemory[0]>3500000000 and (("Use CuBLAS" in runopts and CUDevicesNames[0]!="") or "Use hipBLAS (ROCm)" in runopts) and any(CUDevicesNames):
+        if "Use CuBLAS" in runopts or "Use hipBLAS (ROCm)" in runopts:
+            args.usecublas = ["normal","mmq"]
+            print("Auto Selected CUDA Backend...\n")
+    elif exitcounter < 100 and (1 in VKIsDGPU) and "Use Vulkan" in runopts:
+        for i in range(0,len(VKIsDGPU)):
+            if VKIsDGPU[i]==1:
+                args.usevulkan = []
+                print("Auto Selected Vulkan Backend...\n")
+                break
 
 def load_model(model_filename):
     global args
@@ -516,7 +798,7 @@ def load_model(model_filename):
     ret = handle.load_model(inputs)
     return ret
 
-def generate(prompt, memory="", images=[], max_length=32, max_context_length=512, temperature=0.7, top_k=100, top_a=0.0, top_p=0.92, min_p=0.0, typical_p=1.0, tfs=1.0, rep_pen=1.0, rep_pen_range=128, rep_pen_slope=1.0, presence_penalty=0.0, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, dry_multiplier=0.0, dry_base=1.75, dry_allowed_length=2, dry_penalty_last_n=0, dry_sequence_breakers=['\n', ':', '"', '*'], sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=False, stream_sse=False, grammar='', grammar_retain_state=False, genkey='', trimstop=False, quiet=False, dynatemp_range=0.0, dynatemp_exponent=1.0, smoothing_factor=0.0, logit_biases={}, render_special=False, banned_tokens=[], bypass_eos_token=False):
+def generate(prompt, memory="", images=[], max_length=32, max_context_length=512, temperature=0.7, top_k=100, top_a=0.0, top_p=0.92, min_p=0.0, typical_p=1.0, tfs=1.0, rep_pen=1.0, rep_pen_range=128, rep_pen_slope=1.0, presence_penalty=0.0, mirostat=0, mirostat_tau=5.0, mirostat_eta=0.1, dry_multiplier=0.0, dry_base=1.75, dry_allowed_length=2, dry_penalty_last_n=0, dry_sequence_breakers=[], sampler_order=[6,0,1,3,4,2,5], seed=-1, stop_sequence=[], use_default_badwordsids=False, stream_sse=False, grammar='', grammar_retain_state=False, genkey='', trimstop=False, quiet=False, dynatemp_range=0.0, dynatemp_exponent=1.0, smoothing_factor=0.0, logit_biases={}, render_special=False, banned_tokens=[], bypass_eos_token=False):
     global maxctx, args, currentusergenkey, totalgens, pendingabortkey
     inputs = generation_inputs()
     inputs.prompt = prompt.encode("UTF-8")
@@ -571,17 +853,18 @@ def generate(prompt, memory="", images=[], max_length=32, max_context_length=512
     # Handle dry_sequence_breakers being passed as a json-encoded array of
     # strings, rather than as an array of strings itself. This is to support
     # SillyTavern, which passes sequence breakers to Oobabooga that way.
-    if isinstance(dry_sequence_breakers, str):
+    if dry_multiplier > 0 and isinstance(dry_sequence_breakers, str):
         try:
             dry_sequence_breakers = json.loads(dry_sequence_breakers)
         except ValueError as e:
             print(f"ERROR: dry_sequence_breakers must be an array of strings or a json encoded array of strings. Could not parse '{dry_sequence_breakers}': " + str(e))
             dry_sequence_breakers = []
     for n in range(dry_seq_break_max):
-        if n < len(dry_sequence_breakers):
+        if dry_multiplier > 0 and n < len(dry_sequence_breakers):
             inputs.dry_sequence_breakers[n] = dry_sequence_breakers[n].encode("UTF-8")
         else:
             inputs.dry_sequence_breakers[n] = "".encode("UTF-8")
+
     if sampler_order and 0 < len(sampler_order) <= sampler_order_max:
         try:
             for i, sampler in enumerate(sampler_order):
@@ -778,81 +1061,10 @@ def whisper_generate(genparams):
         outstr = ret.data.decode("UTF-8","ignore")
     return outstr
 
-def utfprint(str):
-    maxlen = 32000
-    if args.debugmode >= 1:
-        maxlen = 64000
-    strlength = len(str)
-    if strlength > maxlen: #limit max output len
-        str = str[:maxlen] + f"... (+{strlength-maxlen} chars)"
-    try:
-        print(str)
-    except UnicodeEncodeError:
-        # Replace or omit the problematic character
-        utf_string = str.encode('ascii', 'ignore').decode('ascii',"ignore")
-        utf_string = utf_string.replace('\a', '') #remove bell characters
-        print(utf_string)
-
-def bring_terminal_to_foreground():
-    if os.name=='nt':
-        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 9)
-        ctypes.windll.user32.SetForegroundWindow(ctypes.windll.kernel32.GetConsoleWindow())
-
-def string_contains_sequence_substring(inputstr,sequences):
-    if inputstr.strip()=="":
-        return False
-    for s in sequences:
-        if s.strip()=="":
-            continue
-        if s.strip() in inputstr.strip() or inputstr.strip() in s.strip():
-            return True
-    return False
-
 #################################################################
 ### A hacky simple HTTP server simulating a kobold api by Concedo
 ### we are intentionally NOT using flask, because we want MINIMAL dependencies
 #################################################################
-friendlymodelname = "inactive"
-friendlysdmodelname = "inactive"
-fullsdmodelpath = ""  #if empty, it's not initialized
-mmprojpath = "" #if empty, it's not initialized
-password = "" #if empty, no auth key required
-fullwhispermodelpath = "" #if empty, it's not initialized
-maxctx = 4096
-maxhordectx = 4096
-maxhordelen = 350
-modelbusy = threading.Lock()
-requestsinqueue = 0
-defaultport = 5001
-KcppVersion = "1.70.yr0-ROCm (nice)"
-showdebug = True
-showsamplerwarning = True
-showmaxctxwarning = True
-session_kudos_earned = 0
-session_jobs = 0
-session_starttime = None
-exitcounter = -1
-punishcounter = 0 #causes a timeout if too many errors
-rewardcounter = 0 #reduces error counts for successful jobs
-totalgens = 0
-currentusergenkey = "" #store a special key so polled streaming works even in multiuser
-pendingabortkey = "" #if an abort is received for the non-active request, remember it (at least 1) to cancel later
-args = None #global args
-gui_layers_untouched = True
-runmode_untouched = True
-preloaded_story = None
-chatcompl_adapter = None
-embedded_kailite = None
-embedded_kcpp_docs = None
-embedded_kcpp_sdui = None
-sslvalid = False
-nocertify = False
-start_time = time.time()
-last_req_time = time.time()
-last_non_horde_req_time = time.time()
-currfinishreason = "null"
-using_gui_launcher = False
-using_outdated_flags = False
 
 # Used to parse json for openai tool calls
 def extract_json_from_string(input_string):
@@ -1484,6 +1696,9 @@ Enter Prompt:<br>
         elif self.path.endswith('/sdapi/v1/upscalers'):
            response_body = (json.dumps([]).encode())
 
+        elif self.path.endswith(('/api/tags')): #ollama compatible
+            response_body = (json.dumps({"models":[{"name":"koboldcpp","model":friendlymodelname,"modified_at":"2024-07-19T15:26:55.6122841+08:00","size":394998579,"digest":"b5dc5e784f2a3ee1582373093acf69a2f4e2ac1710b253a001712b86a61f88bb","details":{"parent_model":"","format":"gguf","family":"koboldcpp","families":["koboldcpp"],"parameter_size":"128M","quantization_level":"Q4_0"}}]}).encode())
+
         elif self.path=="/api" or self.path=="/docs" or self.path.startswith(('/api/?json=','/api?json=','/docs/?json=','/docs?json=')):
             content_type = 'text/html'
             if embedded_kcpp_docs is None:
@@ -1852,7 +2067,9 @@ def RunServerMultiThreaded(addr, port):
             sys.exit(0)
 
 # note: customtkinter-5.2.0
-def show_new_gui():
+def show_gui():
+    global guimode
+    guimode = True
     from tkinter.filedialog import askopenfilename
     from tkinter.filedialog import asksaveasfile
 
@@ -1864,14 +2081,12 @@ def show_new_gui():
         args.model_param = askopenfilename(title="Select ggml model .bin or .gguf file or .kcpps config")
         root.withdraw()
         root.quit()
-        if args.model_param and args.model_param!="" and args.model_param.lower().endswith('.kcpps'):
-            loadconfigfile(args.model_param)
+        if args.model_param and args.model_param!="" and (args.model_param.lower().endswith('.kcpps') or args.model_param.lower().endswith('.kcppt')):
+            load_config_cli(args.model_param)
         if not args.model_param and not args.sdmodel and not args.whispermodel:
             global exitcounter
             exitcounter = 999
-            print("\nNo ggml model or kcpps file was selected. Exiting.")
-            time.sleep(3)
-            sys.exit(2)
+            exit_with_error(2,"No ggml model or kcpps file was selected. Exiting.")
         return
 
     import customtkinter as ctk
@@ -1883,7 +2098,7 @@ def show_new_gui():
     ctk.set_appearance_mode("dark")
     root = ctk.CTk()
     root.geometry(str(windowwidth) + "x" + str(windowheight))
-    root.title("KoboldCpp v"+KcppVersion)
+    root.title(f"KoboldCpp v{KcppVersion}")
 
     gtooltip_box = None
     gtooltip_label = None
@@ -1934,6 +2149,7 @@ def show_new_gui():
         root.bind("<Configure>", on_resize)
     global using_gui_launcher
     using_gui_launcher = True
+    kcpp_exporting_template = False
 
     # trigger empty tooltip then remove it
     def show_tooltip(event, tooltip_text=None):
@@ -1959,6 +2175,8 @@ def show_new_gui():
     show_tooltip(None,"") #initialize tooltip objects
     hide_tooltip(None)
 
+    default_threads = get_default_threads()
+
     tabs = ctk.CTkFrame(root, corner_radius = 0, width=windowwidth, height=windowheight-50)
     tabs.grid(row=0, stick="nsew")
     tabnames= ["Quick Launch", "Hardware", "Tokens", "Model Files", "Network", "Horde Worker","Image Gen","Audio","Extra"]
@@ -1971,32 +2189,11 @@ def show_new_gui():
     tabcontentframe.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
     tabcontentframe.grid_propagate(False)
 
-    CLDevices = ["1","2","3","4"]
-    CUDevices = ["1","2","3","4","All"]
-    CLDevicesNames = ["","","",""]
-    CUDevicesNames = ["","","","",""]
-    VKDevicesNames = ["","","",""]
-    VKIsDGPU = [0,0,0,0]
-    MaxMemory = [0]
-
     tabcontent = {}
-    lib_option_pairs = [
-        (lib_openblas, "Use OpenBLAS"),
-        (lib_clblast, "Use CLBlast"),
-        (lib_cublas, "Use CuBLAS"),
-        (lib_hipblas, "Use hipBLAS (ROCm)"),
-        (lib_vulkan, "Use Vulkan"),
-        (lib_default, "Use No BLAS"),
-        (lib_clblast_noavx2, "CLBlast NoAVX2 (Old CPU)"),
-        (lib_vulkan_noavx2, "Vulkan NoAVX2 (Old CPU)"),
-        (lib_noavx2, "NoAVX2 Mode (Old CPU)"),
-        (lib_failsafe, "Failsafe Mode (Old CPU)")]
-    openblas_option, clblast_option, cublas_option, hipblas_option, vulkan_option, default_option, clblast_noavx2_option, vulkan_noavx2_option, noavx2_option, failsafe_option = (opt if file_exists(lib) or (os.name == 'nt' and file_exists(opt + ".dll")) else None for lib, opt in lib_option_pairs)
     # slider data
     blasbatchsize_values = ["-1", "32", "64", "128", "256", "512", "1024", "2048"]
     blasbatchsize_text = ["Don't Batch BLAS","32","64","128","256","512","1024","2048"]
     contextsize_text = ["256", "512", "1024", "2048", "3072", "4096", "6144", "8192", "12288", "16384", "24576", "32768", "49152", "65536", "98304", "131072"]
-    runopts = [opt for lib, opt in lib_option_pairs if file_exists(lib)]
     antirunopts = [opt.replace("Use ", "") for lib, opt in lib_option_pairs if not (opt in runopts)]
     quantkv_text = ["F16 (Off)","8-Bit","4-Bit"]
 
@@ -2014,9 +2211,7 @@ def show_new_gui():
 
     if not any(runopts):
         exitcounter = 999
-        show_gui_msgbox("No Backends Available!","KoboldCPP couldn't locate any backends to use (i.e Default, OpenBLAS, CLBlast, CuBLAS).\n\nTo use the program, please run the 'make' command from the directory.")
-        time.sleep(3)
-        sys.exit(2)
+        exit_with_error(2,"KoboldCPP couldn't locate any backends to use (i.e Default, OpenBLAS, CLBlast, CuBLAS).\n\nTo use the program, please run the 'make' command from the directory.","No Backends Available!")
 
     # Vars - should be in scope to be used by multiple widgets
     gpulayers_var = ctk.StringVar(value="0")
@@ -2140,14 +2335,10 @@ def show_new_gui():
 
 
     def makelabelentry(parent, text, var, row=0, width=50, padx=8, singleline=False, tooltip=""):
-        label = makelabel(parent, text, row,0,tooltip)
-        entry = ctk.CTkEntry(parent, width=width, textvariable=var) #you cannot set placeholder text for SHARED variables
-        if singleline:
-            entry.grid(row=row, column=0, padx=padx, stick="nw")
-        else:
-            entry.grid(row=row, column=1, padx=padx, stick="nw")
+        label = makelabel(parent, text, row, 0, tooltip)
+        entry = ctk.CTkEntry(parent, width=width, textvariable=var)
+        entry.grid(row=row, column=(0 if singleline else 1), padx=padx, sticky="nw")
         return entry, label
-
 
     def makefileentry(parent, text, searchtext, var, row=0, width=200, filetypes=[], onchoosefile=None, singlerow=False, singlecol=True, tooltiptxt=""):
         label = makelabel(parent, text, row,0,tooltiptxt,columnspan=3)
@@ -2381,60 +2572,50 @@ def show_new_gui():
                 MaxMemory[0] = max(int(FetchedCUdeviceMem[idx])*1024*1024,MaxMemory[0])
 
         #autopick cublas if suitable, requires at least 3.5GB VRAM to auto pick
+    def auto_set_backend_gui(manual_select=False):
         global exitcounter, runmode_untouched
+        if manual_select:
+            print("\nA .kcppt template was selected from GUI - automatically selecting your backend...")
+            runmode_untouched = True
+            fetch_gpu_properties(False,True,True)
+        else:
+            fetch_gpu_properties(True,True,True)
+        #autopick cublas if suitable, requires at least 3.5GB VRAM to auto pick
         #we do not want to autoselect hip/cublas if the user has already changed their desired backend!
         if exitcounter < 100 and MaxMemory[0]>3500000000 and (("Use CuBLAS" in runopts and CUDevicesNames[0]!="") or "Use hipBLAS (ROCm)" in runopts) and (any(CUDevicesNames) or any(CLDevicesNames)) and runmode_untouched:
             if "Use CuBLAS" in runopts:
                 runopts_var.set("Use CuBLAS")
+                gpu_choice_var.set("1")
+                print("Auto Selected CUDA Backend...\n")
             elif "Use hipBLAS (ROCm)" in runopts:
                 runopts_var.set("Use hipBLAS (ROCm)")
+                gpu_choice_var.set("1")
+                print("Auto Selected HIP Backend...\n")
         elif exitcounter < 100 and (1 in VKIsDGPU) and runmode_untouched and "Use Vulkan" in runopts:
             for i in range(0,len(VKIsDGPU)):
                 if VKIsDGPU[i]==1:
                     runopts_var.set("Use Vulkan")
                     gpu_choice_var.set(str(i+1))
+                    print("Auto Selected Vulkan Backend...\n")
                     break
-
         changed_gpu_choice_var()
-        return
 
     def on_picked_model_file(filepath):
-        if filepath.lower().endswith('.kcpps'):
+        global gui_layers_untouched
+        if filepath.lower().endswith('.kcpps') or filepath.lower().endswith('.kcppt'):
             #load it as a config file instead
             with open(filepath, 'r') as f:
                 dict = json.load(f)
                 import_vars(dict)
         else:
-            autoset_gpu_layers(filepath)
-
-    def autoset_gpu_layers(filepath): #shitty algo to determine how many layers to use
-        try:
-            global gui_layers_untouched
-            fsize = os.path.getsize(filepath)
-            if fsize>10000000: #dont bother with models < 10mb
-                cs = int(contextsize_text[context_var.get()])
-                mem = MaxMemory[0]
-                layerlimit = 0
-
-                if cs and cs > 4096:
-                    fsize *= 1.2
-                elif cs and cs > 2048:
-                    fsize *= 1.1
-
-                if mem < fsize*1.6:
-                    sizeperlayer = fsize*0.052
-                    layerlimit = int(min(200,mem/sizeperlayer))
-                else:
-                    layerlimit = 200 #assume full offload
-                old_gui_layers_untouched = gui_layers_untouched
-                gui_layers_zeroed = gpulayers_var.get()=="" or gpulayers_var.get()=="0"
-                if (gui_layers_untouched or gui_layers_zeroed) and layerlimit>0:
-                    gpulayers_var.set(str(layerlimit))
-                    gui_layers_untouched = old_gui_layers_untouched
-                    if gui_layers_zeroed:
-                        gui_layers_untouched = True
-        except Exception as ex:
-            pass
+            layerlimit = autoset_gpu_layers(filepath,int(contextsize_text[context_var.get()]),MaxMemory[0])
+            old_gui_layers_untouched = gui_layers_untouched
+            gui_layers_zeroed = gpulayers_var.get()=="" or gpulayers_var.get()=="0"
+            if (gui_layers_untouched or gui_layers_zeroed) and layerlimit>0:
+                gpulayers_var.set(str(layerlimit))
+                gui_layers_untouched = old_gui_layers_untouched
+                if gui_layers_zeroed:
+                    gui_layers_untouched = True
 
     def setup_backend_tooltip(parent):
         # backend count label with the tooltip function
@@ -2599,15 +2780,18 @@ def show_new_gui():
     quick_mmq_box = makecheckbox(quick_tab,  "Use QuantMatMul (mmq)", mmq_var, 4,1,tooltiptxt="Enable MMQ mode instead of CuBLAS for prompt processing. Read the wiki. Speed may vary.")
 
     # quick boxes
-    quick_boxes = {"Launch Browser": launchbrowser , "Disable MMAP":disablemmap,"Use ContextShift":contextshift,"Remote Tunnel":remotetunnel,"Use FlashAttention":flashattention,"Quiet Mode":quietmode}
-    quick_boxes_desc = {"Launch Browser": "Launches your default browser after model loading is complete",
-    "Disable MMAP":"Avoids using mmap to load models if enabled",
-    "Use ContextShift":"Uses Context Shifting to reduce reprocessing.\nRecommended. Check the wiki for more info.",
-    "Remote Tunnel":"Creates a trycloudflare tunnel.\nAllows you to access koboldcpp from other devices over an internet URL.",
-    "Use FlashAttention":"Enable flash attention for GGUF models.",
-    "Quiet Mode":"Prevents all generation related terminal output from being displayed."}
-    for idx, name, in enumerate(quick_boxes):
-        makecheckbox(quick_tab, name, quick_boxes[name], int(idx/2) +20, idx%2,tooltiptxt=quick_boxes_desc[name])
+    quick_boxes = {
+        "Launch Browser": [launchbrowser, "Launches your default browser after model loading is complete"],
+        "Disable MMAP": [disablemmap,  "Avoids using mmap to load models if enabled"],
+        "Use ContextShift": [contextshift, "Uses Context Shifting to reduce reprocessing.\nRecommended. Check the wiki for more info."],
+        "Remote Tunnel": [remotetunnel,  "Creates a trycloudflare tunnel.\nAllows you to access koboldcpp from other devices over an internet URL."],
+        "Use FlashAttention": [flashattention, "Enable flash attention for GGUF models."],
+        "Quiet Mode": [quietmode, "Prevents all generation related terminal output from being displayed."]
+    }
+
+    for idx, (name, properties) in enumerate(quick_boxes.items()):
+        makecheckbox(quick_tab, name, properties[0], int(idx/2) + 20, idx % 2, tooltiptxt=properties[1])
+
     # context size
     makeslider(quick_tab, "Context Size:", contextsize_text, context_var, 0, len(contextsize_text)-1, 30, width=280, set=5,tooltip="What is the maximum context size to support. Model specific. You cannot exceed it.\nLarger contexts require more memory, and not all models support it.")
 
@@ -2643,16 +2827,17 @@ def show_new_gui():
     makelabelentry(hardware_tab, "Threads:" , threads_var, 11, 50,tooltip="How many threads to use.\nRecommended value is your CPU core count, defaults are usually OK.")
 
     # hardware checkboxes
-    hardware_boxes = {"Launch Browser": launchbrowser, "High Priority" : highpriority, "Disable MMAP":disablemmap, "Use mlock":usemlock, "Debug Mode":debugmode, "Keep Foreground":keepforeground}
-    hardware_boxes_desc = {"Launch Browser": "Launches your default browser after model loading is complete",
-    "High Priority": "Increases the koboldcpp process priority.\nMay cause lag or slowdown instead. Not recommended.",
-    "Disable MMAP": "Avoids using mmap to load models if enabled",
-    "Use mlock": "Enables mlock, preventing the RAM used to load the model from being paged out.",
-    "Debug Mode": "Enables debug mode, with extra info printed to the terminal.",
-    "Keep Foreground": "Bring KoboldCpp to the foreground every time there is a new generation."}
+    hardware_boxes = {
+        "Launch Browser": [launchbrowser, "Launches your default browser after model loading is complete"],
+        "High Priority": [highpriority, "Increases the koboldcpp process priority.\nMay cause lag or slowdown instead. Not recommended."],
+        "Disable MMAP": [disablemmap, "Avoids using mmap to load models if enabled"],
+        "Use mlock": [usemlock, "Enables mlock, preventing the RAM used to load the model from being paged out."],
+        "Debug Mode": [debugmode, "Enables debug mode, with extra info printed to the terminal."],
+        "Keep Foreground": [keepforeground, "Bring KoboldCpp to the foreground every time there is a new generation."]
+    }
 
-    for idx, name, in enumerate(hardware_boxes):
-        makecheckbox(hardware_tab, name, hardware_boxes[name], int(idx/2) +30, idx%2, tooltiptxt=hardware_boxes_desc[name])
+    for idx, (name, properties) in enumerate(hardware_boxes.items()):
+        makecheckbox(hardware_tab, name, properties[0], int(idx/2) + 30, idx % 2, tooltiptxt=properties[1])
 
     # blas thread specifier
     makelabelentry(hardware_tab, "BLAS threads:" , blas_threads_var, 14, 50,tooltip="How many threads to use during BLAS processing.\nIf left blank, uses same value as regular thread count.")
@@ -2742,14 +2927,16 @@ def show_new_gui():
     horde_workername_entry,  horde_workername_label = makelabelentry(horde_tab, "Horde Worker Name:",horde_workername_var, 24, 180,tooltip="Your worker's name to be displayed.")
 
     def togglehorde(a,b,c):
-        labels = [horde_name_label, horde_gen_label, horde_context_label, horde_apikey_label, horde_workername_label]
-        for idx, item in enumerate([horde_name_entry, horde_gen_entry, horde_context_entry, horde_apikey_entry, horde_workername_entry]):
+        horde_items = zip([horde_name_entry, horde_gen_entry, horde_context_entry, horde_apikey_entry, horde_workername_entry],
+                          [horde_name_label, horde_gen_label, horde_context_label, horde_apikey_label, horde_workername_label])
+
+        for item, label in horde_items:
             if usehorde_var.get() == 1:
                 item.grid()
-                labels[idx].grid()
+                label.grid()
             else:
                 item.grid_remove()
-                labels[idx].grid_remove()
+                label.grid_remove()
         if usehorde_var.get()==1 and (horde_name_var.get()=="koboldcpp" or horde_name_var.get()=="") and model_var.get()!="":
             basefile = os.path.basename(model_var.get())
             horde_name_var.set(sanitize_string(os.path.splitext(basefile)[0]))
@@ -2798,11 +2985,45 @@ def show_new_gui():
     audio_tab = tabcontent["Audio"]
     makefileentry(audio_tab, "Whisper Model (Speech-To-Text):", "Select Whisper .bin Model File", whisper_model_var, 1, width=280, filetypes=[("*.bin","*.bin")], tooltiptxt="Select a Whisper .bin model file on disk to be loaded.")
 
+    def kcpp_export_template():
+        nonlocal kcpp_exporting_template
+        kcpp_exporting_template = True
+        export_vars()
+        kcpp_exporting_template = False
+        savdict = json.loads(json.dumps(args.__dict__))
+        file_type = [("KoboldCpp LaunchTemplate", "*.kcppt")]
+        #remove blacklisted fields
+        savdict["istemplate"] = True
+        savdict["gpulayers"] = -1
+        savdict["threads"] = -1
+        savdict["hordekey"] = ""
+        savdict["hordeworkername"] = ""
+        savdict["sdthreads"] = 0
+        savdict["password"] = None
+        savdict["nommap"] = False
+        savdict["usemlock"] = False
+        savdict["debugmode"] = 0
+        savdict["ssl"] = None
+        savdict["useclblast"] = None
+        savdict["usecublas"] = None
+        savdict["usevulkan"] = None
+        savdict["tensor_split"] = None
+        savdict["config"] = None
+        filename = asksaveasfile(filetypes=file_type, defaultextension=file_type)
+        if filename == None:
+            return
+        file = open(str(filename.name), 'a')
+        file.write(json.dumps(savdict))
+        file.close()
+        pass
+
     # extra tab
     extra_tab = tabcontent["Extra"]
     makelabel(extra_tab, "Unpack KoboldCpp to a local directory to modify its files.", 1, 0)
     makelabel(extra_tab, "You can also launch via koboldcpp.py for faster startup.", 2, 0)
     ctk.CTkButton(extra_tab , text = "Unpack KoboldCpp To Folder", command = unpack_to_dir ).grid(row=3,column=0, stick="w", padx= 8, pady=2)
+    makelabel(extra_tab, "Export as launcher .kcppt template (Expert Only)", 4, 0,tooltiptxt="Creates a KoboldCpp launch template for others to use.\nEmbeds JSON files directly into exported file when saving.\nWhen loaded, forces the backend to be automatically determined.\nWarning! Not recommended for beginners!")
+    ctk.CTkButton(extra_tab , text = "Generate LaunchTemplate", command = kcpp_export_template ).grid(row=5,column=0, stick="w", padx= 8, pady=2)
 
     # launch
     def guilaunch():
@@ -2816,6 +3037,7 @@ def show_new_gui():
         pass
 
     def export_vars():
+        nonlocal kcpp_exporting_template
         args.threads = int(threads_var.get())
         args.usemlock   = usemlock.get() == 1
         args.debugmode  = debugmode.get()
@@ -2892,10 +3114,24 @@ def show_new_gui():
             args.ropeconfig = [float(customrope_scale.get()),float(customrope_base.get())]
 
         args.chatcompletionsadapter = None if chatcompletionsadapter_var.get() == "" else chatcompletionsadapter_var.get()
+        try:
+            if kcpp_exporting_template and isinstance(args.chatcompletionsadapter, str) and args.chatcompletionsadapter!="" and os.path.exists(args.chatcompletionsadapter):
+                print(f"Embedding chat completions adapter...")   # parse and save embedded preload story
+                with open(args.chatcompletionsadapter, 'r') as f:
+                    args.chatcompletionsadapter = json.load(f)
+        except Exception as ex2:
+            pass
 
         args.model_param = None if model_var.get() == "" else model_var.get()
         args.lora = None if lora_var.get() == "" else ([lora_var.get()] if lora_base_var.get()=="" else [lora_var.get(), lora_base_var.get()])
         args.preloadstory = None if preloadstory_var.get() == "" else preloadstory_var.get()
+        try:
+            if kcpp_exporting_template and isinstance(args.preloadstory, str) and args.preloadstory!="" and os.path.exists(args.preloadstory):
+                print(f"Embedding preload story...")   # parse and save embedded preload story
+                with open(args.preloadstory, 'r') as f:
+                    args.preloadstory = json.load(f)
+        except Exception as ex2:
+            pass
         args.mmproj = None if mmproj_var.get() == "" else mmproj_var.get()
 
         args.ssl = None if (ssl_cert_var.get() == "" or ssl_key_var.get() == "") else ([ssl_cert_var.get(), ssl_key_var.get()])
@@ -3082,18 +3318,24 @@ def show_new_gui():
 
         whisper_model_var.set(dict["whispermodel"] if ("whispermodel" in dict and dict["whispermodel"]) else "")
 
-    def save_config():
+        if "istemplate" in dict and dict["istemplate"]:
+            auto_set_backend_gui(True)
+
+    def save_config_gui():
+        nonlocal kcpp_exporting_template
+        kcpp_exporting_template = False
+        export_vars()
+        savdict = json.loads(json.dumps(args.__dict__))
         file_type = [("KoboldCpp Settings", "*.kcpps")]
         filename = asksaveasfile(filetypes=file_type, defaultextension=file_type)
         if filename == None: return
-        export_vars()
         file = open(str(filename.name), 'a')
-        file.write(json.dumps(args.__dict__))
+        file.write(json.dumps(savdict))
         file.close()
         pass
 
-    def load_config():
-        file_type = [("KoboldCpp Settings", "*.kcpps")]
+    def load_config_gui(): #this is used to populate the GUI with a config file, whereas load_config_cli simply overwrites cli args
+        file_type = [("KoboldCpp Settings", "*.kcpps *.kcppt")]
         global runmode_untouched
         runmode_untouched = False
         filename = askopenfilename(filetypes=file_type, defaultextension=file_type, initialdir=None)
@@ -3120,12 +3362,12 @@ def show_new_gui():
     ctk.CTkButton(tabs , text = "Launch", fg_color="#2f8d3c", hover_color="#2faa3c", command = guilaunch, width=80, height = 35 ).grid(row=1,column=1, stick="se", padx= 25, pady=5)
 
     ctk.CTkButton(tabs , text = "Update", fg_color="#9900cc", hover_color="#aa11dd", command = display_updates, width=90, height = 35 ).grid(row=1,column=0, stick="sw", padx= 5, pady=5)
-    ctk.CTkButton(tabs , text = "Save", fg_color="#084a66", hover_color="#085a88", command = save_config, width=60, height = 35 ).grid(row=1,column=1, stick="sw", padx= 5, pady=5)
-    ctk.CTkButton(tabs , text = "Load", fg_color="#084a66", hover_color="#085a88", command = load_config, width=60, height = 35 ).grid(row=1,column=1, stick="sw", padx= 70, pady=5)
+    ctk.CTkButton(tabs , text = "Save", fg_color="#084a66", hover_color="#085a88", command = save_config_gui, width=60, height = 35 ).grid(row=1,column=1, stick="sw", padx= 5, pady=5)
+    ctk.CTkButton(tabs , text = "Load", fg_color="#084a66", hover_color="#085a88", command = load_config_gui, width=60, height = 35 ).grid(row=1,column=1, stick="sw", padx= 70, pady=5)
     ctk.CTkButton(tabs , text = "Help", fg_color="#992222", hover_color="#bb3333", command = display_help, width=60, height = 35 ).grid(row=1,column=1, stick="sw", padx= 135, pady=5)
 
     # start a thread that tries to get actual gpu names and layer counts
-    gpuinfo_thread = threading.Thread(target=auto_gpu_heuristics)
+    gpuinfo_thread = threading.Thread(target=auto_set_backend_gui)
     gpuinfo_thread.start() #submit job in new thread so nothing is waiting
 
     # runs main loop until closed or launch clicked
@@ -3137,13 +3379,12 @@ def show_new_gui():
         sys.exit(0)
     else:
         # processing vars
+        kcpp_exporting_template = False
         export_vars()
 
         if not args.model_param and not args.sdmodel and not args.whispermodel:
             exitcounter = 999
-            print("\nNo text or image model file was selected. Exiting.")
-            time.sleep(3)
-            sys.exit(2)
+            exit_with_error(2,"No text or image model file was selected. Exiting.")
 
 def show_old_gui():
     import tkinter as tk
@@ -3284,7 +3525,7 @@ def show_old_gui():
             args.blasbatchsize = 2048
 
 def show_gui_msgbox(title,message):
-    print(title + ": " + message)
+    print(title + ": " + message, flush=True)
     try:
         from tkinter import messagebox
         import tkinter as tk
@@ -3680,12 +3921,15 @@ def unload_libs():
         del handle
         handle = None
 
-def loadconfigfile(filename):
-    print("Loading kcpps configuration file...")
+def load_config_cli(filename):
+    print("Loading .kcpps configuration file...")
     with open(filename, 'r') as f:
         config = json.load(f)
+        args.istemplate = False
         for key, value in config.items():
             setattr(args, key, value)
+        if args.istemplate:
+            auto_set_backend_cli()
 
 
 def delete_old_pyinstaller():
@@ -3758,6 +4002,23 @@ def check_latest_version():
         print(f"{Fore.CYAN}You are using the latest version.{Style.RESET_ALL}")
     if os.name == "nt":
         deinit()
+def download_model_from_url(url): #returns path to downloaded model when done
+    import subprocess
+    mdlfilename = os.path.basename(url)
+    #check if file already exists
+    if mdlfilename:
+        if os.path.exists(mdlfilename) and os.path.getsize(mdlfilename) > 10000000: #10MB trigger
+            print(f"File {mdlfilename} already exists, not redownloading.")
+            return mdlfilename
+        else:
+            dl_url = url
+            if "https://huggingface.co/" in dl_url and "/blob/main/" in dl_url:
+                dl_url = dl_url.replace("/blob/main/", "/resolve/main/")
+            print(f"Downloading file from external URL at {dl_url} now...")
+            subprocess.run(f"curl -fL {dl_url} -o {mdlfilename}", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
+            print(f"Download {mdlfilename} completed.", flush=True)
+            return mdlfilename
+    return None
 
 def main(launch_args,start_server=True):
     import platform
@@ -3788,26 +4049,30 @@ def main(launch_args,start_server=True):
         return
 
     if args.config and len(args.config)==1:
-        if isinstance(args.config[0], str) and os.path.exists(args.config[0]):
-           loadconfigfile(args.config[0])
+        cfgname = args.config[0]
+        if cfgname.endswith("?download=true"):
+            cfgname = cfgname.replace("?download=true","")
+        if isinstance(cfgname, str) and (cfgname.startswith("http://") or cfgname.startswith("https://")) and (cfgname.endswith(".kcpps") or cfgname.endswith(".kcppt")):
+            dlfile = download_model_from_url(cfgname)
+            if dlfile:
+                cfgname = dlfile
+        if isinstance(cfgname, str) and os.path.exists(cfgname):
+           load_config_cli(cfgname)
         elif args.ignoremissing:
             print("Ignoring missing kcpp config file...")
         else:
             global exitcounter
             exitcounter = 999
-            print("Specified kcpp config file invalid or not found.")
-            time.sleep(3)
-            sys.exit(2)
+            exit_with_error(2,"Specified kcpp config file invalid or not found.")
     args = convert_outdated_args(args)
 
     #positional handling for kcpps files (drag and drop)
-    if args.model_param and args.model_param!="" and args.model_param.lower().endswith('.kcpps'):
-        loadconfigfile(args.model_param)
+    if args.model_param and args.model_param!="" and (args.model_param.lower().endswith('.kcpps') or args.model_param.lower().endswith('.kcppt')):
+        load_config_cli(args.model_param)
 
     #prevent quantkv from being used without flash attn
     if args.quantkv and args.quantkv>0 and not args.flashattention:
-        print("Error: Using --quantkv requires --flashattention")
-        sys.exit(1)
+        exit_with_error(1, "Error: Using --quantkv requires --flashattention")
 
     if not args.model_param:
         args.model_param = args.model
@@ -3817,7 +4082,7 @@ def main(launch_args,start_server=True):
         print("For command line arguments, please refer to --help")
         print("***")
         try:
-            show_new_gui()
+            show_gui()
         except Exception as ex:
             exitcounter = 999
             ermsg = "Reason: " + str(ex) + "\nFile selection GUI unsupported.\ncustomtkinter python module required!\nPlease check command line: script.py --help"
@@ -3829,18 +4094,38 @@ def main(launch_args,start_server=True):
 
     #try to read story if provided
     if args.preloadstory:
+        global preloaded_story
+        canload = False
         if isinstance(args.preloadstory, str) and os.path.exists(args.preloadstory):
             print(f"Preloading saved story {args.preloadstory} into server...")
             with open(args.preloadstory, mode='rb') as f:
-                global preloaded_story
                 preloaded_story = f.read()
-                print("Saved story preloaded.")
+                canload = True
+        elif isinstance(args.preloadstory, str):
+            print(f"Preloading saved story as JSON into server...")
+            try:
+                import ast
+                parsed = ast.literal_eval(args.preloadstory)
+                preloaded_story = json.dumps(parsed).encode()
+                canload = True
+            except Exception as ex:
+                print(ex)
+        elif isinstance(args.preloadstory, dict):
+            try:
+                preloaded_story = json.dumps(args.preloadstory).encode()
+                canload = True
+            except Exception as ex:
+                print(ex)
+        if canload:
+            print("Saved story preloaded.")
         else:
-            print(f"Warning: Saved story file {args.preloadstory} invalid or not found. No story will be preloaded into server.")
+            print(f"Warning: Saved story file invalid or not found. No story will be preloaded into server.")
 
     # try to read chat completions adapter
     if args.chatcompletionsadapter:
+        global chatcompl_adapter
         ccadapter_path = None
+        canload = False
         adapt_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'kcpp_adapters')
         adapt_dir = adapt_dir if os.path.isdir(adapt_dir) else None
         if isinstance(args.chatcompletionsadapter, str) and os.path.exists(args.chatcompletionsadapter):
@@ -3855,31 +4140,57 @@ def main(launch_args,start_server=True):
         if ccadapter_path:
             print(f"Loading Chat Completions Adapter: {ccadapter_path}")
             with open(ccadapter_path, 'r') as f:
-                global chatcompl_adapter
                 chatcompl_adapter = json.load(f)
-                print(f"Chat Completions Adapter Loaded")
+                canload = True
         else:
-            print(f"Warning: Chat Completions Adapter {args.chatcompletionsadapter} invalid or not found.")
+            if isinstance(args.chatcompletionsadapter, str) and args.chatcompletionsadapter!="":
+                try:
+                    import ast
+                    parsed = ast.literal_eval(args.chatcompletionsadapter)
+                    chatcompl_adapter = json.loads(json.dumps(parsed))
+                    canload = True
+                except Exception as ex:
+                    print(ex)
+            elif isinstance(args.chatcompletionsadapter, dict):
+                try:
+                    chatcompl_adapter = json.loads(json.dumps(args.chatcompletionsadapter))
+                    canload = True
+                except Exception as ex:
+                    print(ex)
+        if canload:
+            print(f"Chat Completions Adapter Loaded")
+        else:
+            print(f"Warning: Chat Completions Adapter invalid or not found.")
 
+    # handle model downloads if needed
     if args.model_param and args.model_param!="":
         if args.model_param.endswith("?download=true"):
             args.model_param = args.model_param.replace("?download=true","")
         if (args.model_param.startswith("http://") or args.model_param.startswith("https://")) and (args.model_param.endswith(".gguf") or args.model_param.endswith(".bin")):
-            import subprocess
-            mdlfilename = os.path.basename(args.model_param)
-            #check if file already exists
-            if mdlfilename:
-                if os.path.exists(mdlfilename) and os.path.getsize(mdlfilename) > 10000000: #10MB trigger
-                    print(f"Model file {mdlfilename} already exists, not redownloading.")
-                    args.model_param = mdlfilename
-                else:
-                    dl_url = args.model_param
-                    if "https://huggingface.co/" in dl_url and "/blob/main/" in dl_url:
-                        dl_url = dl_url.replace("/blob/main/", "/resolve/main/")
-                    print(f"Downloading model from external URL at {dl_url}")
-                    subprocess.run(f"curl -fL {dl_url} -o {mdlfilename}", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
-                    print(f"Download {mdlfilename} completed...", flush=True)
-                    args.model_param = mdlfilename
+            dlfile = download_model_from_url(args.model_param)
+            if dlfile:
+                args.model_param = dlfile
+    if args.sdmodel and args.sdmodel!="":
+        if args.sdmodel.endswith("?download=true"):
+            args.sdmodel = args.sdmodel.replace("?download=true","")
+        if (args.sdmodel.startswith("http://") or args.sdmodel.startswith("https://")) and (args.sdmodel.endswith(".gguf") or args.sdmodel.endswith(".safetensors")):
+            dlfile = download_model_from_url(args.sdmodel)
+            if dlfile:
+                args.sdmodel = dlfile
+    if args.mmproj and args.mmproj!="":
+        if args.mmproj.endswith("?download=true"):
+            args.mmproj = args.mmproj.replace("?download=true","")
+        if (args.mmproj.startswith("http://") or args.mmproj.startswith("https://")) and (args.mmproj.endswith(".gguf")):
+            dlfile = download_model_from_url(args.mmproj)
+            if dlfile:
+                args.mmproj = dlfile
+    if args.whispermodel and args.whispermodel!="":
+        if args.whispermodel.endswith("?download=true"):
+            args.whispermodel = args.whispermodel.replace("?download=true","")
+        if (args.whispermodel.startswith("http://") or args.whispermodel.startswith("https://")) and (args.whispermodel.endswith(".gguf") or args.whispermodel.endswith(".bin")):
+            dlfile = download_model_from_url(args.whispermodel)
+            if dlfile:
+                args.whispermodel = dlfile
 
     # sanitize and replace the default vanity name. remember me....
     if args.model_param and args.model_param!="":
@@ -3887,6 +4198,7 @@ def main(launch_args,start_server=True):
         newmdldisplayname = os.path.splitext(newmdldisplayname)[0]
         friendlymodelname = "koboldcpp/" + sanitize_string(newmdldisplayname)
 
+    # horde worker settings
     global maxhordelen, maxhordectx, showdebug
     if args.hordemodelname and args.hordemodelname!="":
         friendlymodelname = args.hordemodelname
@@ -3894,11 +4206,9 @@ def main(launch_args,start_server=True):
             friendlymodelname = "debug-" + friendlymodelname
         if not friendlymodelname.startswith("koboldcpp/"):
             friendlymodelname = "koboldcpp/" + friendlymodelname
-
     if (args.hordemodelname and args.hordemodelname!="") or (args.hordeworkername and args.hordeworkername!="") or (args.hordekey and args.hordekey!=""):
         if args.debugmode == 0:
             args.debugmode = -1
-
     if args.hordegenlen and args.hordegenlen > 0:
         maxhordelen = int(args.hordegenlen)
     if args.hordemaxctx and args.hordemaxctx > 0:
@@ -3934,12 +4244,32 @@ def main(launch_args,start_server=True):
         global nocertify
         nocertify = True
 
-    if args.gpulayers and args.gpulayers>0:
+    if args.gpulayers:
         global libname, lib_default, lib_openblas, lib_failsafe, lib_noavx2
         nogood = [lib_default,lib_openblas,lib_failsafe,lib_noavx2]
+        shouldavoidgpu = False
         if libname in nogood and sys.platform!="darwin":
-            print("WARNING: GPU layers is set, but a GPU backend was not selected!")
-            pass
+            shouldavoidgpu = True
+        if args.gpulayers>0:
+            if shouldavoidgpu:
+                print("WARNING: GPU layers is set, but a GPU backend was not selected!")
+                pass
+        elif args.gpulayers==-1 and not shouldavoidgpu and os.path.exists(args.model_param):
+            print("Trying to automatically determine GPU layers...")
+            if MaxMemory[0] == 0: #try to get gpu vram for cuda if not picked yet
+                fetch_gpu_properties(False,True,True)
+                pass
+            if MaxMemory[0] > 0:
+                layeramt = autoset_gpu_layers(args.model_param, args.contextsize, MaxMemory[0])
+                print(f"Auto Recommended Layers: {layeramt}")
+                args.gpulayers = layeramt
+            else:
+                print(f"Could not automatically determine layers. Please set it manually.")
+                args.gpulayers = 0
+
+    if args.threads == -1:
+        args.threads = get_default_threads()
+        print(f"Auto Set Threads: {args.threads}")
 
     init_library() # Note: if blas does not exist and is enabled, program will crash.
     print("==========")
@@ -3948,50 +4278,43 @@ def main(launch_args,start_server=True):
     #handle loading text model
     if args.model_param:
         if not os.path.exists(args.model_param):
-            print(f"Cannot find text model file: {args.model_param}")
             if args.ignoremissing:
-                print(f"Ignoring missing model file...")
+                print(f"Ignoring missing model file: {args.model_param}")
                 args.model_param = None
             else:
                 exitcounter = 999
-                time.sleep(3)
-                sys.exit(2)
+                exit_with_error(2,f"Cannot find text model file: {args.model_param}")
 
         if args.lora and args.lora[0]!="":
             if not os.path.exists(args.lora[0]):
-                print(f"Cannot find lora file: {args.lora[0]}")
                 if args.ignoremissing:
-                    print(f"Ignoring missing lora file...")
+                    print(f"Ignoring missing lora file: {args.lora[0]}")
                     args.lora = None
                 else:
                     exitcounter = 999
-                    time.sleep(3)
-                    sys.exit(2)
+                    exit_with_error(2,f"Cannot find lora file: {args.lora[0]}")
             else:
                 args.lora[0] = os.path.abspath(args.lora[0])
                 if len(args.lora) > 1:
                     if not os.path.exists(args.lora[1]):
-                        print(f"Cannot find lora base: {args.lora[1]}")
                         if args.ignoremissing:
-                            print(f"Ignoring missing lora file...")
+                            print(f"Ignoring missing lora base: {args.lora[1]}")
                             args.lora = None
                         else:
                             exitcounter = 999
-                            time.sleep(3)
-                            sys.exit(2)
+                            exit_with_error(2,f"Cannot find lora base: {args.lora[1]}")
+
                     else:
                         args.lora[1] = os.path.abspath(args.lora[1])
 
         if args.mmproj and args.mmproj!="":
             if not os.path.exists(args.mmproj):
-                print(f"Cannot find mmproj file: {args.mmproj}")
                 if args.ignoremissing:
-                    print(f"Ignoring missing mmproj file...")
+                    print(f"Ignoring missing mmproj file: {args.mmproj}")
                     args.mmproj = None
                 else:
                     exitcounter = 999
-                    time.sleep(3)
-                    sys.exit(2)
+                    exit_with_error(2,f"Cannot find mmproj file: {args.mmproj}")
             else:
                 global mmprojpath
                 args.mmproj = os.path.abspath(args.mmproj)
@@ -4013,22 +4336,18 @@ def main(launch_args,start_server=True):
 
         if not loadok:
             exitcounter = 999
-            print("Could not load text model: " + modelname)
-            time.sleep(3)
-            sys.exit(3)
+            exit_with_error(3,"Could not load text model: " + modelname)
 
     #handle loading image model
     if args.sdmodel and args.sdmodel!="":
         imgmodel = args.sdmodel
         if not imgmodel or not os.path.exists(imgmodel):
-            print(f"Cannot find image model file: {imgmodel}")
             if args.ignoremissing:
-                print(f"Ignoring missing img model file...")
+                print(f"Ignoring missing img model file: {imgmodel}")
                 args.sdmodel = None
             else:
                 exitcounter = 999
-                time.sleep(3)
-                sys.exit(2)
+                exit_with_error(2,f"Cannot find image model file: {imgmodel}")
         else:
             imglora = ""
             imgvae = ""
@@ -4052,22 +4371,18 @@ def main(launch_args,start_server=True):
             print("Load Image Model OK: " + str(loadok))
             if not loadok:
                 exitcounter = 999
-                print("Could not load image model: " + imgmodel)
-                time.sleep(3)
-                sys.exit(3)
+                exit_with_error(3,"Could not load image model: " + imgmodel)
 
     #handle whisper model
     if args.whispermodel and args.whispermodel!="":
         whispermodel = args.whispermodel
         if not whispermodel or not os.path.exists(whispermodel):
-            print(f"Cannot find whisper model file: {whispermodel}")
             if args.ignoremissing:
-                print(f"Ignoring missing whisper model file...")
+                print(f"Ignoring missing whisper model file: {whispermodel}")
                 args.whispermodel = None
             else:
                 exitcounter = 999
-                time.sleep(3)
-                sys.exit(2)
+                exit_with_error(2,f"Cannot find whisper model file: {whispermodel}")
         else:
             whispermodel = os.path.abspath(whispermodel)
             fullwhispermodelpath = whispermodel
@@ -4075,9 +4390,8 @@ def main(launch_args,start_server=True):
             print("Load Whisper Model OK: " + str(loadok))
             if not loadok:
                 exitcounter = 999
-                print("Could not load whisper model: " + imgmodel)
-                time.sleep(3)
-                sys.exit(3)
+                exit_with_error(3,"Could not load whisper model: " + whispermodel)
+
 
     #load embedded lite
     try:
@@ -4262,7 +4576,7 @@ if __name__ == '__main__':
             return f
         return range_checker
 
-    print("***\nWelcome to KoboldCpp - Version " + KcppVersion) # just update version manually
+    print(f"***\nWelcome to KoboldCpp - Version {KcppVersion}") # just update version manually
     # print("Python version: " + sys.version)
     parser = argparse.ArgumentParser(description='KoboldCpp Server')
     modelgroup = parser.add_mutually_exclusive_group() #we want to be backwards compatible with the unnamed positional args
@@ -4274,21 +4588,15 @@ if __name__ == '__main__':
     parser.add_argument("--host", metavar=('[ipaddr]'), help="Host IP to listen on. If empty, all routable interfaces are accepted.", default="")
     parser.add_argument("--launch", help="Launches a web browser when load is completed.", action='store_true')
     parser.add_argument("--config", metavar=('[filename]'), help="Load settings from a .kcpps file. Other arguments will be ignored", type=str, nargs=1)
-    physical_core_limit = 1
-    if os.cpu_count()!=None and os.cpu_count()>1:
-        physical_core_limit = os.cpu_count() // 2
-    default_threads = (physical_core_limit if physical_core_limit<=3 else max(3,physical_core_limit-1))
-    processor = platform.processor()
-    if 'Intel' in processor:
-        default_threads = (8 if default_threads > 8 else default_threads) #this helps avoid e-cores.
-    parser.add_argument("--threads", metavar=('[threads]'), help="Use a custom number of threads if specified. Otherwise, uses an amount based on CPU cores", type=int, default=default_threads)
+
+    parser.add_argument("--threads", metavar=('[threads]'), help="Use a custom number of threads if specified. Otherwise, uses an amount based on CPU cores", type=int, default=get_default_threads())
     compatgroup = parser.add_mutually_exclusive_group()
     compatgroup.add_argument("--usecublas", help="Use CuBLAS for GPU Acceleration. Requires CUDA. Select lowvram to not allocate VRAM scratch buffer. Enter a number afterwards to select and use 1 GPU. Leaving no number will use all GPUs. For hipBLAS binaries, please check YellowRoseCx rocm fork.", nargs='*',metavar=('[lowvram|normal] [main GPU ID] [mmq] [rowsplit]'), choices=['normal', 'lowvram', '0', '1', '2', '3', 'mmq', 'rowsplit'])
     compatgroup.add_argument("--usevulkan", help="Use Vulkan for GPU Acceleration. Can optionally specify GPU Device ID (e.g. --usevulkan 0).", metavar=('[Device ID]'), nargs='*', type=int, default=None)
     compatgroup.add_argument("--useclblast", help="Use CLBlast for GPU Acceleration. Must specify exactly 2 arguments, platform ID and device ID (e.g. --useclblast 1 0).", type=int, choices=range(0,9), nargs=2)
     compatgroup.add_argument("--noblas", help="Do not use any accelerated prompt ingestion", action='store_true')
     parser.add_argument("--contextsize", help="Controls the memory allocated for maximum context size, only change if you need more RAM for big contexts. (default 4096). Supported values are [256,512,1024,2048,3072,4096,6144,8192,12288,16384,24576,32768,49152,65536,98304,131072]. IF YOU USE ANYTHING ELSE YOU ARE ON YOUR OWN.",metavar=('[256,512,1024,2048,3072,4096,6144,8192,12288,16384,24576,32768,49152,65536,98304,131072]'), type=check_range(int,256,262144), default=4096)
-    parser.add_argument("--gpulayers", help="Set number of layers to offload to GPU when using GPU. Requires GPU.",metavar=('[GPU layers]'), nargs='?', const=1, type=int, default=0)
+    parser.add_argument("--gpulayers", help="Set number of layers to offload to GPU when using GPU. Requires GPU. Set to -1 to try autodetect (experimental)",metavar=('[GPU layers]'), nargs='?', const=1, type=int, default=0)
     parser.add_argument("--tensor_split", help="For CUDA and Vulkan only, ratio to split tensors across multiple GPUs, space-separated list of proportions, e.g. 7 3", metavar=('[Ratios]'), type=float, nargs='+')
     parser.add_argument("--checkforupdates", help="Checks KoboldCpp-ROCm's release page on GitHub using HTTPS to see if there's a new update available.", action='store_true')
 
@@ -4300,7 +4608,7 @@ if __name__ == '__main__':
     advparser.add_argument("--lora", help="LLAMA models only, applies a lora file on top of model. Experimental.", metavar=('[lora_filename]', '[lora_base]'), nargs='+')
     advparser.add_argument("--noshift", help="If set, do not attempt to Trim and Shift the GGUF context.", action='store_true')
     advparser.add_argument("--nommap", help="If set, do not use mmap to load newer models", action='store_true')
-    advparser.add_argument("--usemlock", help="For Apple Systems. Force system to keep model in RAM rather than swapping or compressing", action='store_true')
+    advparser.add_argument("--usemlock", help="Enables mlock, preventing the RAM used to load the model from being paged out. Not usually recommended.", action='store_true')
     advparser.add_argument("--noavx2", help="Do not use AVX2 instructions, a slower compatibility mode for older devices.", action='store_true')
     advparser.add_argument("--debugmode", help="Shows additional debug info in the terminal.", nargs='?', const=1, type=int, default=0)
     advparser.add_argument("--skiplauncher", help="Doesn't display or use the GUI launcher.", action='store_true')

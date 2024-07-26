@@ -26,10 +26,10 @@ KoboldCpp-ROCm is an easy-to-use AI text-generation software for GGML and GGUF m
 - Alternatively, if you want a full-featured build, you can also link CLBlast and or OpenBLAS by adding `LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1` to the make command, for this you will need to obtain and link OpenCL and CLBlast libraries.
   - For Arch Linux: Install `cblas` `openblas` and `clblast`.
   - For Debian: Install `libclblast-dev` and `libopenblas-dev`.
-- For a full featured build, do `make LLAMA_OPENBLAS=1 LLAMA_CLBLAST=1 LLAMA_HIPBLAS=1 -j4`
+- For a full featured build, do `make LLAMA_OPENBLAS=1 LLAMA_VULKAN=1 LLAMA_CLBLAST=1 LLAMA_HIPBLAS=1 -j4`
 - After all binaries are built, you can use the GUI with ``python koboldcpp.py`` and select hipBLAS or run use ROCm through the python script with the command `python koboldcpp.py --usecublas --gpulayers [number] --contextsize 4096 --model [model.gguf]`
 - There are several parameters than can be added to CLI launch, I recommend using ``--usecublas mmq`` or ``--usecublas mmq lowvram`` as it uses optimized Kernels instead of the generic rocBLAS code.
-My typical start command looks like this: ``python koboldcpp.py --threads 6 --blasthreads 6 --usecublas mmq lowvram --gpulayers 18 --blasbatchsize 256 --contextsize 8192 --model /AI/llama-2-70b-chat.Q4_K_M.gguf``
+My typical start command looks like this: ``python koboldcpp.py --threads 6 --blasthreads 6 --usecublas --gpulayers 18 --blasbatchsize 256 --contextsize 8192 --model /AI/llama-2-70b-chat.Q4_K_M.gguf``
 
 ## Windows Usage
 - **[Download the latest .exe release here](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/latest)** or clone the git repo.
@@ -119,7 +119,7 @@ Then with that *gfx103132rocblasfiles.zip* file, extract the "rocblas" folder in
 
 Then you should be able to make the .exe file with this command:
 
-    PyInstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all psutil --icon "./niko.ico" --add-data "./winclinfo.exe;." --add-data "./klite.embd;." --add-data "./kcpp_docs.embd;." --add-data="./kcpp_sdui.embd;." --add-data="./taesd.embd;." --add-data="./taesd_xl.embd;." --add-data "./rwkv_vocab.embd;." --add-data "./rwkv_world_vocab.embd;." --add-data "./koboldcpp_hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/rocblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/rocblas;." --add-data "C:/Windows/System32/msvcp140.dll;." --add-data "C:/Windows/System32/vcruntime140_1.dll;." "./koboldcpp.py" -n "koboldcpp_rocm.exe"
+    PyInstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all psutil --icon "./niko.ico" --add-data "./winclinfo.exe;." --add-data "./OpenCL.dll;." --add-data "./klite.embd;." --add-data "./kcpp_docs.embd;." --add-data="./kcpp_sdui.embd;." --add-data="./taesd.embd;." --add-data="./taesd_xl.embd;." --add-data "./koboldcpp_default.dll;." --add-data "./koboldcpp_openblas.dll;." --add-data "./koboldcpp_failsafe.dll;." --add-data "./koboldcpp_noavx2.dll;." --add-data "./libopenblas.dll;." --add-data "./koboldcpp_clblast.dll;." --add-data "./koboldcpp_clblast_noavx2.dll;." --add-data "./koboldcpp_vulkan_noavx2.dll;." --add-data "./clblast.dll;." --add-data "./koboldcpp_vulkan.dll;." --add-data "./vulkan-1.dll;." --add-data "./rwkv_vocab.embd;." --add-data "./rwkv_world_vocab.embd;." --add-data "./koboldcpp_hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/rocblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/rocblas;." --add-data "C:/Windows/System32/msvcp140.dll;." --add-data "C:/Windows/System32/vcruntime140_1.dll;." "./koboldcpp.py" -n "koboldcpp_rocm_full.exe"
 
 
 
