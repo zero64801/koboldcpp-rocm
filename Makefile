@@ -256,30 +256,38 @@ ifdef LLAMA_HIPBLAS
 			GPU_TARGETS ?= $(shell $(ROCM_PATH)/llvm/bin/amdgpu-arch)
 		endif
 	endif
-	LLAMA_CUDA_DMMV_X ?= 32
-	LLAMA_CUDA_MMV_Y ?= 1
-	LLAMA_CUDA_KQUANTS_ITER ?= 2
+
+	GGML_CUDA_DMMV_X ?= 32 
+		# Number of values in x direction processed by the CUDA dequantization + matrix vector multiplication kernel per iteration. Increasing this value can improve performance on fast GPUs. Power of 2 heavily recommended. Does not affect k-quants. (default 32)
+
+	GGML_CUDA_MMV_Y ?= 1
+		# Block size in y direction for the CUDA mul mat vec kernels. Increasing this value can improve performance on fast GPUs. Power of 2 recommended. (default 1)
+
+	GGML_CUDA_KQUANTS_ITER ?= 2
+		# Number of values processed per iteration and per CUDA thread for Q2_K and Q6_K quantization formats. Setting this value to 1 can improve performance for slow GPUs. (default 2)
+
 	HIPFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_CUDA -DSD_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C)
 	HIPLDFLAGS    += -L$(ROCM_PATH)/lib -Wl,-rpath=$(ROCM_PATH)/lib -lhipblas -lamdhip64 -lrocblas
 	HIP_OBJS      += ggml-cuda.o ggml_v3-cuda.o ggml_v2-cuda.o ggml_v2-cuda-legacy.o
 	HIP_OBJS      += $(patsubst %.cu,%.o,$(wildcard ggml/src/ggml-cuda/*.cu))
 	HIP_OBJS      += $(OBJS_CUDA_TEMP_INST)
+	HCXXFLAGS = -I. -Iggml/include -Iggml/src -Iinclude -Isrc -I./common -I./include -I./include/CL -I./otherarch -I./otherarch/tools -I./otherarch/sdcpp -I./otherarch/sdcpp/thirdparty -I./include/vulkan -O3 -fno-finite-math-only  -DNDEBUG -std=c++11 -fPIC -DLOG_DISABLE_LOGS -D_GNU_SOURCE -DGGML_USE_LLAMAFILE
 
 	HIPFLAGS2    += $(addprefix --offload-arch=,$(GPU_TARGETS))
-	HIPFLAGS2    += -DGGML_CUDA_DMMV_X=$(LLAMA_CUDA_DMMV_X)
-	HIPFLAGS2    += -DGGML_CUDA_MMV_Y=$(LLAMA_CUDA_MMV_Y)
-	HIPFLAGS2    += -DK_QUANTS_PER_ITERATION=$(LLAMA_CUDA_KQUANTS_ITER)
+	HIPFLAGS2    += -DGGML_CUDA_DMMV_X=$(GGML_CUDA_DMMV_X)
+	HIPFLAGS2    += -DGGML_CUDA_MMV_Y=$(GGML_CUDA_MMV_Y)
+	HIPFLAGS2    += -DK_QUANTS_PER_ITERATION=$(GGML_CUDA_KQUANTS_ITER)
 
 ggml/src/ggml-cuda/%.o: ggml/src/ggml-cuda/%.cu ggml/include/ggml.h ggml/src/ggml-common.h ggml/src/ggml-cuda/common.cuh
-	$(HCXX) $(CXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
+	$(HCXX) $(HCXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
 ggml-cuda.o: ggml/src/ggml-cuda.cu ggml/include/ggml-cuda.h ggml/include/ggml.h ggml/include/ggml-backend.h ggml/src/ggml-backend-impl.h ggml/src/ggml-common.h $(wildcard ggml/src/ggml-cuda/*.cuh)
-	$(HCXX) $(CXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
+	$(HCXX) $(HCXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
 ggml_v2-cuda.o: otherarch/ggml_v2-cuda.cu otherarch/ggml_v2-cuda.h
-	$(HCXX) $(CXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
+	$(HCXX) $(HCXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
 ggml_v2-cuda-legacy.o: otherarch/ggml_v2-cuda-legacy.cu otherarch/ggml_v2-cuda-legacy.h
-	$(HCXX) $(CXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
+	$(HCXX) $(HCXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
 ggml_v3-cuda.o: otherarch/ggml_v3-cuda.cu otherarch/ggml_v3-cuda.h
-	$(HCXX) $(CXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
+	$(HCXX) $(HCXXFLAGS) $(HIPFLAGS) $(HIPFLAGS2) -x hip -c -o $@ $<
 endif # LLAMA_HIPBLAS
 
 
@@ -391,6 +399,8 @@ endif
 
 CCV := $(shell $(CC) --version | head -n 1)
 CXXV := $(shell $(CXX) --version | head -n 1)
+HCCV := $(shell $(HCC) --version | head -n 1)
+HCXXV := $(shell $(HCXX) --version | head -n 1)
 
 #
 # Print build information
@@ -405,6 +415,8 @@ $(info I CXXFLAGS: $(CXXFLAGS))
 $(info I LDFLAGS:  $(LDFLAGS))
 $(info I CC:       $(CCV))
 $(info I CXX:      $(CXXV))
+$(info I HIP CC:       $(HCCV))
+$(info I HIP CXX:      $(HCXXV))
 $(info )
 
 #
