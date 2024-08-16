@@ -260,7 +260,7 @@ ifdef LLAMA_HIPBLAS
 	GGML_CUDA_DMMV_X ?= 32 
 		# Number of values in x direction processed by the CUDA dequantization + matrix vector multiplication kernel per iteration. Increasing this value can improve performance on fast GPUs. Power of 2 heavily recommended. Does not affect k-quants. (default 32)
 
-	GGML_CUDA_MMV_Y ?= 1
+	GGML_CUDA_MMV_Y ?= 2
 		# Block size in y direction for the CUDA mul mat vec kernels. Increasing this value can improve performance on fast GPUs. Power of 2 recommended. (default 1)
 
 	GGML_CUDA_KQUANTS_ITER ?= 2
