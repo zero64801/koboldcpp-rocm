@@ -27,7 +27,7 @@ set(LLAMA_GPROF OFF)
 set(LLAMA_SANITIZE_THREAD OFF)
 set(LLAMA_SANITIZE_ADDRESS OFF)
 set(LLAMA_SANITIZE_UNDEFINED OFF)
-set(LLAMA_SCHED_MAX_COPIES  "2" CACHE STRING "llama: max input copies for pipeline parallelism")
+
 
 set(LLVM_CC "C:/Program Files/LLVM/bin/clang.exe")
 set(LLVM_CXX "C:/Program Files/LLVM/bin/clang++.exe")
@@ -75,7 +75,6 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
 find_package(Threads REQUIRED)
 
 add_compile_definitions(LOG_DISABLE_LOGS)
-add_compile_definitions(GGML_SCHED_MAX_COPIES=${LLAMA_SCHED_MAX_COPIES})
 
 file(GLOB GGML_SOURCES_CUDA "ggml/src/ggml-cuda/*.cu")
 list(APPEND GGML_SOURCES_CUDA "ggml/src/ggml-cuda.cu")
