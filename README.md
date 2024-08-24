@@ -260,7 +260,7 @@ Comparison with OpenCL using 6800xt (old measurement)
   - GPT-J
   - RWKV
   - GPT-NeoX / Pythia / StableLM / Dolly / RedPajama
-  - MPT models
-  - Falcon (GGUF only)
-  - [Stable Diffusion and SDXL models](https://github.com/LostRuins/koboldcpp/wiki#can-i-generate-images-with-koboldcpp)
-
+  - GPT-J / RWKV4 / MPT / Falcon / Starcoder / Deepseek and many more
+  - [Stable Diffusion 1.5 and SDXL safetensor models](https://github.com/LostRuins/koboldcpp/wiki#can-i-generate-images-with-koboldcpp)
+  - [LLaVA based Vision models and multimodal projectors (mmproj)](https://github.com/LostRuins/koboldcpp/wiki#what-is-llava-and-mmproj)
+  - [Whisper models for Speech-To-Text](https://huggingface.co/koboldcpp/whisper/tree/main)

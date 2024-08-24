@@ -505,7 +505,7 @@ void sample_dry(int n_ctx, int penalty_range, float penalty_multiplier, float pe
     if (penalty_multiplier <= 0.0f || penalty_base <= 0.0f) {
         return;
     }
-    if (penalty_range <= 0) {
+    if (penalty_range <= 0 || penalty_range>n_ctx) {
         penalty_range = n_ctx;
     }
     auto last_n_repeat = std::min(std::min((int)current_context_tokens.size(), penalty_range), n_ctx);
@@ -698,6 +698,10 @@ void sample_dry(int n_ctx, int penalty_range, float penalty_multiplier, float pe
         candidates->data[token].logit -= penalty;
         ++count;
     }
+    if(count>0)
+    {
+        candidates->sorted = false;
+    }
     if (debugmode==1 && !dry_max_token_repeat.empty()) {
         printf("]\n");
     }
@@ -839,6 +843,8 @@ int mirostat, float mirostat_tau, float mirostat_eta, float dry_multiplier, floa
         sample_grammar(file_format, n_vocab, &candidates_p, grammar);
     }
 
+    sample_dry(n_ctx, dry_penalty_last_n, dry_multiplier, dry_base, dry_allowed_length, dry_sequence_breakers, &candidates_p);
+
     //prefilter to top 5k tokens for improved speed
     llama_sample_top_k(nullptr, &candidates_p, 5000, 1);
 
@@ -897,7 +903,6 @@ int mirostat, float mirostat_tau, float mirostat_eta, float dry_multiplier, floa
                     break;
                 case KCPP_SAMPLER_REP_PEN:
                     sample_rep_pen(n_ctx, rep_pen_range, rep_pen, rep_pen_slope, presence_penalty, &candidates_p);
-                    sample_dry(n_ctx, dry_penalty_last_n, dry_multiplier, dry_base, dry_allowed_length, dry_sequence_breakers, &candidates_p);
                     break;
                 default:
                     printf("\nSampleLogits: Unknown Sampler : %d",sampler_order[i]);
@@ -1941,6 +1946,9 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
         llama_reset_timings(llama_ctx_v4);
     }
 
+    generation_finished = false; // Set current generation status
+    generated_tokens.clear(); // New Generation, new tokens
+
     concat_output_mtx.lock();
     concat_output = "";
     concat_output_reader_copy_poll = "";
@@ -1952,6 +1960,9 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
     dry_repeat_count.clear();
     dry_sequence_breakers.clear();
     dry_max_token_repeat.clear();
+
+    double time0 = 0, time1 = 0, time2 = 0;
+    timer_start();
 
     for(int x=0;x<stop_token_max;++x)
     {
@@ -2140,8 +2151,6 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
 
     bool allow_regular_prints = (debugmode!=-1 && !inputs.quiet) || debugmode >= 1;
 
-    generation_finished = false; // Set current generation status
-    generated_tokens.clear(); // New Generation, new tokens
 
     std::string grammarstr = inputs.grammar;
     bool grammar_retain_state = inputs.grammar_retain_state;
@@ -2415,8 +2424,8 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
     bool startedsampling = false;
     bool v3_use_scratch = true; //for normal inference always use scratch
 
+    time0 = timer_check();
     timer_start();
-    double time1 = 0, time2 = 0;
 
     if(file_format == FileFormat::RWKV_1 || file_format==FileFormat::RWKV_2)
     {
@@ -2866,7 +2875,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
     float pt2 = (time2*1000.0/(realnpredict==0?1:realnpredict));
     float ts2 = (1000.0/pt2);
     float tokens_per_second = (realnpredict == 0 ? 0 : realnpredict / (time1 + time2));
-    printf("\nCtxLimit:%d/%d, Amt:%d/%d, Process:%.2fs (%.1fms/T = %.2fT/s), Generate:%.2fs (%.1fms/T = %.2fT/s), Total:%.2fs (%.2fT/s)",(int)current_context_tokens.size(),(int)nctx, realnpredict, kcpp_params->n_predict, time1, pt1, ts1, time2, pt2, ts2, (time1 + time2), tokens_per_second);
+    printf("\nCtxLimit:%d/%d, Amt:%d/%d, Init:%.2fs, Process:%.2fs (%.1fms/T = %.2fT/s), Generate:%.2fs (%.1fms/T = %.2fT/s), Total:%.2fs (%.2fT/s)",(int)current_context_tokens.size(),(int)nctx, realnpredict, kcpp_params->n_predict, time0, time1, pt1, ts1, time2, pt2, ts2, (time1 + time2), tokens_per_second);
     fflush(stdout);
     output.status = 1;
     output.stopreason = last_stop_reason;

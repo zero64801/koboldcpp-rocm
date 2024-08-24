@@ -41,7 +41,7 @@ maxhordelen = 400
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.73.yr1-ROCm"
+KcppVersion = "1.73.1.yr1-ROCm"
 showdebug = True
 guimode = False
 showsamplerwarning = True
@@ -793,16 +793,20 @@ def fetch_gpu_properties(testCL,testCU,testVK):
                         FetchedCUdeviceMem = [line.split(",")[1].strip() for line in getamdvram.splitlines()[1:] if line.strip()]
             except Exception as e:
                 pass
+        lowestcumem = 0
+        lowestfreecumem = 0
         for idx in range(0,4):
             if(len(FetchedCUdevices)>idx):
                 CUDevicesNames[idx] = FetchedCUdevices[idx]
                 if len(FetchedCUdeviceMem)>idx:
-                    if AMDgpu:
-                        MaxMemory[0] = max(int(FetchedCUdeviceMem[idx]),MaxMemory[0])
-                    else:
-                        MaxMemory[0] = max(int(FetchedCUdeviceMem[idx])*1024*1024,MaxMemory[0])
+                    dmem = int(FetchedCUdeviceMem[idx]) if AMDgpu else (int(FetchedCUdeviceMem[idx])*1024*1024)
+                    lowestcumem = dmem if lowestcumem==0 else (dmem if dmem<lowestcumem else lowestcumem)
                 if len(FetchedCUfreeMem)>idx:
-                    MaxFreeMemory[0] = max(int(FetchedCUfreeMem[idx])*1024*1024,MaxFreeMemory[0])
+                    dmem = (int(FetchedCUfreeMem[idx])*1024*1024)
+                    lowestfreecumem = dmem if lowestfreecumem==0 else (dmem if dmem<lowestfreecumem else lowestfreecumem)
+
+        MaxMemory[0] = max(lowestcumem,MaxMemory[0])
+        MaxFreeMemory[0] = max(lowestfreecumem,MaxFreeMemory[0])
 
     if testVK:
         try: # Get Vulkan names
@@ -906,7 +910,7 @@ def generate(genparams, is_quiet=False, stream_flag=False):
     typical_p = genparams.get('typical', 1.0)
     tfs = genparams.get('tfs', 1.0)
     rep_pen = genparams.get('rep_pen', 1.0)
-    rep_pen_range = genparams.get('rep_pen_range', 256)
+    rep_pen_range = genparams.get('rep_pen_range', 320)
     rep_pen_slope = genparams.get('rep_pen_slope', 1.0)
     presence_penalty = genparams.get('presence_penalty', 0.0)
     mirostat = genparams.get('mirostat', 0)
@@ -915,7 +919,7 @@ def generate(genparams, is_quiet=False, stream_flag=False):
     dry_multiplier = genparams.get('dry_multiplier', 0.0)
     dry_base = genparams.get('dry_base', 1.75)
     dry_allowed_length = genparams.get('dry_allowed_length', 2)
-    dry_penalty_last_n = genparams.get('dry_penalty_last_n', 0)
+    dry_penalty_last_n = genparams.get('dry_penalty_last_n', 320)
     dry_sequence_breakers = genparams.get('dry_sequence_breakers', [])
     sampler_order = genparams.get('sampler_order', [6, 0, 1, 3, 4, 2, 5])
     seed = tryparseint(genparams.get('sampler_seed', -1))
@@ -1433,11 +1437,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 global last_non_horde_req_time
                 last_non_horde_req_time = time.time()
 
-            return generate(
-                genparams=genparams,
-                is_quiet=is_quiet,
-                stream_flag=stream_flag
-            )
+            return generate(genparams=genparams,is_quiet=is_quiet,stream_flag=stream_flag)
 
         genout = {"text": "", "status": -1, "stopreason": -1}
         if stream_flag:
@@ -1507,7 +1507,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         current_token = 0
         incomplete_token_buffer = bytearray()
         async_sleep_short = 0.02
-        await asyncio.sleep(0.3) #anti race condition, prevent check from overtaking generate
+        await asyncio.sleep(0.35) #anti race condition, prevent check from overtaking generate
         try:
             tokenReserve = "" #keeps fully formed tokens that we cannot send out yet
             while True:
