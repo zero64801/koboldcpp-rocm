@@ -41,7 +41,7 @@ maxhordelen = 400
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.73.1.yr1-ROCm"
+KcppVersion = "1.74.yr0-ROCm"
 showdebug = True
 guimode = False
 showsamplerwarning = True
@@ -154,6 +154,8 @@ class generation_inputs(ctypes.Structure):
                 ("dry_allowed_length", ctypes.c_int),
                 ("dry_penalty_last_n", ctypes.c_int),
                 ("dry_sequence_breakers", ctypes.c_char_p * dry_seq_break_max),
+                ("xtc_threshold", ctypes.c_float),
+                ("xtc_probability", ctypes.c_float),
                 ("sampler_order", ctypes.c_int * sampler_order_max),
                 ("sampler_len", ctypes.c_int),
                 ("allow_eos_token", ctypes.c_bool),
@@ -921,6 +923,8 @@ def generate(genparams, is_quiet=False, stream_flag=False):
     dry_allowed_length = genparams.get('dry_allowed_length', 2)
     dry_penalty_last_n = genparams.get('dry_penalty_last_n', 320)
     dry_sequence_breakers = genparams.get('dry_sequence_breakers', [])
+    xtc_threshold = genparams.get('xtc_threshold', 0.2)
+    xtc_probability = genparams.get('xtc_probability', 0)
     sampler_order = genparams.get('sampler_order', [6, 0, 1, 3, 4, 2, 5])
     seed = tryparseint(genparams.get('sampler_seed', -1))
     stop_sequence = genparams.get('stop_sequence', [])
@@ -989,6 +993,8 @@ def generate(genparams, is_quiet=False, stream_flag=False):
         inputs.mirostat = inputs.mirostat_tau = inputs.mirostat_eta = 0
     inputs.dry_multiplier = dry_multiplier
     inputs.dry_base = dry_base
+    inputs.xtc_threshold = xtc_threshold
+    inputs.xtc_probability = xtc_probability
     inputs.dry_allowed_length = dry_allowed_length
     inputs.dry_penalty_last_n = dry_penalty_last_n
     # Handle dry_sequence_breakers being passed as a json-encoded array of
@@ -1631,7 +1637,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
         return True
 
     def noscript_webui(self):
-        global modelbusy
+        global modelbusy, sslvalid
         import html
         import urllib.parse as urlparse
         parsed_url = urlparse.urlparse(self.path)
@@ -1655,9 +1661,10 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             else:
                 if max_length>512:
                     max_length = 512
-                epurl = f"http://localhost:{args.port}"
+                httpsaffix = ("https" if sslvalid else "http")
+                epurl = f"{httpsaffix}://localhost:{args.port}"
                 if args.host!="":
-                    epurl = f"http://{args.host}:{args.port}"
+                    epurl = f"{httpsaffix}://{args.host}:{args.port}"
                 gen_payload = {"prompt": prompt,"max_length": max_length,"temperature": temperature,"prompt": prompt,"top_k": top_k,"top_p": top_p,"rep_pen": rep_pen,"ban_eos_token":ban_eos_token}
                 respjson = make_url_request(f'{epurl}/api/v1/generate', gen_payload)
                 reply = html.escape(respjson["results"][0]["text"])
@@ -2220,7 +2227,7 @@ def show_gui():
         root.quit()
         if args.model_param and args.model_param!="" and (args.model_param.lower().endswith('.kcpps') or args.model_param.lower().endswith('.kcppt')):
             load_config_cli(args.model_param)
-        if not args.model_param and not args.sdmodel and not args.whispermodel:
+        if not args.model_param and not args.sdmodel and not args.whispermodel and not args.nomodel:
             global exitcounter
             exitcounter = 999
             exit_with_error(2,"No ggml model or kcpps file was selected. Exiting.")
@@ -2398,6 +2405,7 @@ def show_gui():
     lora_base_var = ctk.StringVar()
     preloadstory_var = ctk.StringVar()
     mmproj_var = ctk.StringVar()
+    nomodel = ctk.IntVar(value=0)
 
     port_var = ctk.StringVar(value=defaultport)
     host_var = ctk.StringVar(value="")
@@ -2778,7 +2786,10 @@ def show_gui():
         gpu_be = (index == "Use Vulkan" or index == "Vulkan NoAVX2 (Old CPU)" or index == "Use CLBlast" or index == "CLBlast NoAVX2 (Old CPU)" or index == "Use CuBLAS" or index == "Use hipBLAS (ROCm)")
         layercounter_label.grid(row=6, column=1, padx=75, sticky="W")
         quick_layercounter_label.grid(row=6, column=1, padx=75, sticky="W")
-        if gpu_be and gpulayers_var.get()=="-1" and predicted_gpu_layers>0:
+        if sys.platform=="darwin" and gpulayers_var.get()=="-1":
+            quick_layercounter_label.configure(text=f"(Auto: All Layers)")
+            layercounter_label.configure(text=f"(Auto: All Layers)")
+        elif gpu_be and gpulayers_var.get()=="-1" and predicted_gpu_layers>0:
             quick_layercounter_label.configure(text=f"(Auto: {predicted_gpu_layers}{max_gpu_layers} Layers)")
             layercounter_label.configure(text=f"(Auto: {predicted_gpu_layers}{max_gpu_layers} Layers)")
         elif gpu_be and gpulayers_var.get()=="-1" and predicted_gpu_layers<=0 and (modelfile_extracted_meta and modelfile_extracted_meta[1]):
@@ -3072,6 +3083,7 @@ def show_gui():
     ctk.CTkButton(model_tab, 64, text="Pick Premade", command=pickpremadetemplate).grid(row=13, column=0, padx=322, stick="nw")
 
     mmproj_var.trace("w", gui_changed_modelfile)
+    makecheckbox(model_tab, "Allow Launch Without Models", nomodel, 15, tooltiptxt="Allows running the WebUI with no model loaded.")
 
     # Network Tab
     network_tab = tabcontent["Network"]
@@ -3204,7 +3216,7 @@ def show_gui():
 
     # launch
     def guilaunch():
-        if model_var.get() == "" and sd_model_var.get() == "" and whisper_model_var.get() == "":
+        if model_var.get() == "" and sd_model_var.get() == "" and whisper_model_var.get() == "" and nomodel.get()!=1:
             tmp = askopenfilename(title="Select ggml model .bin or .gguf file")
             model_var.set(tmp)
         nonlocal nextstate
@@ -3228,6 +3240,7 @@ def show_gui():
         args.foreground = keepforeground.get()==1
         args.quiet = quietmode.get()==1
         args.nocertify = nocertifymode.get()==1
+        args.nomodel = nomodel.get()==1
         if contextshift.get()==0 and flashattention.get()==1:
             args.quantkv = quantkv_var.get()
         else:
@@ -3373,6 +3386,7 @@ def show_gui():
         quietmode.set(1 if "quiet" in dict and dict["quiet"] else 0)
         checkforupdates.set(1 if "checkforupdates" in dict and dict["checkforupdates"] else 0)
         nocertifymode.set(1 if "nocertify" in dict and dict["nocertify"] else 0)
+        nomodel.set(1 if "nomodel" in dict and dict["nomodel"] else 0)
         if "quantkv" in dict:
             quantkv_var.set(dict["quantkv"])
         if "useclblast" in dict and dict["useclblast"]:
@@ -3563,7 +3577,7 @@ def show_gui():
         kcpp_exporting_template = False
         export_vars()
 
-        if not args.model_param and not args.sdmodel and not args.whispermodel:
+        if not args.model_param and not args.sdmodel and not args.whispermodel and not args.nomodel:
             exitcounter = 999
             exit_with_error(2,"No text or image model file was selected. Exiting.")
 
@@ -3741,7 +3755,7 @@ def make_url_request(url, data, method='POST', headers={}):
         else:
             request = urllib.request.Request(url, headers=headers, method=method)
         response_data = ""
-        with urllib.request.urlopen(request,context=ssl_context) as response:
+        with urllib.request.urlopen(request,context=ssl_context,timeout=300) as response:
             response_data = response.read().decode('utf-8',"ignore")
             json_response = json.loads(response_data)
             return json_response
@@ -3760,10 +3774,11 @@ def make_url_request(url, data, method='POST', headers={}):
 def run_horde_worker(args, api_key, worker_name):
     from datetime import datetime
     import random
-    global friendlymodelname, maxhordectx, maxhordelen, exitcounter, punishcounter, modelbusy, session_starttime
-    epurl = f"http://localhost:{args.port}"
+    global friendlymodelname, maxhordectx, maxhordelen, exitcounter, punishcounter, modelbusy, session_starttime, sslvalid
+    httpsaffix = ("https" if sslvalid else "http")
+    epurl = f"{httpsaffix}://localhost:{args.port}"
     if args.host!="":
-        epurl = f"http://{args.host}:{args.port}"
+        epurl = f"{httpsaffix}://{args.host}:{args.port}"
 
     def submit_completed_generation(url, jobid, sessionstart, submit_dict):
         global exitcounter, punishcounter, session_kudos_earned, session_jobs, rewardcounter
@@ -3962,7 +3977,8 @@ def setuptunnel(has_sd):
     # It should work out of the box on both linux and windows
     try:
         import subprocess, re
-
+        global sslvalid
+        httpsaffix = ("https" if sslvalid else "http")
         def run_tunnel():
             tunnelproc = None
             tunneloutput = ""
@@ -3970,13 +3986,13 @@ def setuptunnel(has_sd):
             time.sleep(0.2)
             if os.name == 'nt':
                 print("Starting Cloudflare Tunnel for Windows, please wait...", flush=True)
-                tunnelproc = subprocess.Popen(f"cloudflared.exe tunnel --url localhost:{args.port}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                tunnelproc = subprocess.Popen(f"cloudflared.exe tunnel --url {httpsaffix}://localhost:{args.port}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             elif sys.platform=="darwin":
                 print("Starting Cloudflare Tunnel for MacOS, please wait...", flush=True)
-                tunnelproc = subprocess.Popen(f"./cloudflared tunnel --url http://localhost:{args.port}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                tunnelproc = subprocess.Popen(f"./cloudflared tunnel --url {httpsaffix}://localhost:{args.port}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             else:
                 print("Starting Cloudflare Tunnel for Linux, please wait...", flush=True)
-                tunnelproc = subprocess.Popen(f"./cloudflared-linux-amd64 tunnel --url http://localhost:{args.port}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                tunnelproc = subprocess.Popen(f"./cloudflared-linux-amd64 tunnel --url {httpsaffix}://localhost:{args.port}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             time.sleep(10)
             def tunnel_reader():
                 nonlocal tunnelproc,tunneloutput,tunnelrawlog
@@ -4265,7 +4281,7 @@ def main(launch_args,start_server=True):
     if not args.model_param:
         args.model_param = args.model
 
-    if not args.model_param and not args.sdmodel and not args.whispermodel:
+    if not args.model_param and not args.sdmodel and not args.whispermodel and not args.nomodel:
         #give them a chance to pick a file
         print("For command line arguments, please refer to --help")
         print("***")
@@ -4442,6 +4458,9 @@ def main(launch_args,start_server=True):
             if shouldavoidgpu:
                 print("WARNING: GPU layers is set, but a GPU backend was not selected!")
                 pass
+        elif args.gpulayers==-1 and sys.platform=="darwin" and args.model_param and os.path.exists(args.model_param):
+            print(f"MacOS detected: Auto GPU layers set to maximum")
+            args.gpulayers = 200
         elif args.gpulayers==-1 and not shouldavoidgpu and args.model_param and os.path.exists(args.model_param):
             if not args.usecublas and not args.usevulkan and not args.useclblast:
                 print("NOTE: Auto GPU layers was set without picking a GPU backend! Trying to assign one for you automatically...")
@@ -4795,7 +4814,7 @@ if __name__ == '__main__':
             return f
         return range_checker
 
-    parser = argparse.ArgumentParser(description='KoboldCpp Server')
+    parser = argparse.ArgumentParser(description=f'KoboldCpp Server - Version {KcppVersion}')
     modelgroup = parser.add_mutually_exclusive_group() #we want to be backwards compatible with the unnamed positional args
     modelgroup.add_argument("--model", metavar=('[filename]'), help="Model file to load", type=str, default="")
     modelgroup.add_argument("model_param", help="Model file to load (positional)", nargs="?")
@@ -4850,7 +4869,7 @@ if __name__ == '__main__':
     advparser.add_argument("--forceversion", help="If the model file format detection fails (e.g. rogue modified model) you can set this to override the detected format (enter desired version, e.g. 401 for GPTNeoX-Type2).",metavar=('[version]'), type=int, default=0)
     advparser.add_argument("--smartcontext", help="Reserving a portion of context to try processing less frequently. Outdated. Not recommended.", action='store_true')
     advparser.add_argument("--unpack", help="Extracts the file contents of the KoboldCpp binary into a target directory.", metavar=('destination'), type=str, default="")
-
+    advparser.add_argument("--nomodel", help="Allows you to launch the GUI alone, without selecting any model.", action='store_true')
 
     hordeparsergroup = parser.add_argument_group('Horde Worker Commands')
     hordeparsergroup.add_argument("--hordemodelname", metavar=('[name]'), help="Sets your AI Horde display model name.", default="")

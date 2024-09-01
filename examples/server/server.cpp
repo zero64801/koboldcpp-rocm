@@ -2508,6 +2508,9 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
+    // parse arguments from environment variables
+    gpt_params_parse_from_env(params);
+
     // TODO: not great to use extern vars
     server_log_json = params.log_json;
     server_verbose = params.verbosity > 0;
@@ -2532,8 +2535,8 @@ int main(int argc, char ** argv) {
     });
 
     LOG_INFO("system info", {
-        {"n_threads",       params.n_threads},
-        {"n_threads_batch", params.n_threads_batch},
+        {"n_threads",       params.cpuparams.n_threads},
+        {"n_threads_batch", params.cpuparams_batch.n_threads},
         {"total_threads",   std::thread::hardware_concurrency()},
         {"system_info",     llama_print_system_info()},
     });
@@ -2570,7 +2573,7 @@ int main(int argc, char ** argv) {
 
     auto res_error = [](httplib::Response & res, json error_data) {
         json final_response {{"error", error_data}};
-        res.set_content(final_response.dump(), MIMETYPE_JSON);
+        res.set_content(final_response.dump(-1, ' ', false, json::error_handler_t::replace), MIMETYPE_JSON);
         res.status = json_value(error_data, "code", 500);
     };
 
