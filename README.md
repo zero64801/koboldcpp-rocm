@@ -130,12 +130,7 @@ Then you should be able to make the .exe file with this command:
 - If you wish to use your own version of the additional Windows libraries (OpenCL, CLBlast and OpenBLAS), you can do it with:
   - OpenCL - tested with https://github.com/KhronosGroup/OpenCL-SDK . If you wish to compile it, follow the repository instructions. You will need vcpkg.
   - CLBlast - tested with https://github.com/CNugteren/CLBlast . If you wish to compile it you will need to reference the OpenCL files. It will only generate the ".lib" file if you compile using MSVC.
-  - OpenBLAS - tested with https://github.com/xianyi/OpenBLAS .
   - Move the respectives .lib files to the /lib folder of your project, overwriting the older files.
-  - Also, replace the existing versions of the corresponding .dll files located in the project directory root (e.g. libopenblas.dll).
-  - You can attempt a CuBLAS build with using the provided CMake file with visual studio. If you use the CMake file to build, copy the `koboldcpp_cublas.dll` generated into the same directory as the `koboldcpp.py` file. If you are bundling executables, you may need to include CUDA dynamic libraries (such as `cublasLt64_11.dll` and `cublas64_11.dll`) in order for the executable to work correctly on a different PC.
-  - Make the KoboldCPP project using the instructions above.
-  -
 
 ## Fedora
 
@@ -204,6 +199,16 @@ You can then run koboldcpp anywhere from the terminal by running `koboldcpp` to 
 - **Increasing Context Size**: Try `--contextsize 4096` to 2x your context size! without much perplexity gain. Note that you'll have to increase the max context in the Kobold Lite UI as well (click and edit the number text field).
 - **Reducing Prompt Processing**: Try the `--smartcontext` flag to reduce prompt processing frequency.
 - If you are having crashes or issues, you can try turning off BLAS with the `--noblas` flag. You can also try running in a non-avx2 compatibility mode with `--noavx2`. Lastly, you can try turning off mmap with `--nommap`.
+## Third Party Resources
+- These unofficial resources have been contributed by the community, and may be outdated or unmaintained. No official support will be provided for them!
+  - Arch Linux Packages: [CUBLAS](https://aur.archlinux.org/packages/koboldcpp-cuda), and [HIPBLAS](https://aur.archlinux.org/packages/koboldcpp-hipblas).
+  - Unofficial Dockers: [korewaChino](https://github.com/korewaChino/koboldCppDocker) and [noneabove1182](https://github.com/noneabove1182/koboldcpp-docker)
+  - Nix & NixOS: KoboldCpp is available on Nixpkgs and can be installed by adding just `koboldcpp` to your `environment.systemPackages`.
+    - Make sure to have `nixpkgs.config.allowUnfree`, `hardware.opengl.enable` *(`hardware.graphics.enable` if you're using unstable channel)* and `nixpkgs.config.cudaSupport` set to `true` to enable CUDA.
+    - Metal is enabled by default on macOS, Vulkan support is enabled by default on both Linux and macOS, ROCm support isn't available yet.
+    - You can also use `nix3-run` to use KoboldCpp: `nix run --expr ``with import <nixpkgs> { config = { allowUnfree = true; cudaSupport = true; }; }; koboldcpp`` --impure`
+    - Or use `nix-shell`: `nix-shell --expr 'with import <nixpkgs> { config = { allowUnfree = true; cudaSupport = true; }; }; koboldcpp' --run "koboldcpp" --impure`
+    - Packages (like CLBLast, Vulkan, etc.) can be overridden, please refer to the [17th Nix Pill - Nixpkgs Overriding Packages](https://nixos.org/guides/nix-pills/17-nixpkgs-overriding-packages)
 
 For more information, be sure to run the program with the `--help` flag, or [check the wiki](https://github.com/LostRuins/koboldcpp/wiki).
 
@@ -224,25 +229,13 @@ For more information, be sure to run the program with the `--help` flag, or [che
 
 ## Considerations
 - For Windows: No installation, single file executable, (It Just Works)
-- Since v1.0.6, requires libopenblas, the prebuilt windows binaries are included in this repo. If not found, it will fall back to a mode without BLAS.
 - Since v1.15, requires CLBlast if enabled, the prebuilt windows binaries are included in this repo. If not found, it will fall back to a mode without CLBlast.
 - Since v1.33, you can set the context size to be above what the model supports officially. It does increases perplexity but should still work well below 4096 even on untuned models. (For GPT-NeoX, GPT-J, and LLAMA models) Customize this with `--ropeconfig`.
 - Since v1.42, supports GGUF models for LLAMA and Falcon
 - Since v1.55, lcuda paths on Linux are hardcoded and may require manual changes to the makefile if you do not use koboldcpp.sh for the compilation.
 - Since v1.60, provides native image generation with StableDiffusion.cpp, you can load any SD1.5 or SDXL .safetensors model and it will provide an A1111 compatible API to use.
-- **I plan to keep backwards compatibility with ALL past llama.cpp AND alpaca.cpp models**. But you are also encouraged to reconvert/update your models if possible for best results.
-
-## ROCm vs OpenCL (old comparison)
-Comparison with OpenCL using 6800xt (old measurement)
-| Model | Offloading Method | Time Taken - Processing 593 tokens| Time Taken - Generating 200 tokens| Total Time | Perf. Diff.
-|-----------------|----------------------------|--------------------|--------------------|------------|---|
-| Robin 7b q6_K |CLBLAST 6-t, All Layers on GPU | 6.8s (11ms/T) | 12.0s (60ms/T)  | 18.7s (10.7T/s) | 1x
-| Robin 7b q6_K |ROCM 1-t, All Layers on GPU   | 1.4s (2ms/T) | 5.5s (28ms/T)   | 6.9s (29.1T/s)| **2.71x**
-| Robin 13b q5_K_M |CLBLAST 6-t, All Layers on GPU | 10.9s (18ms/T) | 16.7s (83ms/T)  | 27.6s (7.3T/s) | 1x
-| Robin 13b q5_K_M |ROCM 1-t, All Layers on GPU   | 2.4s (4ms/T) | 7.8s (39ms/T)   | 10.2s (19.6T/s)| **2.63x**
-| Robin 33b q4_K_S |CLBLAST 6-t, 46/63 Layers on GPU | 23.2s (39ms/T) | 48.6s (243ms/T)  | 71.9s (2.8T/s) | 1x
-| Robin 33b q4_K_S |CLBLAST 6-t, 50/63 Layers on GPU | 25.5s (43ms/T) | 44.6s (223ms/T)  | 70.0s (2.9T/s) | 1x
-| Robin 33b q4_K_S |ROCM 6-t, 46/63 Layers on GPU   | 14.6s (25ms/T) | 44.1s (221ms/T)   | 58.7s (3.4T/s)| **1.19x**
+- **I try to keep backwards compatibility with ALL past llama.cpp models**. But you are also encouraged to reconvert/update your models if possible for best results.
+- Since v1.75, openblas has been deprecated and removed in favor of the native CPU implementation.
 
 ## License
 - The original GGML library and llama.cpp by ggerganov are licensed under the MIT License
