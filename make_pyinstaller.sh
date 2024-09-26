@@ -7,7 +7,7 @@ sleep 4
 pip install pyinstaller customtkinter && make clean && \
 # Ensure all backends are built then build executable file
 make LLAMA_HIPBLAS=1 LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1 -j$NUMCPUS && \
-pyinstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all psutil --collect-all libclblast-dev --collect-all libopenblas-dev --collect-all clinfo --icon ".\niko.ico" \
+pyinstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all libclblast-dev --collect-all clinfo --icon ".\niko.ico" \
 --add-data "./kcpp_adapters:./kcpp_adapters" \
 --add-data "./koboldcpp.py:." \
 --add-data "./klite.embd:." \
@@ -16,15 +16,9 @@ pyinstaller --noconfirm --onefile --clean --console --collect-all customtkinter 
 --add-data "./taesd.embd:." \
 --add-data "./taesd_xl.embd:." \
 --add-data "./koboldcpp_default.so:." \
---add-data "./koboldcpp_failsafe.so:." \
---add-data "./koboldcpp_noavx2.so:." \
---add-data "./koboldcpp_clblast.so:." \
---add-data "./koboldcpp_clblast_noavx2.so:." \
 --add-data "./koboldcpp_hipblas.so:." \
 --add-data "/opt/rocm/lib/libhipblas.so:." \
 --add-data "/opt/rocm/lib/librocblas.so:." \
---add-data "./koboldcpp_vulkan_noavx2.so:." \
---add-data "./koboldcpp_vulkan.so:." \
 --add-data "./rwkv_vocab.embd:." \
 --add-data "./rwkv_world_vocab.embd:." \
 --add-data "/opt/rocm/lib/rocblas:." \

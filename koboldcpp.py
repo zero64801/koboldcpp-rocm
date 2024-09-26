@@ -41,7 +41,7 @@ maxhordelen = 400
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.75.2.yr0-ROCm"
+KcppVersion = "1.75.2.yr1-ROCm"
 showdebug = True
 guimode = False
 showsamplerwarning = True
@@ -823,7 +823,7 @@ def auto_set_backend_cli():
     found_new_backend = False
     if exitcounter < 100 and MaxMemory[0]>3500000000 and (("Use CuBLAS" in runopts and CUDevicesNames[0]!="") or "Use hipBLAS (ROCm)" in runopts) and any(CUDevicesNames):
         if "Use CuBLAS" in runopts or "Use hipBLAS (ROCm)" in runopts:
-            args.usecublas = ["normal","mmq"]
+            args.usecublas = ["normal"]
             print("Auto Selected CUDA Backend...\n")
             found_new_backend = True
     elif exitcounter < 100 and (1 in VKIsDGPU) and "Use Vulkan" in runopts:
@@ -2387,7 +2387,7 @@ def show_gui():
     nocertifymode = ctk.IntVar(value=0)
 
     lowvram_var = ctk.IntVar()
-    mmq_var = ctk.IntVar(value=1)
+    mmq_var = ctk.IntVar(value=0)
     quantkv_var = ctk.IntVar(value=0)
     blas_threads_var = ctk.StringVar()
     blas_size_var = ctk.IntVar()
