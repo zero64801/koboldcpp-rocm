@@ -83,8 +83,8 @@ jobs:
           Set-Location 'C:\Program Files\AMD\ROCm\6.1\bin'
           Get-Location
           Remove-Item -Force -Recurse -Path 'C:\Program Files\AMD\ROCm\6.1\bin\rocblas'
-          curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/deps-v6.2.0/rocblas6.2.0-librarywith906.7z
-          7z x rocblas6.2.0-librarywith906.7z -aoa
+          curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/deps-v6.2.0/rocblas6.2.0.7z
+          7z x rocblas6.2.0.7z -aoa
           Set-Location 'C:\Program Files\AMD\ROCm\6.1\bin\rocblas\library'
           ls
           Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'
