@@ -15,13 +15,14 @@ import platform
 import base64
 import json, sys, http.server, time, asyncio, socket, threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 # constants
 sampler_order_max = 7
-stop_token_max = 24
-ban_token_max = 16
+stop_token_max = 32
+ban_token_max = 48
 tensor_split_max = 16
-logit_bias_max = 24
+logit_bias_max = 32
 dry_seq_break_max = 24
 images_max = 4
 bias_min_value = -100.0
@@ -41,7 +42,7 @@ maxhordelen = 400
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.75.2.yr1-ROCm"
+KcppVersion = "1.76.yr0-ROCm"
 showdebug = True
 guimode = False
 showsamplerwarning = True
@@ -933,8 +934,15 @@ def generate(genparams, is_quiet=False, stream_flag=False):
     smoothing_factor = genparams.get('smoothing_factor', 0.0)
     logit_biases = genparams.get('logit_bias', {})
     render_special = genparams.get('render_special', False)
-    banned_tokens = genparams.get('banned_tokens', [])
+    banned_strings = genparams.get('banned_strings', []) # SillyTavern uses that name
+    banned_tokens = genparams.get('banned_tokens', banned_strings)
     bypass_eos_token = genparams.get('bypass_eos', False)
+    custom_token_bans = genparams.get('custom_token_bans', '')
+
+    for tok in custom_token_bans.split(','):
+        tok = tok.strip()  # Remove leading/trailing whitespace
+        if tok.isdigit():
+            logit_biases[tok] = bias_min_value
 
     inputs = generation_inputs()
     inputs.prompt = prompt.encode("UTF-8")
@@ -1781,7 +1789,8 @@ Enter Prompt:<br>
             lastseed = handle.get_last_seed()
             uptime = time.time() - start_time
             idletime = time.time() - last_req_time
-            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "last_seed":lastseed, "total_gens":totalgens, "stop_reason":stopreason, "total_img_gens":totalimggens, "queue":requestsinqueue, "idle":(0 if modelbusy.locked() else 1), "hordeexitcounter":exitcounter, "uptime":uptime, "idletime":idletime}).encode())
+            is_quiet = True if (args.quiet and args.debugmode != 1) else False
+            response_body = (json.dumps({"last_process":lastp,"last_eval":laste,"last_token_count":lastc, "last_seed":lastseed, "total_gens":totalgens, "stop_reason":stopreason, "total_img_gens":totalimggens, "queue":requestsinqueue, "idle":(0 if modelbusy.locked() else 1), "hordeexitcounter":exitcounter, "uptime":uptime, "idletime":idletime, "quiet":is_quiet}).encode())
 
         elif self.path.endswith('/api/extra/generate/check'):
             if not self.secure_endpoint():
@@ -2031,8 +2040,9 @@ Enter Prompt:<br>
                         return
 
                 is_quiet = args.quiet
+                utfprint(f"\n{datetime.now().strftime('[%H:%M:%S] Input Received')}")
                 if (args.debugmode != -1 and not is_quiet) or args.debugmode >= 1:
-                    utfprint("\nInput: " + json.dumps(genparams))
+                    utfprint(f"Input: " + json.dumps(genparams))
 
                 if args.foreground:
                     bring_terminal_to_foreground()
@@ -3258,6 +3268,11 @@ def show_gui():
             args.quantkv = 0
 
         gpuchoiceidx = 0
+        args.usecpu = False
+        args.usevulkan = None
+        args.usecublas = None
+        args.useclblast = None
+        args.noavx2 = False
         if gpu_choice_var.get()!="All":
         #     if runopts_var.get() == "Use CLBlast": #if CLBlast selected
         #         if (gpu_choice_var.get()) in CLdevices:
@@ -3541,10 +3556,10 @@ def show_gui():
     def load_config_gui(): #this is used to populate the GUI with a config file, whereas load_config_cli simply overwrites cli args
         file_type = [("KoboldCpp Settings", "*.kcpps *.kcppt")]
         global runmode_untouched
-        runmode_untouched = False
         filename = askopenfilename(filetypes=file_type, defaultextension=file_type, initialdir=None)
         if not filename or filename=="":
             return
+        runmode_untouched = False
         with open(filename, 'r') as f:
             dict = json.load(f)
             import_vars(dict)
@@ -3747,7 +3762,6 @@ def show_gui_msgbox(title,message):
         pass
 
 def print_with_time(txt):
-    from datetime import datetime
     print(f"{datetime.now().strftime('[%H:%M:%S]')} " + txt, flush=True)
 
 def make_url_request(url, data, method='POST', headers={}):
@@ -3786,7 +3800,6 @@ def make_url_request(url, data, method='POST', headers={}):
 
 #A very simple and stripped down embedded horde worker with no dependencies
 def run_horde_worker(args, api_key, worker_name):
-    from datetime import datetime
     import random
     global friendlymodelname, maxhordectx, maxhordelen, exitcounter, punishcounter, modelbusy, session_starttime, sslvalid
     httpsaffix = ("https" if sslvalid else "http")
@@ -4261,7 +4274,7 @@ def main(launch_args,start_server=True):
     embedded_kcpp_docs = None
 
     args = launch_args
-    if (args.model_param or args.model) and args.prompt and not args.benchmark:
+    if (args.model_param or args.model) and args.prompt and not args.benchmark and not (args.debugmode >= 1):
         suppress_stdout()
 
     print(f"***\nWelcome to KoboldCpp - Version {KcppVersion}") # just update version manually
@@ -4705,7 +4718,6 @@ def main(launch_args,start_server=True):
         timer_thread.start()
 
     if args.model_param and (args.benchmark or args.prompt):
-        from datetime import datetime, timezone
         start_server = False
         save_to_file = (args.benchmark and args.benchmark!="stdout" and args.benchmark!="")
         benchmaxctx = maxctx

@@ -37,6 +37,7 @@ My typical start command looks like this: ``python koboldcpp.py --threads 6 --bl
 - Weights are not included, you can use the official llama.cpp `quantize.exe` to generate them from your official weight files (or download them from other places such as [TheBloke's Huggingface](https://huggingface.co/TheBloke).
 - To run, simply execute **koboldcpp_rocm.exe**.
 - Launching with no command line arguments displays a GUI containing a subset of configurable settings. Generally you dont have to change much besides the `Presets` and `GPU Layers`. Read the `--help` for more info about each settings.
+- Obtain and load a GGUF model. See [here](#Obtaining-a-GGUF-model)
 - By default, you can connect to http://localhost:5001
 - You can also run it using the command line. For info, please check `koboldcpp.exe --help` or `python koboldcpp.py --help`
 

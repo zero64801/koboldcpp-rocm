@@ -6,6 +6,9 @@
 #include <vector>
 #include <unordered_map>
 #include <map>
+#include <set>
+
+struct llm_tokenizer;
 
 struct llama_vocab {
     using id    = llama_token;
@@ -37,31 +40,41 @@ struct llama_vocab {
     id special_bos_id  = 1;
     id special_eos_id  = 2;
     id special_unk_id  = 0;
-    id special_sep_id  = -1;
-    id special_pad_id  = -1;
-    id special_cls_id  = -1;
-    id special_mask_id = -1;
+    id special_sep_id  = LLAMA_TOKEN_NULL;
+    id special_pad_id  = LLAMA_TOKEN_NULL;
+    id special_cls_id  = LLAMA_TOKEN_NULL;
+    id special_mask_id = LLAMA_TOKEN_NULL;
 
     id linefeed_id       = 13;
-    id special_prefix_id = -1;
-    id special_suffix_id = -1;
-    id special_middle_id = -1;
-    id special_eot_id    = -1; // TODO: move above after "eos_id", and here add "file separator" token
-    id special_eom_id    = -1;
+    id special_prefix_id = LLAMA_TOKEN_NULL;
+    id special_suffix_id = LLAMA_TOKEN_NULL;
+    id special_middle_id = LLAMA_TOKEN_NULL;
+    id special_eot_id    = LLAMA_TOKEN_NULL; // TODO: move above after "eos_id", and here add "file separator" token
+    id special_eom_id    = LLAMA_TOKEN_NULL;
+
+    // set of all tokens that cause "end of generation"
+    std::set<id> special_eog_ids;
 
     // tokenizer flags
-    bool tokenizer_add_space_prefix = false;
-    bool tokenizer_add_bos          = false;
-    bool tokenizer_add_eos          = false;
-    bool tokenizer_ignore_merges    = false;
-    bool tokenizer_clean_spaces     = false;  // clean_up_tokenization_spaces
+    bool tokenizer_add_space_prefix           = false;
+    bool tokenizer_add_bos                    = false;
+    bool tokenizer_add_eos                    = false;
+    bool tokenizer_ignore_merges              = false;
+    bool tokenizer_clean_spaces               = false;  // clean_up_tokenization_spaces
     bool tokenizer_remove_extra_whitespaces   = false;
     bool tokenizer_escape_whitespaces         = true;
     bool tokenizer_treat_whitespace_as_suffix = false;
 
     std::vector<char> precompiled_charsmap;
 
+    llm_tokenizer * tokenizer = nullptr;
+
+    llama_vocab() = default;
+    ~llama_vocab();
+
     int find_bpe_rank(const std::string & token_left, const std::string & token_right) const;
+
+    void init_tokenizer();
 };
 
 //

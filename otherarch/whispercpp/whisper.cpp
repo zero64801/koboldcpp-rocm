@@ -183,11 +183,11 @@ static bool ggml_graph_compute_helper(
     if (ggml_backend_is_cpu(backend)) {
         ggml_backend_cpu_set_n_threads(backend, n_threads);
     }
-#ifdef GGML_USE_METAL
-    if (ggml_backend_is_metal(backend)) {
-        ggml_backend_metal_set_n_cb(backend, n_threads);
-    }
-#endif
+// #ifdef GGML_USE_METAL
+//     if (ggml_backend_is_metal(backend)) {
+//         ggml_backend_metal_set_n_cb(backend, n_threads);
+//     }
+// #endif
     return ggml_backend_graph_compute(backend, graph) == GGML_STATUS_SUCCESS;
 }
 
@@ -1240,7 +1240,6 @@ static ggml_backend_t whisper_backend_init(const whisper_context_params & params
 #ifdef GGML_USE_METAL
     if (params.use_gpu) {
         WHISPER_LOG_INFO("%s: using Metal backend\n", __func__);
-        ggml_backend_metal_log_set_callback(g_state.log_callback, g_state.log_callback_user_data);
         backend_gpu = ggml_backend_metal_init();
         if (!backend_gpu) {
             WHISPER_LOG_ERROR("%s: ggml_backend_metal_init() failed\n", __func__);
