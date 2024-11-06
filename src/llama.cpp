@@ -9670,7 +9670,7 @@ static struct ggml_tensor * llm_build_kqv(
         cur = ggml_flash_attn_ext(ctx, q, k, v, kq_mask, kq_scale, hparams.f_max_alibi_bias,
                                   hparams.attn_soft_cap ? hparams.f_attn_logit_softcapping : 0.0f);
 
-        ggml_flash_attn_ext_set_prec(cur, GGML_PREC_F32);
+        // ggml_flash_attn_ext_set_prec(cur, GGML_PREC_F32);
 
         cur = ggml_reshape_2d(ctx, cur, n_embd_head_v*n_head, n_tokens);
     } else {
@@ -9679,7 +9679,7 @@ static struct ggml_tensor * llm_build_kqv(
 
         // note: this op tends to require high floating point range
         //       while for some models F16 is enough, for others it is not, so we default to F32 here
-        ggml_mul_mat_set_prec(kq, GGML_PREC_F32);
+        // ggml_mul_mat_set_prec(kq, GGML_PREC_F32);
 
         if (model.arch == LLM_ARCH_GROK) {
             // need to do the following:
