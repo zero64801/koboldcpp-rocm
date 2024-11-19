@@ -45,6 +45,7 @@ struct load_model_inputs
     const bool use_mlock = false;
     const bool use_smartcontext = false;
     const bool use_contextshift = false;
+    const bool use_fastforward = false;
     const int clblast_info = 0;
     const int cublas_info = 0;
     const char * vulkan_info = nullptr;
@@ -143,6 +144,9 @@ struct sd_load_model_inputs
     const int threads = 0;
     const int quant = 0;
     const bool taesd = false;
+    const char * t5xxl_filename = nullptr;
+    const char * clipl_filename = nullptr;
+    const char * clipg_filename = nullptr;
     const char * vae_filename = nullptr;
     const char * lora_filename = nullptr;
     const float lora_multiplier = 1.0f;

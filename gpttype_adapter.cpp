@@ -606,13 +606,21 @@ llama_token sample_token(llama_token_data_array * candidates, std::mt19937 & rng
     int idx = dist(rng);
 
     newpick.selected_token = FileFormatTokenizeID(candidates->data[idx].id, file_format, true);
-    newpick.selected_logprob = logf(candidates->data[idx].p);
+    float rp1 = (candidates->data[idx].p<=0.0001?0.0001f:candidates->data[idx].p);
+    float sprob = logf(rp1);
+    sprob = (sprob > 999.0f?999.0f:sprob);
+    sprob = (sprob < -999.0f?-999.0f:sprob);
+    newpick.selected_logprob = sprob;
     newpick.selected_probability = candidates->data[idx].p;
     newpick.selected_tokenid = candidates->data[idx].id;
     for (size_t i = 0; (i < candidates->size && i<logprobs_max); ++i)
     {
         newpick.tokens.push_back(FileFormatTokenizeID(candidates->data[i].id, file_format, true));
-        newpick.logprobs.push_back(logf(candidates->data[i].p));
+        float rp2 = (candidates->data[i].p<=0.0001?0.0001f:candidates->data[i].p);
+        float prob = logf(rp2);
+        prob = (prob > 999.0f?999.0f:prob);
+        prob = (prob < -999.0f?-999.0f:prob);
+        newpick.logprobs.push_back(prob);
         newpick.p.push_back(candidates->data[i].p);
         newpick.tokenid.push_back(candidates->data[i].id);
     }
@@ -740,9 +748,22 @@ void sample_xtc(llama_token_data_array * candidates, float xtc_threshold, float 
 
     if(last_idx>1) //if there are 2 or more viable candidates
     {
+        if (debugmode==1) {
+            printf("XTC penalties [");
+        }
         // then remove all other tokens above threshold EXCEPT the least likely one
         for (size_t i = 0; i < last_idx - 1; ++i) {
+            if (debugmode==1)
+            {
+                gpt_vocab::id token = candidates->data[i].id;
+                std::string tokenizedstr = FileFormatTokenizeID(token, file_format);
+                ::utreplace(tokenizedstr, "\n", "\\n");
+                printf("%s(%s %.02f%%)", i == 0 ? "" : " ", RemoveBell(tokenizedstr).c_str(), 100.f * candidates->data[i].p);
+            }
             candidates->data[i].logit -= 999.0f; //infinity gets wonky results downstream, this hack works well enough
+        }
+        if (debugmode==1) {
+            printf("]\n");
         }
         candidates->sorted = false;
 
@@ -1493,6 +1514,66 @@ static void load_grammar(const std::string & gammarstr)
     }
 }
 
+struct kcpp_embd_batch { //duplcated from llava_embd_batch
+    std::vector<int32_t> pos;
+    std::vector<int32_t> n_seq_id;
+    std::vector<int32_t> seq_id_0;
+    std::vector<int32_t *> seq_ids;
+    std::vector<int8_t> logits;
+    llama_batch batch;
+    kcpp_embd_batch(float * embd, int32_t n_tokens, int32_t npast) {
+        int32_t seq_id = 0;
+        pos.resize(n_tokens);
+        n_seq_id.resize(n_tokens);
+        seq_ids.resize(n_tokens + 1);
+        logits.resize(n_tokens);
+        seq_id_0.resize(1);
+        seq_id_0[0] = seq_id;
+        seq_ids [n_tokens] = nullptr;
+        batch = {
+            /*n_tokens       =*/ n_tokens,
+            /*tokens         =*/ nullptr,
+            /*embd           =*/ embd,
+            /*pos            =*/ pos.data(),
+            /*n_seq_id       =*/ n_seq_id.data(),
+            /*seq_id         =*/ seq_ids.data(),
+            /*logits         =*/ logits.data(),
+        };
+        for (int i = 0; i < n_tokens; i++) {
+            batch.pos     [i] = npast + i;
+            batch.n_seq_id[i] = 1;
+            batch.seq_id  [i] = seq_id_0.data();
+            batch.logits  [i] = false;
+        }
+    }
+    kcpp_embd_batch(std::vector<llama_token> & tokens, int32_t npast) {
+        int32_t seq_id = 0;
+        int32_t n_tokens = tokens.size();
+        pos.resize(n_tokens);
+        n_seq_id.resize(n_tokens);
+        seq_ids.resize(n_tokens + 1);
+        logits.resize(n_tokens);
+        seq_id_0.resize(1);
+        seq_id_0[0] = seq_id;
+        seq_ids [n_tokens] = nullptr;
+        batch = {
+            /*n_tokens       =*/ n_tokens,
+            /*tokens         =*/ tokens.data(),
+            /*embd           =*/ nullptr,
+            /*pos            =*/ pos.data(),
+            /*n_seq_id       =*/ n_seq_id.data(),
+            /*seq_id         =*/ seq_ids.data(),
+            /*logits         =*/ logits.data(),
+        };
+        for (int i = 0; i < n_tokens; i++) {
+            batch.pos     [i] = npast + i;
+            batch.n_seq_id[i] = 1;
+            batch.seq_id  [i] = seq_id_0.data();
+            batch.logits  [i] = false;
+        }
+        batch.logits[n_tokens - 1] = true;
+    }
+};
 static bool kcpp_eval_image(llama_context * ctx_llama, float * img_embd, int num_img_tokens, int n_batch, int * n_past) {
     int n_embd  = llama_n_embd(llama_get_model(ctx_llama));
 
@@ -1501,8 +1582,9 @@ static bool kcpp_eval_image(llama_context * ctx_llama, float * img_embd, int num
         if (n_eval > n_batch) {
             n_eval = n_batch;
         }
-        llama_batch batch = {int32_t(n_eval), nullptr, (img_embd+i*n_embd), nullptr, nullptr, nullptr, nullptr,};
-        if (llama_decode(ctx_llama, batch)) {
+        float * embd = img_embd+i*n_embd;
+        kcpp_embd_batch llava_batch = kcpp_embd_batch(embd, n_eval, *n_past);
+        if (llama_decode(ctx_llama, llava_batch.batch)) {
             fprintf(stderr, "\n%s : failed to eval image\n", __func__);
             return false;
         }
@@ -1667,6 +1749,7 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
     kcpp_data->model_filename = inputs.model_filename;
     kcpp_data->use_smartcontext = inputs.use_smartcontext;
     kcpp_data->use_contextshift = inputs.use_contextshift;
+    kcpp_data->use_fastforward = inputs.use_fastforward;
     debugmode = inputs.debugmode;
 
     auto clamped_max_context_length = inputs.max_context_length;
@@ -1883,7 +1966,7 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
             else if(file_format_meta.n_expert_count>1)
             {
                 printf("\nOpenCL cannot use regular GPU offloading for this model architecture. A fallback GPU offloader will be used with degraded performance.\n");
-                clblast_offload_fallback_mode = true;
+
             }
         }
         #endif
@@ -2930,7 +3013,10 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
     {
         if(!blank_prompt)
         {
-            ContextFastForward(current_context_tokens, embd_inp, n_past, last_n_tokens, nctx, smartcontext, false, true);
+            if(kcpp_data->use_fastforward)
+            {
+                ContextFastForward(current_context_tokens, embd_inp, n_past, last_n_tokens, nctx, smartcontext, false, true);
+            }
         }
         if(is_mamba || is_rwkv_new)
         {
@@ -2950,12 +3036,15 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
         bool triggersc = kcpp_data->use_smartcontext;
         if(!blank_prompt) //special case for blank prompts, no fast forward or shifts
         {
-            if(kcpp_data->use_contextshift && (file_format == FileFormat::GGUF_GENERIC))
+            if(kcpp_data->use_fastforward && kcpp_data->use_contextshift && (file_format == FileFormat::GGUF_GENERIC))
             {
                 PurgeMissingTokens(llama_ctx_v4, current_context_tokens, embd_inp, inputs.max_length, nctx);
                 triggersc = false;
             }
-            ContextFastForward(current_context_tokens, embd_inp, n_past, last_n_tokens, nctx, smartcontext, triggersc, false);
+            if(kcpp_data->use_fastforward)
+            {
+                ContextFastForward(current_context_tokens, embd_inp, n_past, last_n_tokens, nctx, smartcontext, triggersc, false);
+            }
         }
         if(file_format == FileFormat::GGUF_GENERIC)
         {
@@ -3080,7 +3169,8 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
             }
             else if(file_format == FileFormat::GGUF_GENERIC)
             {
-                evalres = (llama_decode(llama_ctx_v4, llama_batch_get_one(embd.data(), embdsize))==0);
+                kcpp_embd_batch batch = kcpp_embd_batch(embd, n_past);
+                evalres = (llama_decode(llama_ctx_v4, batch.batch)==0);
             }
             else if(file_format==FileFormat::RWKV_1 || file_format==FileFormat::RWKV_2)
             {

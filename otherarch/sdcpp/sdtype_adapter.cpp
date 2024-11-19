@@ -12,6 +12,7 @@
 
 #include "model_adapter.h"
 
+#include "flux.hpp"
 #include "stable-diffusion.cpp"
 #include "util.cpp"
 #include "upscaler.cpp"
@@ -33,37 +34,6 @@
 // #define STB_IMAGE_RESIZE_IMPLEMENTATION //already defined in llava
 #include "stb_image_resize.h"
 
-const char* rng_type_to_str[] = {
-    "std_default",
-    "cuda",
-};
-
-// Names of the sampler method, same order as enum sample_method in stable-diffusion.h
-const char* sample_method_str[] = {
-    "euler_a",
-    "euler",
-    "heun",
-    "dpm2",
-    "dpm++2s_a",
-    "dpm++2m",
-    "dpm++2mv2",
-    "lcm",
-};
-
-// Names of the sigma schedule overrides, same order as sample_schedule in stable-diffusion.h
-const char* schedule_str[] = {
-    "default",
-    "discrete",
-    "karras",
-};
-
-const char* modes_str[] = {
-    "txt2img",
-    "img2img",
-    "img2vid",
-    "convert",
-};
-
 enum SDMode {
     TXT2IMG,
     IMG2IMG,
@@ -75,13 +45,18 @@ enum SDMode {
 struct SDParams {
     int n_threads = -1;
     SDMode mode   = TXT2IMG;
-
     std::string model_path;
+    std::string clip_l_path;
+    std::string clip_g_path;
+    std::string t5xxl_path;
+    std::string diffusion_model_path;
     std::string vae_path;
     std::string taesd_path;
     std::string esrgan_path;
     std::string controlnet_path;
     std::string embeddings_path;
+    std::string stacked_id_embeddings_path;
+    std::string input_id_images_path;
     sd_type_t wtype = SD_TYPE_COUNT;
     std::string lora_model_dir;
     std::string output_path = "output.png";
@@ -90,12 +65,14 @@ struct SDParams {
 
     std::string prompt;
     std::string negative_prompt;
-    float min_cfg   = 1.0f;
-    float cfg_scale = 7.0f;
-    int clip_skip   = -1;  // <= 0 represents unspecified
-    int width       = 512;
-    int height      = 512;
-    int batch_count = 1;
+    float min_cfg     = 1.0f;
+    float cfg_scale   = 7.0f;
+    float guidance    = 3.5f;
+    float style_ratio = 20.f;
+    int clip_skip     = -1;  // <= 0 represents unspecified
+    int width         = 512;
+    int height        = 512;
+    int batch_count   = 1;
 
     int video_frames         = 6;
     int motion_bucket_id     = 127;
@@ -112,7 +89,11 @@ struct SDParams {
     bool verbose                  = false;
     bool vae_tiling               = false;
     bool control_net_cpu          = false;
+    bool normalize_input          = false;
+    bool clip_on_cpu              = false;
+    bool vae_on_cpu               = false;
     bool canny_preprocess         = false;
+    bool color                    = false;
     int upscale_repeats           = 1;
 };
 
@@ -154,6 +135,9 @@ bool sdtype_load_model(const sd_load_model_inputs inputs) {
     std::string taesdpath = "";
     std::string lorafilename = inputs.lora_filename;
     std::string vaefilename = inputs.vae_filename;
+    std::string t5xxl_filename = inputs.t5xxl_filename;
+    std::string clipl_filename = inputs.clipl_filename;
+    std::string clipg_filename = inputs.clipg_filename;
     printf("\nImageGen Init - Load Model: %s\n",inputs.model_filename);
     if(lorafilename!="")
     {
@@ -167,6 +151,18 @@ bool sdtype_load_model(const sd_load_model_inputs inputs) {
     else if(vaefilename!="")
     {
         printf("With Custom VAE: %s\n",vaefilename.c_str());
+    }
+    if(t5xxl_filename!="")
+    {
+        printf("With Custom T5-XXL Model: %s\n",t5xxl_filename.c_str());
+    }
+    if(clipl_filename!="")
+    {
+        printf("With Custom Clip-L Model: %s\n",clipl_filename.c_str());
+    }
+    if(clipg_filename!="")
+    {
+        printf("With Custom Clip-G Model: %s\n",clipg_filename.c_str());
     }
 
     //duplicated from expose.cpp
@@ -196,12 +192,23 @@ bool sdtype_load_model(const sd_load_model_inputs inputs) {
 
     sd_params = new SDParams();
     sd_params->model_path = inputs.model_filename;
-    sd_params->wtype = (inputs.quant==0?SD_TYPE_F16:SD_TYPE_Q4_0);
+    sd_params->wtype = (inputs.quant==0?SD_TYPE_COUNT:SD_TYPE_Q4_0);
     sd_params->n_threads = inputs.threads; //if -1 use physical cores
     sd_params->input_path = ""; //unused
     sd_params->batch_count = 1;
     sd_params->vae_path = vaefilename;
     sd_params->taesd_path = taesdpath;
+    sd_params->t5xxl_path = t5xxl_filename;
+    sd_params->clip_l_path = clipl_filename;
+    sd_params->clip_g_path = clipg_filename;
+    //if clip and t5 is set, and model is a gguf, load it as a diffusion model path
+    bool endswithgguf = (sd_params->model_path.rfind(".gguf") == sd_params->model_path.size() - 5);
+    if(sd_params->clip_l_path!="" && sd_params->t5xxl_path!="" && endswithgguf)
+    {
+        printf("\nSwap to Diffusion Model Path:%s",sd_params->model_path.c_str());
+        sd_params->diffusion_model_path = sd_params->model_path;
+        sd_params->model_path = "";
+    }
 
     sddebugmode = inputs.debugmode;
 
@@ -229,11 +236,16 @@ bool sdtype_load_model(const sd_load_model_inputs inputs) {
     }
 
     sd_ctx = new_sd_ctx(sd_params->model_path.c_str(),
+                        sd_params->clip_l_path.c_str(),
+                        sd_params->clip_g_path.c_str(),
+                        sd_params->t5xxl_path.c_str(),
+                        sd_params->diffusion_model_path.c_str(),
                         sd_params->vae_path.c_str(),
                         sd_params->taesd_path.c_str(),
                         sd_params->controlnet_path.c_str(),
                         sd_params->lora_model_dir.c_str(),
                         sd_params->embeddings_path.c_str(),
+                        sd_params->stacked_id_embeddings_path.c_str(),
                         vae_decode_only,
                         sd_params->vae_tiling,
                         free_param,
@@ -241,7 +253,9 @@ bool sdtype_load_model(const sd_load_model_inputs inputs) {
                         sd_params->wtype,
                         sd_params->rng_type,
                         sd_params->schedule,
-                        sd_params->control_net_cpu);
+                        sd_params->clip_on_cpu,
+                        sd_params->control_net_cpu,
+                        sd_params->vae_on_cpu);
 
     if (sd_ctx == NULL) {
         printf("\nError: KCPP SD Failed to create context!\n");
@@ -273,6 +287,7 @@ std::string clean_input_prompt(const std::string& input) {
     return result;
 }
 
+
 sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
 {
     sd_generation_outputs output;
@@ -295,6 +310,7 @@ sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
     std::string cleanprompt = clean_input_prompt(inputs.prompt);
     std::string cleannegprompt = clean_input_prompt(inputs.negative_prompt);
     std::string img2img_data = std::string(inputs.init_images);
+    std::string sampler = inputs.sample_method;
 
     sd_params->prompt = cleanprompt;
     sd_params->negative_prompt = cleannegprompt;
@@ -307,12 +323,37 @@ sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
     sd_params->clip_skip = inputs.clip_skip;
     sd_params->mode = (img2img_data==""?SDMode::TXT2IMG:SDMode::IMG2IMG);
 
+    //ensure unsupported dimensions are fixed
+    int biggestdim = (sd_params->width>sd_params->height?sd_params->width:sd_params->height);
+    auto loadedsdver = get_loaded_sd_version(sd_ctx);
+    if(loadedsdver==SDVersion::VERSION_FLUX_DEV || loadedsdver==SDVersion::VERSION_FLUX_SCHNELL)
+    {
+        sd_params->cfg_scale = 1;
+        if(sampler=="euler a"||sampler=="k_euler_a"||sampler=="euler_a")
+        {
+            sampler = "euler"; //euler a broken on flux
+        }
+    }
+    int reslimit = (loadedsdver==SDVersion::VERSION_SD1 || loadedsdver==SDVersion::VERSION_SD2)?832:1024;
+    if(biggestdim > reslimit)
+    {
+        float scaler = (float)biggestdim / (float)reslimit;
+        int newwidth = (int)((float)sd_params->width / scaler);
+        int newheight = (int)((float)sd_params->height / scaler);
+        newwidth = newwidth - (newwidth%64);
+        newheight = newheight - (newheight%64);
+        sd_params->width = newwidth;
+        sd_params->height = newheight;
+    }
+    bool dotile = (sd_params->width>768 || sd_params->height>768);
+    set_sd_vae_tiling(sd_ctx,dotile); //changes vae tiling, prevents memory related crash/oom
+
     //for img2img
     sd_image_t input_image = {0,0,0,nullptr};
     std::vector<uint8_t> image_buffer;
     int nx, ny, nc;
-    int img2imgW = inputs.width; //for img2img input
-    int img2imgH = inputs.height;
+    int img2imgW = sd_params->width; //for img2img input
+    int img2imgH = sd_params->height;
     int img2imgC = 3; // Assuming RGB image
     std::vector<uint8_t> resized_image_buf(img2imgW * img2imgH * img2imgC);
 
@@ -324,7 +365,6 @@ sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
     }
 
     fflush(stdout);
-    std::string sampler = inputs.sample_method;
 
     if(sampler=="euler a"||sampler=="k_euler_a"||sampler=="euler_a") //all lowercase
     {
@@ -373,11 +413,14 @@ sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
             control_image,
             sd_params->control_strength);
         }
+
+
         results = txt2img(sd_ctx,
                           sd_params->prompt.c_str(),
                           sd_params->negative_prompt.c_str(),
                           sd_params->clip_skip,
                           sd_params->cfg_scale,
+                          sd_params->guidance,
                           sd_params->width,
                           sd_params->height,
                           sd_params->sample_method,
@@ -385,7 +428,10 @@ sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
                           sd_params->seed,
                           sd_params->batch_count,
                           control_image,
-                          sd_params->control_strength);
+                          sd_params->control_strength,
+                          sd_params->style_ratio,
+                          sd_params->normalize_input,
+                          sd_params->input_id_images_path.c_str());
     } else {
 
         if (sd_params->width <= 0 || sd_params->width % 64 != 0 || sd_params->height <= 0 || sd_params->height % 64 != 0) {
@@ -455,13 +501,19 @@ sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
                             sd_params->negative_prompt.c_str(),
                             sd_params->clip_skip,
                             sd_params->cfg_scale,
+                            sd_params->guidance,
                             sd_params->width,
                             sd_params->height,
                             sd_params->sample_method,
                             sd_params->sample_steps,
                             sd_params->strength,
                             sd_params->seed,
-                            sd_params->batch_count);
+                            sd_params->batch_count,
+                            control_image,
+                            sd_params->control_strength,
+                            sd_params->style_ratio,
+                            sd_params->normalize_input,
+                            sd_params->input_id_images_path.c_str());
     }
 
     if (results == NULL) {
