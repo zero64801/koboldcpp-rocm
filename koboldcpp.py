@@ -24,6 +24,7 @@ images_max = 4
 bias_min_value = -100.0
 bias_max_value = 100.0
 logprobs_max = 5
+default_draft_amount = 8
 
 # abuse prevention
 stop_token_max = 256
@@ -35,6 +36,7 @@ dry_seq_break_max = 128
 handle = None
 friendlymodelname = "inactive"
 friendlysdmodelname = "inactive"
+lastgeneratedcomfyimg = b''
 fullsdmodelpath = ""  #if empty, it's not initialized
 mmprojpath = "" #if empty, it's not initialized
 password = "" #if empty, no auth key required
@@ -45,7 +47,7 @@ maxhordelen = 400
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.78.yr0-ROCm"
+KcppVersion = "1.79.1.yr0-ROCm"
 showdebug = True
 guimode = False
 showsamplerwarning = True
@@ -64,6 +66,12 @@ args = None #global args
 runmode_untouched = True
 modelfile_extracted_meta = None
 importvars_in_progress = False
+has_multiplayer = False
+multiplayer_story_data_compressed = None #stores the full compressed story of the current multiplayer session
+multiplayer_turn_major = 1 # to keep track of when a client needs to sync their stories
+multiplayer_turn_minor = 1
+multiplayer_dataformat = "" # used to tell what is the data payload in saved story. set by client
+multiplayer_lastactive = {} # timestamp of last activity for each unique player
 preloaded_story = None
 chatcompl_adapter = None
 embedded_kailite = None
@@ -124,6 +132,8 @@ class load_model_inputs(ctypes.Structure):
                 ("model_filename", ctypes.c_char_p),
                 ("lora_filename", ctypes.c_char_p),
                 ("lora_base", ctypes.c_char_p),
+                ("draftmodel_filename", ctypes.c_char_p),
+                ("draft_amount", ctypes.c_int),
                 ("mmproj_filename", ctypes.c_char_p),
                 ("use_mmap", ctypes.c_bool),
                 ("use_mlock", ctypes.c_bool),
@@ -480,6 +490,7 @@ def init_library():
     handle.abort_generate.restype = ctypes.c_bool
     handle.token_count.restype = token_count_outputs
     handle.get_pending_output.restype = ctypes.c_char_p
+    handle.get_chat_template.restype = ctypes.c_char_p
     handle.sd_load_model.argtypes = [sd_load_model_inputs]
     handle.sd_load_model.restype = ctypes.c_bool
     handle.sd_generate.argtypes = [sd_generation_inputs]
@@ -489,6 +500,8 @@ def init_library():
     handle.whisper_generate.argtypes = [whisper_generation_inputs]
     handle.whisper_generate.restype = whisper_generation_outputs
     handle.last_logprobs.restype = last_logprobs_outputs
+    handle.detokenize.argtypes = [token_count_outputs]
+    handle.detokenize.restype = ctypes.c_char_p
 
 def set_backend_props(inputs):
     clblastids = 0
@@ -556,6 +569,15 @@ def tryparseint(value):
         return int(value)
     except ValueError:
         return value
+
+def is_incomplete_utf8_sequence(byte_seq): #note, this will only flag INCOMPLETE sequences, corrupted ones will be ignored.
+    try:
+        byte_seq.decode('utf-8')
+        return False  # Valid UTF-8
+    except UnicodeDecodeError as e:
+        if e.reason == 'unexpected end of data':
+            return True #incomplete sequence
+        return False #invalid sequence, but not incomplete
 
 def unpack_to_dir(destpath = ""):
     import shutil
@@ -687,24 +709,27 @@ def read_gguf_metadata(file_path):
     except Exception as ex:
         return None
 
-def extract_modelfile_params(filepath,sdfilepath,whisperfilepath,mmprojfilepath):
+def extract_modelfile_params(filepath,sdfilepath,whisperfilepath,mmprojfilepath,draftmodelpath):
     global modelfile_extracted_meta
     modelfile_extracted_meta = None
     sdfsize = 0
     whisperfsize = 0
     mmprojsize = 0
+    draftmodelsize = 0
     if sdfilepath and os.path.exists(sdfilepath):
         sdfsize = os.path.getsize(sdfilepath)
     if whisperfilepath and os.path.exists(whisperfilepath):
         whisperfsize = os.path.getsize(whisperfilepath)
     if mmprojfilepath and os.path.exists(mmprojfilepath):
         mmprojsize = os.path.getsize(mmprojfilepath)
+    if draftmodelpath and os.path.exists(draftmodelpath):
+        draftmodelsize = os.path.getsize(draftmodelpath)
     if filepath and os.path.exists(filepath):
         try:
             fsize = os.path.getsize(filepath)
             if fsize>10000000: #dont bother with models < 10mb as they are probably bad
                 ggufmeta = read_gguf_metadata(filepath)
-                modelfile_extracted_meta = [ggufmeta,fsize,sdfsize,whisperfsize,mmprojsize] #extract done. note that meta may be null
+                modelfile_extracted_meta = [ggufmeta,fsize,sdfsize,whisperfsize,mmprojsize,draftmodelsize] #extract done. note that meta may be null
         except Exception as ex:
             modelfile_extracted_meta = None
 
@@ -717,7 +742,7 @@ def autoset_gpu_layers(ctxsize,sdquanted,bbs): #shitty algo to determine how man
         if showusedmemwarning and usedmem > (2.5*1024*1024*1024):
             showusedmemwarning = False
             print(f"Note: KoboldCpp has detected that a significant amount of GPU VRAM ({usedmem/1024/1024} MB) is currently used by another application.\nFor best results, you may wish to close that application and then restart KoboldCpp.\n***")
-    reservedmem = max(1.5*1024*1024*1024,(0.5*1024*1024*1024 + usedmem)) # determine vram overhead
+    reservedmem = max(1.3*1024*1024*1024,(0.5*1024*1024*1024 + usedmem)) # determine vram overhead
     try:
         if not modelfile_extracted_meta:
             return 0
@@ -734,6 +759,9 @@ def autoset_gpu_layers(ctxsize,sdquanted,bbs): #shitty algo to determine how man
                 mem -= 350*1024*1024
             if modelfile_extracted_meta[4] > 1024*1024*10: #mmproj tax
                 mem -= 350*1024*1024
+            if modelfile_extracted_meta[5] > 1024*1024*10: #draft model tax
+                mem -= (modelfile_extracted_meta[5] * 1.5)
+            mem = 0 if mem < 0 else mem
 
             csmul = 1.0
             if cs:
@@ -747,8 +775,8 @@ def autoset_gpu_layers(ctxsize,sdquanted,bbs): #shitty algo to determine how man
                 headcount = ggufmeta[1]
                 headkvlen = (ggufmeta[2] if ggufmeta[2] > 0 else 128)
                 ratio = (mem-usedmem)/(fsize*csmul*1.6*(1.0 if bbs <= 512 else 1.2))
-                computemem = layers*(4 if bbs <= 512 else (bbs/128))*headkvlen*cs*4*1.5 # apply blasbatchsize calculations if over 512
-                contextmem = layers*headcount*headkvlen*cs*4*1.1
+                computemem = layers*(4 if bbs <= 512 else (bbs/128))*headkvlen*cs*4*1.55 # apply blasbatchsize calculations if over 512
+                contextmem = layers*headcount*headkvlen*cs*4*1.15
                 if headcount > 0:
                     ratio = max(ratio, (mem - reservedmem - computemem) / (fsize + contextmem))
                 layerlimit = min(int(ratio*layers), (layers + 3))
@@ -892,6 +920,8 @@ def load_model(model_filename):
         if len(args.lora) > 1:
             inputs.lora_base = args.lora[1].encode("UTF-8")
 
+    inputs.draftmodel_filename = args.draftmodel.encode("UTF-8") if args.draftmodel else "".encode("UTF-8")
+    inputs.draft_amount = args.draftamount
     inputs.mmproj_filename = args.mmproj.encode("UTF-8") if args.mmproj else "".encode("UTF-8")
     inputs.use_smartcontext = args.smartcontext
     inputs.use_contextshift = (0 if args.noshift else 1)
@@ -1157,6 +1187,29 @@ def sd_load_model(model_filename,vae_filename,lora_filename,t5xxl_filename,clipl
     ret = handle.sd_load_model(inputs)
     return ret
 
+def sd_comfyui_tranform_params(genparams):
+    promptobj = genparams.get('prompt', None)
+    if promptobj and isinstance(promptobj, dict):
+        temp = promptobj.get('3', {})
+        temp = temp.get('inputs', {})
+        genparams["seed"] = temp.get("seed", -1)
+        genparams["steps"] = temp.get("steps", 20)
+        genparams["cfg_scale"] = temp.get("cfg", 5)
+        genparams["sampler_name"] = temp.get("sampler_name", "euler")
+        temp = promptobj.get('5', {})
+        temp = temp.get('inputs', {})
+        genparams["width"] = temp.get("width", 512)
+        genparams["height"] = temp.get("height", 512)
+        temp = promptobj.get('6', {})
+        temp = temp.get('inputs', {})
+        genparams["prompt"] = temp.get("text", "high quality")
+        temp = promptobj.get('7', {})
+        temp = temp.get('inputs', {})
+        genparams["negative_prompt"] = temp.get("text", "")
+    else:
+        print("Warning: ComfyUI Payload Missing!")
+    return genparams
+
 def sd_generate(genparams):
     global maxctx, args, currentusergenkey, totalgens, pendingabortkey, chatcompl_adapter
 
@@ -1259,6 +1312,26 @@ def whisper_generate(genparams):
         outstr = ret.data.decode("UTF-8","ignore")
     return outstr
 
+def tokenize_ids(countprompt,tcaddspecial):
+    rawcountdata = handle.token_count(countprompt.encode("UTF-8"),tcaddspecial)
+    countlimit = rawcountdata.count if (rawcountdata.count>=0 and rawcountdata.count<50000) else 0
+    # the above protects the server in case the count limit got corrupted
+    countdata = [rawcountdata.ids[i] for i in range(countlimit)]
+    return countdata
+
+def detokenize_ids(tokids):
+    tokidslen = len(tokids)
+    detokstr = ""
+    if tokidslen > 0 and tokidslen < 65536:
+        inputs = token_count_outputs()
+        inputs.count = tokidslen
+        inputs.ids = (ctypes.c_int * tokidslen)()
+        for i, cid in enumerate(tokids):
+            inputs.ids[i] = cid
+        detok = handle.detokenize(inputs)
+        detokstr = ctypes.string_at(detok).decode("UTF-8","ignore")
+    return detokstr
+
 #################################################################
 ### A hacky simple HTTP server simulating a kobold api by Concedo
 ### we are intentionally NOT using flask, because we want MINIMAL dependencies
@@ -1328,7 +1401,7 @@ def parse_last_logprobs(lastlogprobs):
 
 def transform_genparams(genparams, api_format):
     global chatcompl_adapter
-    #api format 1=basic,2=kai,3=oai,4=oai-chat,5=interrogate
+    #api format 1=basic,2=kai,3=oai,4=oai-chat,5=interrogate,6=ollama,7=ollamachat
     #alias all nonstandard alternative names for rep pen.
     rp1 = genparams.get('repeat_penalty', 1.0)
     rp2 = genparams.get('repetition_penalty', 1.0)
@@ -1346,8 +1419,10 @@ def transform_genparams(genparams, api_format):
     elif api_format==2:
         pass
 
-    elif api_format==3 or api_format==4:
-        default_max_tok = (400 if api_format==4 else 200)
+    elif api_format==3 or api_format==4 or api_format==7:
+        default_adapter = {} if chatcompl_adapter is None else chatcompl_adapter
+        adapter_obj = genparams.get('adapter', default_adapter)
+        default_max_tok = (adapter_obj.get("max_length", 512) if (api_format==4 or api_format==7) else 200)
         genparams["max_length"] = genparams.get('max_tokens', genparams.get('max_completion_tokens', default_max_tok))
         presence_penalty = genparams.get('presence_penalty', genparams.get('frequency_penalty', 0.0))
         genparams["presence_penalty"] = presence_penalty
@@ -1360,11 +1435,9 @@ def transform_genparams(genparams, api_format):
         genparams["sampler_seed"] = tryparseint(genparams.get('seed', -1))
         genparams["mirostat"] = genparams.get('mirostat_mode', 0)
 
-        if api_format==4:
+        if api_format==4 or api_format==7: #handle ollama chat here too
             # translate openai chat completion messages format into one big string.
             messages_array = genparams.get('messages', [])
-            default_adapter = {} if chatcompl_adapter is None else chatcompl_adapter
-            adapter_obj = genparams.get('adapter', default_adapter)
             messages_string = ""
             system_message_start = adapter_obj.get("system_start", "\n### Instruction:\n")
             system_message_end = adapter_obj.get("system_end", "")
@@ -1479,6 +1552,26 @@ ws ::= | " " | "\n" [ \t]{0,20}
         assistant_message_start = adapter_obj.get("assistant_start", "### Response:")
         genparams["prompt"] = f"{user_message_start} In one sentence, write a descriptive caption for this image.\n{assistant_message_start}"
 
+    elif api_format==6:
+        detokstr = ""
+        tokids = genparams.get('context', [])
+        adapter_obj = {} if chatcompl_adapter is None else chatcompl_adapter
+        user_message_start = adapter_obj.get("user_start", "\n\n### Instruction:\n")
+        assistant_message_start = adapter_obj.get("assistant_start", "\n\n### Response:\n")
+        try:
+            detokstr = detokenize_ids(tokids)
+        except Exception as e:
+            utfprint("Ollama Context Error: " + str(e))
+        ollamasysprompt = genparams.get('system', "")
+        ollamabodyprompt = f"{detokstr}{user_message_start}{genparams.get('prompt', '')}{assistant_message_start}"
+        genparams["stop_sequence"] = genparams.get('stop', [])
+        genparams["stop_sequence"].append(user_message_start.strip())
+        genparams["stop_sequence"].append(assistant_message_start.strip())
+        genparams["trim_stop"] = True
+        genparams["ollamasysprompt"] = ollamasysprompt
+        genparams["ollamabodyprompt"] = ollamabodyprompt
+        genparams["prompt"] = ollamasysprompt + ollamabodyprompt
+
     return genparams
 
 class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
@@ -1581,6 +1674,12 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                    "choices": [{"index": 0, "message": {"role": "assistant", "content": recvtxt, "tool_calls": tool_calls}, "finish_reason": currfinishreason, "logprobs":logprobsdict}]}
         elif api_format == 5:
             res = {"caption": end_trim_to_sentence(recvtxt)}
+        elif api_format == 6:
+            oldprompt = genparams.get('ollamabodyprompt', "")
+            tokarr = tokenize_ids(oldprompt+recvtxt,False)
+            res = {"model": friendlymodelname,"created_at": str(datetime.now(timezone.utc).isoformat()),"response":recvtxt,"done": True,"done_reason":currfinishreason,"context": tokarr,"total_duration": 1,"load_duration": 1,"prompt_eval_count": prompttokens,"prompt_eval_duration": 1,"eval_count": comptokens,"eval_duration": 1}
+        elif api_format == 7:
+            res = {"model": friendlymodelname,"created_at": str(datetime.now(timezone.utc).isoformat()),"message":{"role":"assistant","content":recvtxt},"done": True,"done_reason":currfinishreason,"total_duration": 1,"load_duration": 1,"prompt_eval_count": prompttokens,"prompt_eval_duration": 1,"eval_count": comptokens,"eval_duration": 1}
         else:
             res = {"results": [{"text": recvtxt, "finish_reason": currfinishreason, "logprobs":logprobsdict, "prompt_tokens": prompttokens, "completion_tokens": comptokens}]}
 
@@ -1632,7 +1731,8 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                     newbyte = ctypes.string_at(token)
                     incomplete_token_buffer += bytearray(newbyte)
                     tokenSeg = incomplete_token_buffer.decode("UTF-8","ignore")
-                    badFragment = (tokenSeg==" " and len(incomplete_token_buffer)>1) #partial incomplete unicode
+                    incseq = is_incomplete_utf8_sequence(incomplete_token_buffer)
+                    badFragment = (tokenSeg==" " and len(incomplete_token_buffer)>1) or incseq #partial incomplete unicode
                     if tokenSeg!="" and not badFragment:
                         incomplete_token_buffer.clear()
                         tokenStr += tokenSeg
@@ -1710,6 +1810,14 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             time.sleep(0.2) #short delay
         except Exception as e:
             print(e)
+
+    def get_multiplayer_idle_state(self,userid):
+        if modelbusy.locked():
+            return False
+        for key, value in multiplayer_lastactive.items():
+            if key!=userid and time.time()-value<6: #6s to idle
+                return False
+        return True
 
     def secure_endpoint(self): #returns false if auth fails. caller should exit
         #handle password stuff
@@ -1817,7 +1925,7 @@ Enter Prompt:<br>
 
     def do_GET(self):
         global embedded_kailite, embedded_kcpp_docs, embedded_kcpp_sdui
-        global maxctx, maxhordelen, friendlymodelname, KcppVersion, totalgens, preloaded_story, exitcounter, currentusergenkey, friendlysdmodelname, fullsdmodelpath, mmprojpath, password, fullwhispermodelpath
+        global has_multiplayer, multiplayer_turn_major, multiplayer_turn_minor, multiplayer_story_data_compressed, multiplayer_dataformat, multiplayer_lastactive, maxctx, maxhordelen, friendlymodelname, lastgeneratedcomfyimg, KcppVersion, totalgens, preloaded_story, exitcounter, currentusergenkey, friendlysdmodelname, fullsdmodelpath, mmprojpath, password, fullwhispermodelpath
         self.path = self.path.rstrip('/')
         response_body = None
         content_type = 'application/json'
@@ -1874,7 +1982,7 @@ Enter Prompt:<br>
             has_vision = (mmprojpath!="")
             has_password = (password!="")
             has_whisper = (fullwhispermodelpath!="")
-            response_body = (json.dumps({"result":"KoboldCpp","version":KcppVersion, "protected":has_password ,"txt2img":has_txt2img,"vision":has_vision,"transcribe":has_whisper}).encode())
+            response_body = (json.dumps({"result":"KoboldCpp","version":KcppVersion, "protected":has_password ,"txt2img":has_txt2img,"vision":has_vision,"transcribe":has_whisper,"multiplayer":has_multiplayer}).encode())
 
         elif self.path.endswith(('/api/extra/perf')):
             global last_req_time, start_time
@@ -1917,7 +2025,7 @@ Enter Prompt:<br>
             else:
                 response_body = (json.dumps([{"title":friendlysdmodelname,"model_name":friendlysdmodelname,"hash":"8888888888","sha256":"8888888888888888888888888888888888888888888888888888888888888888","filename":fullsdmodelpath,"config": None}]).encode())
         elif self.path.endswith('/sdapi/v1/options'):
-           response_body = (json.dumps({"samples_format":"png","sd_model_checkpoint":friendlysdmodelname}).encode())
+            response_body = (json.dumps({"samples_format":"png","sd_model_checkpoint":friendlysdmodelname}).encode())
         elif self.path.endswith('/sdapi/v1/samplers'):
             if friendlysdmodelname=="inactive" or fullsdmodelpath=="":
                 response_body = (json.dumps([]).encode())
@@ -1931,8 +2039,36 @@ Enter Prompt:<br>
         elif self.path.endswith(('/api/tags')): #ollama compatible
             response_body = (json.dumps({"models":[{"name":"koboldcpp","model":friendlymodelname,"modified_at":"2024-07-19T15:26:55.6122841+08:00","size":394998579,"digest":"b5dc5e784f2a3ee1582373093acf69a2f4e2ac1710b253a001712b86a61f88bb","details":{"parent_model":"","format":"gguf","family":"koboldcpp","families":["koboldcpp"],"parameter_size":"128M","quantization_level":"Q4_0"}}]}).encode())
 
+        #comfyui compatible
+        elif self.path=='/system_stats':
+            response_body = (json.dumps({"system":{"os":"posix","ram_total":12345678900,"ram_free":12345678900,"comfyui_version":"v0.3.4-3-g7126ecf","python_version":"3.10.12","pytorch_version":"2.5.1","embedded_python":False,"argv":[]},"devices":[{"name":"koboldcpp","type":"cuda","index":0,"vram_total":12345678900,"vram_free":12345678900,"torch_vram_total":12345678900,"torch_vram_free":12345678900}]}).encode())
+        elif self.path=='/object_info':
+             response_body = (json.dumps({"KSampler":{"input":{"required":{"model":["MODEL",{"tooltip":""}],"seed":["INT",{"default":0,"min":0,"max":512,"tooltip":""}],"steps":["INT",{"default":20,"min":1,"max":512,"tooltip":""}],"cfg":["FLOAT",{"default":8.0,"min":0.0,"max":100.0,"step":0.1,"round":0.01,"tooltip":"512"}],"sampler_name":[["euler"],{"tooltip":""}],"scheduler":[["normal"],{"tooltip":""}],"positive":["CONDITIONING",{"tooltip":""}],"negative":["CONDITIONING",{"tooltip":""}],"latent_image":["LATENT",{"tooltip":""}],"denoise":["FLOAT",{"default":1.0,"min":0.0,"max":1.0,"step":0.01,"tooltip":""}]}},"input_order":{"required":["model","seed","steps","cfg","sampler_name","scheduler","positive","negative","latent_image","denoise"]},"output":["LATENT"],"output_is_list":[False],"output_name":["LATENT"],"name":"KSampler","display_name":"KSampler","description":"KSampler","python_module":"nodes","category":"sampling","output_node":False,"output_tooltips":[""]},"CheckpointLoaderSimple":{"input":{"required":{"ckpt_name":[[friendlysdmodelname],{"tooltip":""}]}},"input_order":{"required":["ckpt_name"]},"output":["MODEL","CLIP","VAE"],"output_is_list":[False,False,False],"output_name":["MODEL","CLIP","VAE"],"name":"CheckpointLoaderSimple","display_name":"Load","description":"","python_module":"nodes","category":"loaders","output_node":False,"output_tooltips":["","",""]},"CLIPTextEncode":{"input":{"required":{"text":["STRING",{"multiline":True,"dynamicPrompts":True,"tooltip":""}],"clip":["CLIP",{"tooltip":""}]}},"input_order":{"required":["text","clip"]},"output":["CONDITIONING"],"output_is_list":[False],"output_name":["CONDITIONING"],"name":"CLIPTextEncode","display_name":"CLIP","description":"","python_module":"nodes","category":"conditioning","output_node":False,"output_tooltips":[""]},"CLIPSetLastLayer":{"input":{"required":{"clip":["CLIP"],"stop_at_clip_layer":["INT",{"default":-1,"min":-24,"max":-1,"step":1}]}},"input_order":{"required":["clip","stop_at_clip_layer"]},"output":["CLIP"],"output_is_list":[False],"output_name":["CLIP"],"name":"CLIPSetLastLayer","display_name":"CLIPSLL","description":"","python_module":"nodes","category":"conditioning","output_node":False},"VAEDecode":{"input":{"required":{"samples":["LATENT",{"tooltip":""}],"vae":["VAE",{"tooltip":""}]}},"input_order":{"required":["samples","vae"]},"output":["IMAGE"],"output_is_list":[False],"output_name":["IMAGE"],"name":"VAEDecode","display_name":"VAE","description":"","python_module":"nodes","category":"latent","output_node":False,"output_tooltips":[""]},"VAEEncode":{"input":{"required":{"pixels":["IMAGE"],"vae":["VAE"]}},"input_order":{"required":["pixels","vae"]},"output":["LATENT"],"output_is_list":[False],"output_name":["LATENT"],"name":"VAEEncode","display_name":"VAE","description":"","python_module":"nodes","category":"latent","output_node":False},"VAEEncodeForInpaint":{"input":{"required":{"pixels":["IMAGE"],"vae":["VAE"],"mask":["MASK"],"grow_mask_by":["INT",{"default":6,"min":0,"max":64,"step":1}]}},"input_order":{"required":["pixels","vae","mask","grow_mask_by"]},"output":["LATENT"],"output_is_list":[False],"output_name":["LATENT"],"name":"VAEEncodeForInpaint","display_name":"VAE","description":"","python_module":"nodes","category":"latent/inpaint","output_node":False},"VAELoader":{"input":{"required":{"vae_name":[["kcpp_vae"]]}},"input_order":{"required":["vae_name"]},"output":["VAE"],"output_is_list":[False],"output_name":["VAE"],"name":"VAELoader","display_name":"Load VAE","description":"","python_module":"nodes","category":"loaders","output_node":False},"EmptyLatentImage":{"input":{"required":{"width":["INT",{"default":512,"min":16,"max":16384,"step":8,"tooltip":""}],"height":["INT",{"default":512,"min":16,"max":16384,"step":8,"tooltip":""}],"batch_size":["INT",{"default":1,"min":1,"max":1,"tooltip":""}]}},"input_order":{"required":["width","height","batch_size"]},"output":["LATENT"],"output_is_list":[False],"output_name":["LATENT"],"name":"EmptyLatentImage","display_name":"Empty Latent Image","description":"","python_module":"nodes","category":"latent","output_node":False,"output_tooltips":[""]}}).encode())
+        elif self.path.endswith('/api/models/checkpoints') or self.path.endswith('/models/checkpoints'): #emulate comfyui, duplication is redundant but added for clarity
+            if friendlysdmodelname=="inactive" or fullsdmodelpath=="":
+                response_body = (json.dumps([]).encode())
+            else:
+                response_body = (json.dumps([friendlysdmodelname]).encode())
+        elif self.path=='/view' or self.path=='/api/view' or self.path.startswith('/view?') or self.path.startswith('/api/view?'): #emulate comfyui
+            content_type = 'image/png'
+            response_body = lastgeneratedcomfyimg
+        elif self.path=='/history' or self.path=='/api/history' or self.path.startswith('/api/history/') or self.path.startswith('/history/'): #emulate comfyui
+            imgdone = (False if lastgeneratedcomfyimg==b'' else True)
+            response_body = (json.dumps({"12345678-0000-0000-0000-000000000001":{"prompt":[0,"12345678-0000-0000-0000-000000000001",{"3":{"class_type":"KSampler","inputs":{"cfg":5.0,"denoise":1.0,"latent_image":["5",0],"model":["4",0],"negative":["7",0],"positive":["6",0],"sampler_name":"euler","scheduler":"normal","seed":1,"steps":20}},"4":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":friendlysdmodelname}},"5":{"class_type":"EmptyLatentImage","inputs":{"batch_size":1,"height":512,"width":512}},"6":{"class_type":"CLIPTextEncode","inputs":{"clip":["4",1],"text":"prompt"}},"7":{"class_type":"CLIPTextEncode","inputs":{"clip":["4",1],"text":""}},"8":{"class_type":"VAEDecode","inputs":{"samples":["3",0],"vae":["4",2]}},"9":{"class_type":"SaveImage","inputs":{"filename_prefix":"kliteimg","images":["8",0]}}},{},["9"]],"outputs":{"9":{"images":[{"filename":"kliteimg_00001_.png","subfolder":"","type":"output"}]}},"status":{"status_str":"success","completed":imgdone,"messages":[["execution_start",{"prompt_id":"12345678-0000-0000-0000-000000000001","timestamp":1}],["execution_cached",{"nodes":[],"prompt_id":"12345678-0000-0000-0000-000000000001","timestamp":1}],["execution_success",{"prompt_id":"12345678-0000-0000-0000-000000000001","timestamp":1}]]},"meta":{"9":{"node_id":"9","display_node":"9","parent_node":None,"real_node_id":"9"}}}}).encode())
+
         elif self.path.endswith(('/.well-known/serviceinfo')):
             response_body = (json.dumps({"version":"0.2","software":{"name":"KoboldCpp","version":KcppVersion,"repository":"https://github.com/LostRuins/koboldcpp","homepage":"https://github.com/LostRuins/koboldcpp","logo":"https://raw.githubusercontent.com/LostRuins/koboldcpp/refs/heads/concedo/niko.ico"},"api":{"koboldai":{"name":"KoboldAI API","rel_url":"/api","documentation":"https://lite.koboldai.net/koboldcpp_api","version":KcppVersion},"openai":{"name":"OpenAI API","rel_url ":"/v1","documentation":"https://openai.com/documentation/api","version":KcppVersion}}}).encode())
+
+        elif self.path=="/props":
+            ctbytes = handle.get_chat_template()
+            chat_template = ctypes.string_at(ctbytes).decode("UTF-8","ignore")
+            response_body = (json.dumps({
+                "chat_template": chat_template,
+                "total_slots": 1,
+                "default_generation_settings": {
+                    "n_ctx": maxctx,
+                },
+            }).encode())
 
         elif self.path=="/api" or self.path=="/docs" or self.path.startswith(('/api/?json=','/api?json=','/docs/?json=','/docs?json=')):
             content_type = 'text/html'
@@ -1977,7 +2113,7 @@ Enter Prompt:<br>
         return
 
     def do_POST(self):
-        global modelbusy, requestsinqueue, currentusergenkey, totalgens, pendingabortkey
+        global modelbusy, requestsinqueue, currentusergenkey, totalgens, pendingabortkey, lastgeneratedcomfyimg, multiplayer_turn_major, multiplayer_turn_minor, multiplayer_story_data_compressed, multiplayer_dataformat, multiplayer_lastactive
         contlenstr = self.headers['content-length']
         content_length = 0
         body = None
@@ -1992,28 +2128,71 @@ Enter Prompt:<br>
                 }}).encode())
                 return
             body = self.rfile.read(content_length)
+        elif self.headers.get('transfer-encoding', '').lower()=="chunked":
+            content_length = 0
+            chunklimit = 0  # do not process more than 512 chunks, prevents bad actors
+            body = b''
+            try:
+                while True:
+                    chunklimit += 1
+                    line = self.rfile.readline().strip()
+                    if line:
+                        chunk_length = max(0,int(line, 16))
+                        content_length += chunk_length
+                    if not line or chunklimit > 512 or content_length > (1024*1024*32): #32mb payload limit
+                        self.send_response(500)
+                        self.end_headers(content_type='application/json')
+                        self.wfile.write(json.dumps({"detail": {
+                        "msg": "Payload is too big. Max payload size is 32MB.",
+                        "type": "bad_input",
+                        }}).encode())
+                        return
+                    if chunk_length != 0:
+                        chunk = self.rfile.read(chunk_length)
+                        body += chunk
+                    self.rfile.readline()
+                    if chunk_length == 0:
+                        break
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers(content_type='application/json')
+                self.wfile.write(json.dumps({"detail": {
+                "msg": "Failed to parse chunked request.",
+                "type": "bad_input",
+                }}).encode())
+                return
 
         self.path = self.path.rstrip('/')
         response_body = None
         response_code = 200
 
-        if self.path.endswith(('/api/extra/tokencount')):
+        if self.path.endswith('/api/extra/tokencount') or self.path.endswith('/api/extra/tokenize'):
             if not self.secure_endpoint():
                 return
             try:
                 genparams = json.loads(body)
                 countprompt = genparams.get('prompt', "")
                 tcaddspecial = genparams.get('special', True)
-                rawcountdata = handle.token_count(countprompt.encode("UTF-8"),tcaddspecial)
-                countlimit = rawcountdata.count if (rawcountdata.count>=0 and rawcountdata.count<50000) else 0
-                # the above protects the server in case the count limit got corrupted
-                countdata = [rawcountdata.ids[i] for i in range(countlimit)]
+                countdata = tokenize_ids(countprompt,tcaddspecial)
                 response_body = (json.dumps({"value": len(countdata),"ids": countdata}).encode())
 
             except Exception as e:
                 utfprint("Count Tokens - Body Error: " + str(e))
                 response_code = 400
                 response_body = (json.dumps({"value": -1}).encode())
+
+        elif self.path.endswith('/api/extra/detokenize'):
+            if not self.secure_endpoint():
+                return
+            try:
+                genparams = json.loads(body)
+                tokids = genparams.get('ids', [])
+                detokstr = detokenize_ids(tokids)
+                response_body = (json.dumps({"result": detokstr,"success":True}).encode())
+            except Exception as e:
+                utfprint("Detokenize Error: " + str(e))
+                response_code = 400
+                response_body = (json.dumps({"result": "","success":False}).encode())
 
         elif self.path.endswith('/api/extra/abort'):
             if not self.secure_endpoint():
@@ -2073,6 +2252,72 @@ Enter Prompt:<br>
                     logprobsdict = parse_last_logprobs(lastlogprobs)
             response_body = (json.dumps({"logprobs":logprobsdict}).encode())
 
+        elif self.path.endswith('/api/extra/multiplayer/status'):
+            if not self.secure_endpoint():
+                return
+            if not has_multiplayer:
+                response_body = (json.dumps({"error":"Multiplayer not enabled!"}).encode())
+            else:
+                sender = ""
+                senderbusy = False
+                try:
+                    tempbody = json.loads(body)
+                    if isinstance(tempbody, dict):
+                        sender = tempbody.get('sender', "")
+                        senderbusy = tempbody.get('senderbusy', False)
+                except Exception as e:
+                    pass
+                if sender!="" and senderbusy:
+                    multiplayer_lastactive[sender] = int(time.time())
+                response_body = (json.dumps({"turn_major":multiplayer_turn_major,"turn_minor":multiplayer_turn_minor,"idle":self.get_multiplayer_idle_state(sender),"data_format":multiplayer_dataformat}).encode())
+
+        elif self.path.endswith('/api/extra/multiplayer/getstory'):
+            if not self.secure_endpoint():
+                return
+            if not has_multiplayer:
+                response_body = ("".encode())
+            elif multiplayer_story_data_compressed is None:
+                response_body = ("".encode())
+            else:
+                response_body = multiplayer_story_data_compressed.encode()
+
+        elif self.path.endswith('/api/extra/multiplayer/setstory'):
+            if not self.secure_endpoint():
+                return
+            if not has_multiplayer:
+                response_code = 400
+                response_body = (json.dumps({"success":False, "error":"Multiplayer not enabled!"}).encode())
+            else:
+                try:
+                    incoming_story = json.loads(body) # ensure submitted data is valid json
+                    fullupdate = incoming_story.get('full_update', False)
+                    dataformat = incoming_story.get('data_format', "")
+                    sender = incoming_story.get('sender', "")
+                    storybody = incoming_story.get('data', None) #should be a compressed string
+                    if storybody:
+                        storybody = str(storybody)
+                        if len(storybody) > (1024*1024*3): #limit story to 3mb
+                            response_code = 400
+                            response_body = (json.dumps({"success":False, "error":"Story is too long!"}).encode())
+                        else:
+                            multiplayer_story_data_compressed = str(storybody) #save latest story
+                            multiplayer_dataformat = dataformat
+                            if sender!="":
+                                multiplayer_lastactive[sender] = int(time.time())
+                            if fullupdate:
+                                multiplayer_turn_minor = 1
+                                multiplayer_turn_major += 1
+                            else:
+                                multiplayer_turn_minor += 1
+                            response_body = (json.dumps({"success":True,"turn_major":multiplayer_turn_major,"turn_minor":multiplayer_turn_minor,"idle":self.get_multiplayer_idle_state(sender),"data_format":multiplayer_dataformat}).encode())
+                    else:
+                        response_code = 400
+                        response_body = (json.dumps({"success":False, "error":"No story submitted!"}).encode())
+                except Exception as e:
+                    utfprint("Multiplayer Set Story - Body Error: " + str(e))
+                    response_code = 400
+                    response_body = (json.dumps({"success": False, "error":"Submitted story invalid!"}).encode())
+
         if response_body is not None:
             self.send_response(response_code)
             self.send_header('content-length', str(len(response_body)))
@@ -2103,8 +2348,9 @@ Enter Prompt:<br>
         try:
             sse_stream_flag = False
 
-            api_format = 0 #1=basic,2=kai,3=oai,4=oai-chat,5=interrogate
+            api_format = 0 #1=basic,2=kai,3=oai,4=oai-chat,5=interrogate,6=ollama,7=ollamachat
             is_imggen = False
+            is_comfyui_imggen = False
             is_transcribe = False
 
             if self.path.endswith('/request'):
@@ -2135,8 +2381,15 @@ Enter Prompt:<br>
                     return
                 api_format = 5
 
-            if self.path.endswith('/sdapi/v1/txt2img') or self.path.endswith('/sdapi/v1/img2img'):
+            if self.path.endswith('/api/generate'):
+                api_format = 6
+            if self.path.endswith('/api/chat'):
+                api_format = 7
+
+            if self.path=="/prompt" or self.path.endswith('/sdapi/v1/txt2img') or self.path.endswith('/sdapi/v1/img2img'):
                 is_imggen = True
+                if self.path=="/prompt":
+                    is_comfyui_imggen = True
 
             if self.path.endswith('/api/extra/transcribe') or self.path.endswith('/v1/audio/transcriptions'):
                 is_transcribe = True
@@ -2145,7 +2398,7 @@ Enter Prompt:<br>
                 global last_req_time
                 last_req_time = time.time()
 
-                if not is_imggen and not is_transcribe and api_format<5:
+                if not is_imggen and not is_transcribe and api_format!=5:
                     if not self.secure_endpoint():
                         return
 
@@ -2170,9 +2423,8 @@ Enter Prompt:<br>
                         return
 
                 is_quiet = args.quiet
-                utfprint(f"\n{datetime.now().strftime('[%H:%M:%S] Input Received')}")
                 if (args.debugmode != -1 and not is_quiet) or args.debugmode >= 1:
-                    utfprint(f"Input: " + json.dumps(genparams))
+                    utfprint(f"\nInput: " + json.dumps(genparams))
 
                 if args.foreground:
                     bring_terminal_to_foreground()
@@ -2202,8 +2454,19 @@ Enter Prompt:<br>
 
                 elif is_imggen: #image gen
                     try:
+                        if is_comfyui_imggen:
+                            lastgeneratedcomfyimg = b''
+                            genparams = sd_comfyui_tranform_params(genparams)
                         gen = sd_generate(genparams)
-                        genresp = (json.dumps({"images":[gen],"parameters":{},"info":""}).encode())
+                        genresp = None
+                        if is_comfyui_imggen:
+                            if gen:
+                                lastgeneratedcomfyimg = base64.b64decode(gen)
+                            else:
+                                lastgeneratedcomfyimg = b''
+                            genresp = (json.dumps({"prompt_id": "12345678-0000-0000-0000-000000000001","number": 0,"node_errors":{}}).encode())
+                        else:
+                            genresp = (json.dumps({"images":[gen],"parameters":{},"info":""}).encode())
                         self.send_response(200)
                         self.send_header('content-length', str(len(genresp)))
                         self.end_headers(content_type='application/json')
@@ -2551,11 +2814,14 @@ def show_gui():
     lora_base_var = ctk.StringVar()
     preloadstory_var = ctk.StringVar()
     mmproj_var = ctk.StringVar()
+    draftmodel_var = ctk.StringVar()
+    draftamount_var = ctk.StringVar(value=str(default_draft_amount))
     nomodel = ctk.IntVar(value=0)
 
     port_var = ctk.StringVar(value=defaultport)
     host_var = ctk.StringVar(value="")
     multiuser_var = ctk.IntVar(value=1)
+    multiplayer_var = ctk.IntVar(value=has_multiplayer)
     horde_name_var = ctk.StringVar(value="koboldcpp")
     horde_gen_var = ctk.StringVar(value=maxhordelen)
     horde_context_var = ctk.StringVar(value=maxhordectx)
@@ -2656,8 +2922,8 @@ def show_gui():
         button = ctk.CTkButton(parent, 50, text="Browse", command= lambda a=var,b=searchtext:getfilename(a,b))
         if singlerow:
             if singlecol:
-                entry.grid(row=row, column=0, padx=(84+8), stick="w")
-                button.grid(row=row, column=0, padx=(84+width+12), stick="nw")
+                entry.grid(row=row, column=0, padx=(94+8), stick="w")
+                button.grid(row=row, column=0, padx=(94+width+12), stick="nw")
             else:
                 entry.grid(row=row, column=1, padx=8, stick="w")
                 button.grid(row=row, column=1, padx=(width+12), stick="nw")
@@ -2934,7 +3200,8 @@ def show_gui():
             sdfilepath = sd_model_var.get()
             whisperfilepath = whisper_model_var.get()
             mmprojfilepath = mmproj_var.get()
-            extract_modelfile_params(filepath,sdfilepath,whisperfilepath,mmprojfilepath)
+            draftmodelpath = draftmodel_var.get()
+            extract_modelfile_params(filepath,sdfilepath,whisperfilepath,mmprojfilepath,draftmodelpath)
             changed_gpulayers_estimate()
         pass
 
@@ -2994,6 +3261,7 @@ def show_gui():
     def togglefastforward(a,b,c):
         if fastforward.get()==0:
             contextshift.set(0)
+            smartcontext.set(0)
             togglectxshift(1,1,1)
 
     def togglectxshift(a,b,c):
@@ -3141,7 +3409,7 @@ def show_gui():
     makeslider(quick_tab, "Context Size:", contextsize_text, context_var, 0, len(contextsize_text)-1, 30, width=280, set=5,tooltip="What is the maximum context size to support. Model specific. You cannot exceed it.\nLarger contexts require more memory, and not all models support it.")
 
     # load model
-    makefileentry(quick_tab, "GGUF Model:", "Select GGUF or GGML Model File", model_var, 40, 280, onchoosefile=on_picked_model_file,tooltiptxt="Select a GGUF or GGML model file on disk to be loaded.")
+    makefileentry(quick_tab, "GGUF Text Model:", "Select GGUF or GGML Model File", model_var, 40, 280, onchoosefile=on_picked_model_file,tooltiptxt="Select a GGUF or GGML model file on disk to be loaded.")
     model_var.trace("w", gui_changed_modelfile)
 
     # Hardware Tab
@@ -3237,22 +3505,25 @@ def show_gui():
     # Model Tab
     model_tab = tabcontent["Model Files"]
 
-    makefileentry(model_tab, "Model:", "Select GGUF or GGML Model File", model_var, 1,width=280, onchoosefile=on_picked_model_file,tooltiptxt="Select a GGUF or GGML model file on disk to be loaded.")
-    makefileentry(model_tab, "Lora:", "Select Lora File",lora_var, 3,width=280,tooltiptxt="Select an optional GGML LoRA adapter to use.\nLeave blank to skip.")
-    makefileentry(model_tab, "Lora Base:", "Select Lora Base File", lora_base_var, 5,width=280,tooltiptxt="Select an optional F16 GGML LoRA base file to use.\nLeave blank to skip.")
-    makefileentry(model_tab, "Vision mmproj:", "Select Vision mmproj File", mmproj_var, 7,width=280,tooltiptxt="Select a mmproj file to use for vision models like LLaVA.\nLeave blank to skip.")
-    makefileentry(model_tab, "Preloaded Story:", "Select Preloaded Story File", preloadstory_var, 9,width=280,tooltiptxt="Select an optional KoboldAI JSON savefile \nto be served on launch to any client.")
-    makefileentry(model_tab, "ChatCompletions Adapter:", "Select ChatCompletions Adapter File", chatcompletionsadapter_var, 12, width=250, filetypes=[("JSON Adapter", "*.json")], tooltiptxt="Select an optional ChatCompletions Adapter JSON file to force custom instruct tags.")
+    makefileentry(model_tab, "Text Model:", "Select GGUF or GGML Model File", model_var, 1,width=280,singlerow=True, onchoosefile=on_picked_model_file,tooltiptxt="Select a GGUF or GGML model file on disk to be loaded.")
+    makefileentry(model_tab, "Text Lora:", "Select Lora File",lora_var, 3,width=280,singlerow=True,tooltiptxt="Select an optional GGML Text LoRA adapter to use.\nLeave blank to skip.")
+    makefileentry(model_tab, "Lora Base:", "Select Lora Base File", lora_base_var, 5,width=280,singlerow=True,tooltiptxt="Select an optional F16 GGML Text LoRA base file to use.\nLeave blank to skip.")
+    makefileentry(model_tab, "Vision mmproj:", "Select Vision mmproj File", mmproj_var, 7,width=280,singlerow=True,tooltiptxt="Select a mmproj file to use for vision models like LLaVA.\nLeave blank to skip.")
+    makefileentry(model_tab, "Draft Model:", "Select Speculative Text Model File", draftmodel_var, 9,width=280,singlerow=True,tooltiptxt="Select a draft text model file to use for speculative decoding.\nLeave blank to skip.")
+    makelabelentry(model_tab, "Draft Amount: ", draftamount_var, 11, 50,padx=100,singleline=True,tooltip="How many tokens to draft per chunk before verifying results")
+    makefileentry(model_tab, "Preload Story:", "Select Preloaded Story File", preloadstory_var, 15,width=280,singlerow=True,tooltiptxt="Select an optional KoboldAI JSON savefile \nto be served on launch to any client.")
+    makefileentry(model_tab, "ChatCompletions Adapter:", "Select ChatCompletions Adapter File", chatcompletionsadapter_var, 24, width=250, filetypes=[("JSON Adapter", "*.json")], tooltiptxt="Select an optional ChatCompletions Adapter JSON file to force custom instruct tags.")
     def pickpremadetemplate():
         initialDir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'kcpp_adapters')
         initialDir = initialDir if os.path.isdir(initialDir) else None
         fnam = askopenfilename(title="Pick Premade ChatCompletions Adapter",filetypes=[("JSON Adapter", "*.json")], initialdir=initialDir)
         if fnam:
             chatcompletionsadapter_var.set(fnam)
-    ctk.CTkButton(model_tab, 64, text="Pick Premade", command=pickpremadetemplate).grid(row=13, column=0, padx=322, stick="nw")
+    ctk.CTkButton(model_tab, 64, text="Pick Premade", command=pickpremadetemplate).grid(row=25, column=0, padx=322, stick="nw")
 
     mmproj_var.trace("w", gui_changed_modelfile)
-    makecheckbox(model_tab, "Allow Launch Without Models", nomodel, 15, tooltiptxt="Allows running the WebUI with no model loaded.")
+    draftmodel_var.trace("w", gui_changed_modelfile)
+    makecheckbox(model_tab, "Allow Launch Without Models", nomodel, 27, tooltiptxt="Allows running the WebUI with no model loaded.")
 
     # Network Tab
     network_tab = tabcontent["Network"]
@@ -3266,6 +3537,7 @@ def show_gui():
     makecheckbox(network_tab, "Quiet Mode", quietmode, 4,tooltiptxt="Prevents all generation related terminal output from being displayed.")
     makecheckbox(network_tab, "Check For Updates", checkforupdates, 5, tooltiptxt="Check for updates on startup")
     makecheckbox(network_tab, "NoCertify Mode (Insecure)", nocertifymode, 4, 1,tooltiptxt="Allows insecure SSL connections. Use this if you have cert errors and need to bypass certificate restrictions.")
+    makecheckbox(network_tab, "Shared Multiplayer", multiplayer_var, 5,tooltiptxt="Hosts a shared multiplayer session that others can join.")
 
     makefileentry(network_tab, "SSL Cert:", "Select SSL cert.pem file",ssl_cert_var, 6, width=200 ,filetypes=[("Unencrypted Certificate PEM", "*.pem")], singlerow=True, singlecol=False,tooltiptxt="Select your unencrypted .pem SSL certificate file for https.\nCan be generated with OpenSSL.")
     makefileentry(network_tab, "SSL Key:", "Select SSL key.pem file", ssl_key_var, 8, width=200, filetypes=[("Unencrypted Key PEM", "*.pem")], singlerow=True, singlecol=False, tooltiptxt="Select your unencrypted .pem SSL key file for https.\nCan be generated with OpenSSL.")
@@ -3326,9 +3598,9 @@ def show_gui():
     makecheckbox(images_tab, "Compress Weights (Saves Memory)", sd_quant_var, 8,command=togglesdquant,tooltiptxt="Quantizes the SD model weights to save memory. May degrade quality.")
     sd_quant_var.trace("w", changed_gpulayers_estimate)
 
-    makefileentry(images_tab, "T5-XXL File:", "Select Optional T5-XXL model file (SD3 or flux)",sd_t5xxl_var, 14, width=280, singlerow=True, filetypes=[("*.safetensors", "*.safetensors")],tooltiptxt="Select a .safetensors t5xxl file to be loaded.")
-    makefileentry(images_tab, "Clip-L File:", "Select Optional Clip-L model file (SD3 or flux)",sd_clipl_var, 16, width=280, singlerow=True, filetypes=[("*.safetensors", "*.safetensors")],tooltiptxt="Select a .safetensors t5xxl file to be loaded.")
-    makefileentry(images_tab, "Clip-G File:", "Select Optional Clip-G model file (SD3)",sd_clipg_var, 18, width=280, singlerow=True, filetypes=[("*.safetensors", "*.safetensors")],tooltiptxt="Select a .safetensors t5xxl file to be loaded.")
+    makefileentry(images_tab, "T5-XXL File:", "Select Optional T5-XXL model file (SD3 or flux)",sd_t5xxl_var, 14, width=280, singlerow=True, filetypes=[("*.safetensors *.gguf","*.safetensors *.gguf")],tooltiptxt="Select a .safetensors t5xxl file to be loaded.")
+    makefileentry(images_tab, "Clip-L File:", "Select Optional Clip-L model file (SD3 or flux)",sd_clipl_var, 16, width=280, singlerow=True, filetypes=[("*.safetensors *.gguf","*.safetensors *.gguf")],tooltiptxt="Select a .safetensors t5xxl file to be loaded.")
+    makefileentry(images_tab, "Clip-G File:", "Select Optional Clip-G model file (SD3)",sd_clipg_var, 18, width=280, singlerow=True, filetypes=[("*.safetensors *.gguf","*.safetensors *.gguf")],tooltiptxt="Select a .safetensors t5xxl file to be loaded.")
 
     sdvaeitem1,sdvaeitem2,sdvaeitem3 = makefileentry(images_tab, "Image VAE:", "Select Optional SD VAE file",sd_vae_var, 20, width=280, singlerow=True, filetypes=[("*.safetensors *.gguf", "*.safetensors *.gguf")],tooltiptxt="Select a .safetensors or .gguf SD VAE file to be loaded.")
     def toggletaesd(a,b,c):
@@ -3503,6 +3775,8 @@ def show_gui():
         except Exception as ex2:
             pass
         args.mmproj = None if mmproj_var.get() == "" else mmproj_var.get()
+        args.draftmodel = None if draftmodel_var.get() == "" else draftmodel_var.get()
+        args.draftamount = int(draftamount_var.get()) if draftamount_var.get()!="" else default_draft_amount
 
         args.ssl = None if (ssl_cert_var.get() == "" or ssl_key_var.get() == "") else ([ssl_cert_var.get(), ssl_key_var.get()])
         args.password = None if (password_var.get() == "") else (password_var.get())
@@ -3510,6 +3784,7 @@ def show_gui():
         args.port_param = defaultport if port_var.get()=="" else int(port_var.get())
         args.host = host_var.get()
         args.multiuser = multiuser_var.get()
+        args.multiplayer = (multiplayer_var.get()==1)
 
         if usehorde_var.get() != 0:
             args.hordemodelname = horde_name_var.get()
@@ -3663,6 +3938,9 @@ def show_gui():
                 lora_var.set(dict["lora"][0])
 
         mmproj_var.set(dict["mmproj"] if ("mmproj" in dict and dict["mmproj"]) else "")
+        draftmodel_var.set(dict["draftmodel"] if ("draftmodel" in dict and dict["draftmodel"]) else "")
+        if "draftamount" in dict:
+            draftamount_var.set(dict["draftamount"])
 
         ssl_cert_var.set("")
         ssl_key_var.set("")
@@ -3677,6 +3955,7 @@ def show_gui():
         port_var.set(dict["port_param"] if ("port_param" in dict and dict["port_param"]) else defaultport)
         host_var.set(dict["host"] if ("host" in dict and dict["host"]) else "")
         multiuser_var.set(dict["multiuser"] if ("multiuser" in dict) else 1)
+        multiplayer_var.set(dict["multiplayer"] if ("multiplayer" in dict) else 0)
 
         horde_name_var.set(dict["hordemodelname"] if ("hordemodelname" in dict and dict["hordemodelname"]) else "koboldcpp")
         horde_context_var.set(dict["hordemaxctx"] if ("hordemaxctx" in dict and dict["hordemaxctx"]) else maxhordectx)
@@ -4041,7 +4320,7 @@ def run_horde_worker(args, api_key, worker_name):
     session_starttime = datetime.now()
     sleepy_counter = 0 #if this exceeds a value, worker becomes sleepy (slower)
     exitcounter = 0
-    print(f"===\nEmbedded Horde Worker '{worker_name}' Starting...\n(To use your own Horde Bridge/Scribe worker instead, don't set your API key)")
+    print(f"===\nEmbedded Horde Worker '{worker_name}' Starting...\n(To use your own Horde Bridge/Scribe worker instead, don't set your API key)\n")
     BRIDGE_AGENT = f"KoboldCppEmbedWorker:2:https://github.com/LostRuins/koboldcpp"
     cluster = "https://aihorde.net"
     while exitcounter < 10:
@@ -4619,19 +4898,19 @@ def main(launch_args,start_server=True):
         if dlfile:
             args.sdmodel = dlfile
     if args.sdt5xxl and args.sdt5xxl!="":
-        dlfile = download_model_from_url(args.sdt5xxl,[".safetensors"])
+        dlfile = download_model_from_url(args.sdt5xxl,[".gguf",".safetensors"])
         if dlfile:
             args.sdt5xxl = dlfile
     if args.sdclipl and args.sdclipl!="":
-        dlfile = download_model_from_url(args.sdclipl,[".safetensors"])
+        dlfile = download_model_from_url(args.sdclipl,[".gguf",".safetensors"])
         if dlfile:
             args.sdclipl = dlfile
     if args.sdclipg and args.sdclipg!="":
-        dlfile = download_model_from_url(args.sdclipg,[".safetensors"])
+        dlfile = download_model_from_url(args.sdclipg,[".gguf",".safetensors"])
         if dlfile:
             args.sdclipg = dlfile
     if args.sdvae and args.sdvae!="":
-        dlfile = download_model_from_url(args.sdvae,[".safetensors"])
+        dlfile = download_model_from_url(args.sdvae,[".gguf",".safetensors"])
         if dlfile:
             args.sdvae = dlfile
     if args.mmproj and args.mmproj!="":
@@ -4642,6 +4921,10 @@ def main(launch_args,start_server=True):
         dlfile = download_model_from_url(args.whispermodel,[".gguf",".bin"])
         if dlfile:
             args.whispermodel = dlfile
+    if args.draftmodel and args.draftmodel!="":
+        dlfile = download_model_from_url(args.draftmodel,[".gguf"])
+        if dlfile:
+            args.draftmodel = dlfile
 
     # sanitize and replace the default vanity name. remember me....
     if args.model_param and args.model_param!="":
@@ -4650,7 +4933,7 @@ def main(launch_args,start_server=True):
         friendlymodelname = "koboldcpp/" + sanitize_string(newmdldisplayname)
 
     # horde worker settings
-    global maxhordelen, maxhordectx, showdebug
+    global maxhordelen, maxhordectx, showdebug, has_multiplayer
     if args.hordemodelname and args.hordemodelname!="":
         friendlymodelname = args.hordemodelname
         if args.debugmode == 1:
@@ -4667,6 +4950,9 @@ def main(launch_args,start_server=True):
 
     if args.debugmode != 1:
         showdebug = False
+
+    if args.multiplayer:
+        has_multiplayer = True
 
     if args.highpriority:
         print("Setting process to Higher Priority - Use Caution")
@@ -4714,7 +5000,7 @@ def main(launch_args,start_server=True):
                 pass
             if args.gpulayers==-1:
                 if MaxMemory[0] > 0 and (not args.usecpu) and ((args.usecublas is not None) or (args.usevulkan is not None) or (args.useclblast is not None) or sys.platform=="darwin"):
-                    extract_modelfile_params(args.model_param,args.sdmodel,args.whispermodel,args.mmproj)
+                    extract_modelfile_params(args.model_param,args.sdmodel,args.whispermodel,args.mmproj,args.draftmodel)
                     layeramt = autoset_gpu_layers(args.contextsize,args.sdquant,args.blasbatchsize)
                     print(f"Auto Recommended GPU Layers: {layeramt}")
                     args.gpulayers = layeramt
@@ -5114,6 +5400,7 @@ if __name__ == '__main__':
     advparser.add_argument("--prompt", metavar=('[prompt]'), help="Passing a prompt string triggers a direct inference, loading the model, outputs the response to stdout and exits. Can be used alone or with benchmark.", type=str, default="")
     advparser.add_argument("--promptlimit", help="Sets the maximum number of generated tokens, usable only with --prompt or --benchmark",metavar=('[token limit]'), type=int, default=100)
     advparser.add_argument("--multiuser", help="Runs in multiuser mode, which queues incoming requests instead of blocking them.", metavar=('limit'), nargs='?', const=1, type=int, default=1)
+    advparser.add_argument("--multiplayer", help="Hosts a shared multiplayer session that others can join.", action='store_true')
     advparser.add_argument("--remotetunnel", help="Uses Cloudflare to create a remote tunnel, allowing you to access koboldcpp remotely over the internet even behind a firewall.", action='store_true')
     advparser.add_argument("--highpriority", help="Experimental flag. If set, increases the process CPU priority, potentially speeding up generation. Use caution.", action='store_true')
     advparser.add_argument("--foreground", help="Windows only. Sends the terminal to the foreground every time a new prompt is generated. This helps avoid some idle slowdown issues.", action='store_true')
@@ -5122,6 +5409,8 @@ if __name__ == '__main__':
     advparser.add_argument("--ssl", help="Allows all content to be served over SSL instead. A valid UNENCRYPTED SSL cert and key .pem files must be provided", metavar=('[cert_pem]', '[key_pem]'), nargs='+')
     advparser.add_argument("--nocertify", help="Allows insecure SSL connections. Use this if you have cert errors and need to bypass certificate restrictions.", action='store_true')
     advparser.add_argument("--mmproj", help="Select a multimodal projector file for vision models like LLaVA.", default="")
+    advparser.add_argument("--draftmodel", help="Load a small draft model for speculative decoding. It will be fully offloaded. Vocab must match the main model.", default="")
+    advparser.add_argument("--draftamount", metavar=('[tokens]'), help="How many tokens to draft per chunk before verifying results", type=int, default=default_draft_amount)
     advparser.add_argument("--password", help="Enter a password required to use this instance. This key will be required for all text endpoints. Image endpoints are not secured.", default=None)
     advparser.add_argument("--ignoremissing", help="Ignores all missing non-essential files, just skipping them instead.", action='store_true')
     advparser.add_argument("--chatcompletionsadapter", help="Select an optional ChatCompletions Adapter JSON file to force custom instruct tags.", default="")

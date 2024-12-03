@@ -258,7 +258,7 @@ bool sdtype_load_model(const sd_load_model_inputs inputs) {
                         sd_params->vae_on_cpu);
 
     if (sd_ctx == NULL) {
-        printf("\nError: KCPP SD Failed to create context!\n");
+        printf("\nError: KCPP SD Failed to create context!\nIf using Flux/SD3.5, make sure you have ALL files required (e.g. VAE, T5, Clip...) or baked in!\n");
         return false;
     }
 
@@ -357,11 +357,12 @@ sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
     int img2imgC = 3; // Assuming RGB image
     std::vector<uint8_t> resized_image_buf(img2imgW * img2imgH * img2imgC);
 
+    std::string ts = get_timestamp_str();
     if(!is_quiet)
     {
-        printf("\nGenerating Image (%d steps)\n",inputs.sample_steps);
+        printf("\n[%s] Generating Image (%d steps)\n",ts.c_str(),inputs.sample_steps);
     }else{
-        printf("\nGenerating (%d st.)\n",inputs.sample_steps);
+        printf("\n[%s] Generating (%d st.)\n",ts.c_str(),inputs.sample_steps);
     }
 
     fflush(stdout);

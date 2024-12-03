@@ -6,7 +6,7 @@ sleep 4
 # install dependencies
 pip install pyinstaller customtkinter && make clean && \
 # Ensure all backends are built then build executable file
-make LLAMA_HIPBLAS=1 LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1 -j$NUMCPUS && \
+make LLAMA_HIPBLAS=1 LLAMA_VULKAN=1 LLAMA_OPENBLAS=1 -j$NUMCPUS && \
 pyinstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all libclblast-dev --collect-all clinfo --icon ".\niko.ico" \
 --add-data "./kcpp_adapters:./kcpp_adapters" \
 --add-data "./koboldcpp.py:." \
@@ -22,4 +22,5 @@ pyinstaller --noconfirm --onefile --clean --console --collect-all customtkinter 
 --add-data "./rwkv_vocab.embd:." \
 --add-data "./rwkv_world_vocab.embd:." \
 --add-data "/opt/rocm/lib/rocblas:." \
+--version-file "./version.txt" \
 "./koboldcpp.py" -n "koboldcpp_rocm"
