@@ -60,7 +60,7 @@ For more information, be sure to run the program with the `--help` flag, or [che
   ``cd koboldcpp-rocm``
   ``mkdir build && cd build``
 
-  ```cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DHIP_PLATFORM=amd -DCMAKE_C_COMPILER="C:/Program Files/AMD/ROCm/5.7/bin/clang.exe" -DCMAKE_CXX_COMPILER="C:/Program Files/AMD/ROCm/5.7/bin/clang++.exe" -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"```
+  ```cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DLLAMA_HIPBLAS=ON -DHIP_PLATFORM=amd -DCMAKE_C_COMPILER="C:/Program Files/AMD/ROCm/6.1/bin/clang.exe" -DCMAKE_CXX_COMPILER="C:/Program Files/AMD/ROCm/6.1/bin/clang++.exe" -DAMDGPU_TARGETS="gfx803;gfx900;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"```
 
   ``cmake --build . -j 6`` (-j 6 means use 6 CPU cores, if you have more or less, feel free to change it to speed things up)
 
@@ -81,16 +81,16 @@ I'm not 100% sure if using w64devkit is still needed, using the Windows Terminal
 Before starting,
 
 1. Make sure when you type `python --version` it shows at least "*Python 3.10"*, I don't recommend using Python 3.11 or 3.12 for this; if its below Python 3.10, please upgrade Python. [Use the Windows Installer (64 bit) File on this page](https://www.python.org/downloads/release/python-31011/). After updating close out of Windows Terminal or w64devkit and reopen it, typing `python --version` should show "*Python 3.10.11*".
-2. Make sure you have AMD ROCm 5.7 installed before doing this. Also, I recommend changing the "*AMDGPU\_TARGETS*" to only the one you're using as it will speed up compilation time significantly.
+2. Make sure you have AMD ROCm 6.2 installed before doing this. Also, I recommend changing the "*AMDGPU\_TARGETS*" to only the one you're using as it will speed up compilation time significantly.
 ```
 git clone https://github.com/YellowRoseCx/koboldcpp-rocm
 cd koboldcpp-rocm
 mkdir build && cd build
 python -m pip install cmake ninja pyinstaller==6.4.0 psutil customtkinter
 
-set CC=C:\Program Files\AMD\ROCm\5.7\bin\clang.exe
-set CXX=C:\Program Files\AMD\ROCm\5.7\bin\clang++.exe
-set CMAKE_PREFIX_PATH=C:\Program Files\AMD\ROCm\5.7
+set CC=C:\Program Files\AMD\ROCm\6.1\bin\clang.exe
+set CXX=C:\Program Files\AMD\ROCm\6.1\bin\clang++.exe
+set CMAKE_PREFIX_PATH=C:\Program Files\AMD\ROCm\6.1
 ```
 Then you can double check that CLang is set to the right version by using `clang --version` which should show "*AMD clang version 17.0.0*"
 
@@ -103,24 +103,24 @@ Everything should be fine and dandy then. After that, you'll need to copy "*kobo
 
 If you are using a AMD RX 6800 or 6900 variant or RX 7800 or 7900 variant, You should be able to run it directly with either `python koboldcpp.py` (for the GUI) or `python koboldcpp.py --usecublas mmq --threads 1 --contextsize 4096 --gpulayers 45 C:\Users\USERNAME\llama-2-7b-chat.Q8_0.gguf` for starting via command line.
 
-If you have an AMD GPU that's a RX6600 or RX6700 variant, you'll either need to compile the ROCm tensile library files yourself (in lazy mode IIRC?) or use the community provided tensile libraries here: [https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.zip](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.zip)
+If you have an AMD GPU that's a RX6600 or RX6700 variant, you'll either need to compile the ROCm tensile library files yourself (in lazy mode IIRC?) or use the community provided tensile libraries here: [https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/deps-v6.2.0/rocblas-6.2.0.dll.7z](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/deps-v6.2.0/rocblas-6.2.0.dll.7z)
 
-I've never done it *this* way, but if you're not compiling the exe, extract that zip file into *C:/Program Files/AMD/ROCm/5.7/bin/* it should merge with the "rocblas" folder that's already in there.
+I've never done it *this* way, but if you're not compiling the exe, extract that zip file into *C:/Program Files/AMD/ROCm/6.1/bin/* it should merge with the "rocblas" folder that's already in there.
 
 To build the exe, you *should* be able to use *"make\_pyinstaller\_exe\_rocm\_only.bat"* otherwise, make sure you're in the main /koboldcpp-rocm folder and you can do this:
 
-    copy "C:\Program Files\AMD\ROCm\5.7\bin\hipblas.dll" .\ /Y
-    copy "C:\Program Files\AMD\ROCm\5.7\bin\rocblas.dll" .\ /Y
-    xcopy /E /I "C:\Program Files\AMD\ROCm\5.7\bin\rocblas" .\rocblas\ /Y
+    copy "C:\Program Files\AMD\ROCm\6.1\bin\hipblas.dll" .\ /Y
+    copy "C:\Program Files\AMD\ROCm\6.1\bin\rocblas.dll" .\ /Y
+    xcopy /E /I "C:\Program Files\AMD\ROCm\6.1\bin\rocblas" .\rocblas\ /Y
 
-Then with that *gfx103132rocblasfiles.zip* file, extract the "rocblas" folder into /koboldcpp-rocm, the previous command will have copied the ROCm rocblas folder into /koboldcpp-rocm and you are merging the .zip files into that same folder. It can be done by hand, or by code like:
+Then with that *rocblas-6.2.0.dll.7z* file, extract the "rocblas" folder into /koboldcpp-rocm, the previous command will have copied the ROCm rocblas folder into /koboldcpp-rocm and you are merging the .zip files into that same folder. It can be done by hand, or by code like:
 
-    curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/v1.43.2-ROCm/gfx103132rocblasfiles.zip
-    tar -xf gfx103132rocblasfiles.zip -C .\ --strip-components=1
+    curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/deps-v6.2.0/rocblas-6.2.0.dll.7z
+    7z x rocblas-6.2.0.dll.7z -aoa
 
 Then you should be able to make the .exe file with this command:
 
-    PyInstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all psutil --icon "./niko.ico" --add-data "./winclinfo.exe;." --add-data "./OpenCL.dll;." --add-data "./klite.embd;." --add-data "./kcpp_docs.embd;." --add-data="./kcpp_sdui.embd;." --add-data="./taesd.embd;." --add-data="./taesd_xl.embd;." --add-data "./koboldcpp_default.dll;." --add-data "./koboldcpp_openblas.dll;." --add-data "./koboldcpp_failsafe.dll;." --add-data "./koboldcpp_noavx2.dll;." --add-data "./libopenblas.dll;." --add-data "./koboldcpp_clblast.dll;." --add-data "./koboldcpp_clblast_noavx2.dll;." --add-data "./koboldcpp_vulkan_noavx2.dll;." --add-data "./clblast.dll;." --add-data "./koboldcpp_vulkan.dll;." --add-data "./vulkan-1.dll;." --add-data "./rwkv_vocab.embd;." --add-data "./rwkv_world_vocab.embd;." --add-data "./koboldcpp_hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/rocblas.dll;." --add-data "C:/Program Files/AMD/ROCm/5.7/bin/rocblas;." --add-data "C:/Windows/System32/msvcp140.dll;." --add-data "C:/Windows/System32/vcruntime140_1.dll;." "./koboldcpp.py" -n "koboldcpp_rocm_full.exe"
+    PyInstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all psutil --icon "./niko.ico" --add-data "./winclinfo.exe;." --add-data "./OpenCL.dll;." --add-data "./klite.embd;." --add-data "./kcpp_docs.embd;." --add-data="./kcpp_sdui.embd;." --add-data="./taesd.embd;." --add-data="./taesd_xl.embd;." --add-data "./koboldcpp_default.dll;." --add-data "./koboldcpp_openblas.dll;." --add-data "./koboldcpp_failsafe.dll;." --add-data "./koboldcpp_noavx2.dll;." --add-data "./libopenblas.dll;." --add-data "./koboldcpp_clblast.dll;." --add-data "./koboldcpp_clblast_noavx2.dll;." --add-data "./koboldcpp_vulkan_noavx2.dll;." --add-data "./clblast.dll;." --add-data "./koboldcpp_vulkan.dll;." --add-data "./vulkan-1.dll;." --add-data "./rwkv_vocab.embd;." --add-data "./rwkv_world_vocab.embd;." --add-data "./koboldcpp_hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/6.1/bin/hipblas.dll;." --add-data "C:/Program Files/AMD/ROCm/6.1/bin/rocblas.dll;." --add-data "C:/Program Files/AMD/ROCm/6.1/bin/rocblas;." --add-data "C:/Windows/System32/msvcp140.dll;." --add-data "C:/Windows/System32/vcruntime140_1.dll;." "./koboldcpp.py" -n "koboldcpp_rocm_full.exe"
 
 
 

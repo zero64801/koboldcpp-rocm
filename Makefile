@@ -1,11 +1,13 @@
 # Add custom options to Makefile.local rather than editing this file.
 -include $(abspath $(lastword ${MAKEFILE_LIST})).local
 
-default: koboldcpp_default koboldcpp_failsafe koboldcpp_noavx2 koboldcpp_clblast koboldcpp_clblast_noavx2 koboldcpp_cublas koboldcpp_hipblas koboldcpp_vulkan koboldcpp_vulkan_noavx2
+.PHONY: finishedmsg
+
+default: koboldcpp_default koboldcpp_failsafe koboldcpp_noavx2 koboldcpp_clblast koboldcpp_clblast_noavx2 koboldcpp_cublas koboldcpp_hipblas koboldcpp_vulkan koboldcpp_vulkan_noavx2 finishedmsg
 tools: quantize_gpt2 quantize_gptj quantize_gguf quantize_neox quantize_mpt quantize_clip whispermain sdmain gguf-split llama-bench perplexity 
-dev: koboldcpp_openblas
+dev: koboldcpp_default
 dev2: koboldcpp_clblast
-dev3: koboldcpp_vulkan
+dev3: koboldcpp_vulkan finishedmsg
 
 ifndef UNAME_S
 UNAME_S := $(shell uname -s)
@@ -17,6 +19,10 @@ endif
 
 ifndef UNAME_M
 UNAME_M := $(shell uname -m)
+endif
+
+ifndef UNAME_O
+UNAME_O := $(shell uname -o)
 endif
 
 ifneq ($(shell grep -e "Arch Linux" -e "ID_LIKE=arch" /etc/os-release 2>/dev/null),)
@@ -41,15 +47,15 @@ endif
 # Compile flags
 #
 
-# keep standard at C11 and C++11
+# keep standard at C11 and C++17
 CFLAGS =
 CXXFLAGS =
 ifdef KCPP_DEBUG
 	CFLAGS = -g -O0
 	CXXFLAGS = -g -O0
 endif
-CFLAGS   += -I. -Iggml/include -Iggml/src -Iggml/src/ggml-cpu -Iinclude -Isrc -I./include -I./include/CL -I./otherarch -I./otherarch/tools -I./otherarch/sdcpp -I./otherarch/sdcpp/thirdparty -I./include/vulkan -O3 -fno-finite-math-only -std=c11 -fPIC -DLOG_DISABLE_LOGS -D_GNU_SOURCE -DGGML_USE_CPU
-CXXFLAGS += -I. -Iggml/include -Iggml/src -Iggml/src/ggml-cpu -Iinclude -Isrc -I./common -I./include -I./include/CL -I./otherarch -I./otherarch/tools -I./otherarch/sdcpp -I./otherarch/sdcpp/thirdparty -I./include/vulkan -O3 -fno-finite-math-only -std=c++11 -fPIC -DLOG_DISABLE_LOGS -D_GNU_SOURCE -DGGML_USE_CPU
+CFLAGS   += -I. -Iggml/include -Iggml/src -Iggml/src/ggml-cpu -Iinclude -Isrc -I./include -I./include/CL -I./otherarch -I./otherarch/tools -I./otherarch/sdcpp -I./otherarch/sdcpp/thirdparty -I./include/vulkan -O3 -fno-finite-math-only -std=c11 -fPIC -DLOG_DISABLE_LOGS -D_GNU_SOURCE -DGGML_USE_CPU -DGGML_USE_CPU_AARCH64
+CXXFLAGS += -I. -Iggml/include -Iggml/src -Iggml/src/ggml-cpu -Iinclude -Isrc -I./common -I./include -I./include/CL -I./otherarch -I./otherarch/tools -I./otherarch/sdcpp -I./otherarch/sdcpp/thirdparty -I./include/vulkan -O3 -fno-finite-math-only -std=c++17 -fPIC -DLOG_DISABLE_LOGS -D_GNU_SOURCE -DGGML_USE_CPU -DGGML_USE_CPU_AARCH64
 ifndef KCPP_DEBUG
 	CFLAGS += -DNDEBUG -s
 	CXXFLAGS += -DNDEBUG -s
@@ -88,9 +94,9 @@ endif
 CUBLASLD_FLAGS =
 CUBLAS_OBJS =
 
-OBJS_FULL += ggml-alloc.o ggml-aarch64.o ggml-quants.o ggml-cpu-quants.o ggml-cpu-aarch64.o unicode.o unicode-data.o ggml-threading.o ggml-cpu-cpp.o sgemm.o common.o sampling.o
-OBJS_SIMPLE += ggml-alloc.o ggml-aarch64.o ggml-quants_noavx2.o ggml-cpu-quants_noavx2.o ggml-cpu-aarch64_noavx2.o unicode.o unicode-data.o ggml-threading.o ggml-cpu-cpp.o sgemm_noavx2.o common.o sampling.o
-OBJS_FAILSAFE += ggml-alloc.o ggml-aarch64.o ggml-quants_failsafe.o ggml-cpu-quants_failsafe.o ggml-cpu-aarch64_failsafe.o unicode.o unicode-data.o ggml-threading.o ggml-cpu-cpp.o sgemm_failsafe.o common.o sampling.o
+OBJS_FULL += ggml-alloc.o ggml-cpu-traits.o ggml-quants.o ggml-cpu-quants.o ggml-cpu-aarch64.o unicode.o unicode-data.o ggml-threading.o ggml-cpu-cpp.o sgemm.o common.o sampling.o
+OBJS_SIMPLE += ggml-alloc.o ggml-cpu-traits.o ggml-quants_noavx2.o ggml-cpu-quants_noavx2.o ggml-cpu-aarch64_noavx2.o unicode.o unicode-data.o ggml-threading.o ggml-cpu-cpp.o sgemm_noavx2.o common.o sampling.o
+OBJS_FAILSAFE += ggml-alloc.o ggml-cpu-traits.o ggml-quants_failsafe.o ggml-cpu-quants_failsafe.o ggml-cpu-aarch64_failsafe.o unicode.o unicode-data.o ggml-threading.o ggml-cpu-cpp.o sgemm_failsafe.o common.o sampling.o
 
 # OS specific
 # TODO: support Windows
@@ -133,10 +139,13 @@ ifdef LLAMA_PERF
 	CXXFLAGS += -DGGML_PERF
 endif
 
+CCV := $(shell $(CC) --version | head -n 1)
+CXXV := $(shell $(CXX) --version | head -n 1)
+
 # Architecture specific
 # TODO: probably these flags need to be tweaked on some architectures
 # feel free to update the Makefile for your architecture and send a pull request or issue
-ifeq ($(UNAME_M),$(filter $(UNAME_M),x86_64 i686))
+ifeq ($(UNAME_M),$(filter $(UNAME_M),x86_64 i686 amd64))
 	# Use all CPU extensions that are available:
 # old library NEEDS mf16c to work. so we must build with it. new one doesnt
 	ifeq ($(OS),Windows_NT)
@@ -330,9 +339,26 @@ endif # LLAMA_METAL
 ifneq ($(filter aarch64%,$(UNAME_M)),)
 	# Apple M1, M2, etc.
 	# Raspberry Pi 3, 4, Zero 2 (64-bit)
-	CFLAGS 	 +=
-	CXXFLAGS +=
+	ifdef LLAMA_PORTABLE
+		CFLAGS +=
+		CXXFLAGS +=
+	else
+		# sve is cooked on termux so we are disabling it
+		ifeq ($(UNAME_O), Android)
+			ifneq ($(findstring clang, $(CCV)), )
+				CFLAGS += -mcpu=native+nosve
+				CXXFLAGS += -mcpu=native+nosve
+			else
+				CFLAGS += -mcpu=native
+				CXXFLAGS += -mcpu=native
+			endif
+		else
+			CFLAGS += -mcpu=native
+			CXXFLAGS += -mcpu=native
+		endif
+	endif
 endif
+
 ifneq ($(filter armv6%,$(UNAME_M)),)
 	# Raspberry Pi 1, Zero
 	CFLAGS 	 += -mfpu=neon-fp-armv8 -mfp16-format=ieee -mno-unaligned-access
@@ -364,6 +390,7 @@ CLBLAST_BUILD =
 CUBLAS_BUILD =
 HIPBLAS_BUILD =
 VULKAN_BUILD =
+NOTIFY_MSG =
 
 ifeq ($(OS),Windows_NT)
 	DEFAULT_BUILD = $(CXX) $(CXXFLAGS)  $^ -shared -o $@.dll $(LDFLAGS)
@@ -381,8 +408,10 @@ ifeq ($(OS),Windows_NT)
 else
 	DEFAULT_BUILD = $(CXX) $(CXXFLAGS) $^ -shared -o $@.so $(LDFLAGS)
 	ifdef LLAMA_PORTABLE
+	ifeq ($(UNAME_M),$(filter $(UNAME_M),x86_64 i686 amd64))
 	FAILSAFE_BUILD = $(CXX) $(CXXFLAGS)  $^ -shared -o $@.so $(LDFLAGS)
 	NOAVX2_BUILD = $(CXX) $(CXXFLAGS)  $^ -shared -o $@.so $(LDFLAGS)
+	endif
 	endif
 
 	ifdef LLAMA_CLBLAST
@@ -406,7 +435,9 @@ else
 	ifndef LLAMA_CUBLAS
 	ifndef LLAMA_HIPBLAS
 	ifndef LLAMA_VULKAN
-	VULKAN_BUILD = @echo 'Your OS $(OS) does not appear to be Windows. For faster speeds, install and link a BLAS library. Set LLAMA_VULKAN=1 to compile with Vulkan support. This is just a reminder, not an error.'
+	ifndef LLAMA_METAL
+	NOTIFY_MSG = @echo -e '\n***\nYou did a basic CPU build. For faster speeds, consider installing and linking a GPU BLAS library. For example, set LLAMA_VULKAN=1 to compile with Vulkan support. Read the KoboldCpp Wiki for more information. This is just a reminder, not an error.\n***\n'
+	endif
 	endif
 	endif
 	endif
@@ -422,10 +453,11 @@ HCXXV := $(shell $(HCXX) --version | head -n 1)
 # Print build information
 #
 
-$(info I llama.cpp build info: )
+$(info I koboldcpp build info: )
 $(info I UNAME_S:  $(UNAME_S))
 $(info I UNAME_P:  $(UNAME_P))
 $(info I UNAME_M:  $(UNAME_M))
+$(info I UNAME_O:  $(UNAME_O))
 $(info I CFLAGS:   $(CFLAGS))
 $(info I CXXFLAGS: $(CXXFLAGS))
 $(info I LDFLAGS:  $(LDFLAGS))
@@ -483,12 +515,12 @@ ggml-cpu-quants_failsafe.o: ggml/src/ggml-cpu/ggml-cpu-quants.c ggml/include/ggm
 	$(CC)  $(CFLAGS) $(NONECFLAGS) -c $< -o $@
 
 #aarch64
-ggml-cpu-aarch64.o: ggml/src/ggml-cpu/ggml-cpu-aarch64.c ggml/include/ggml.h ggml/src/ggml-cpu/ggml-cpu-aarch64.h
-	$(CC)  $(CFLAGS) $(FULLCFLAGS) -c $< -o $@
-ggml-cpu-aarch64_noavx2.o: ggml/src/ggml-cpu/ggml-cpu-aarch64.c ggml/include/ggml.h ggml/src/ggml-cpu/ggml-cpu-aarch64.h
-	$(CC)  $(CFLAGS) $(SIMPLECFLAGS) -c $< -o $@
-ggml-cpu-aarch64_failsafe.o: ggml/src/ggml-cpu/ggml-cpu-aarch64.c ggml/include/ggml.h ggml/src/ggml-cpu/ggml-cpu-aarch64.h
-	$(CC)  $(CFLAGS) $(NONECFLAGS) -c $< -o $@
+ggml-cpu-aarch64.o: ggml/src/ggml-cpu/ggml-cpu-aarch64.cpp ggml/include/ggml.h ggml/src/ggml-cpu/ggml-cpu-aarch64.h
+	$(CXX) $(CXXFLAGS) $(FULLCFLAGS) -c $< -o $@
+ggml-cpu-aarch64_noavx2.o: ggml/src/ggml-cpu/ggml-cpu-aarch64.cpp ggml/include/ggml.h ggml/src/ggml-cpu/ggml-cpu-aarch64.h
+	$(CXX) $(CXXFLAGS) $(SIMPLECFLAGS) -c $< -o $@
+ggml-cpu-aarch64_failsafe.o: ggml/src/ggml-cpu/ggml-cpu-aarch64.cpp ggml/include/ggml.h ggml/src/ggml-cpu/ggml-cpu-aarch64.h
+	$(CXX) $(CXXFLAGS) $(NONECFLAGS) -c $< -o $@
 
 #sgemm
 sgemm.o: ggml/src/ggml-cpu/llamafile/sgemm.cpp ggml/src/ggml-cpu/llamafile/sgemm.h ggml/include/ggml.h
@@ -507,8 +539,8 @@ unicode.o: src/unicode.cpp src/unicode.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 unicode-data.o: src/unicode-data.cpp src/unicode-data.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-ggml-aarch64.o: ggml/src/ggml-aarch64.c ggml/include/ggml.h ggml/src/ggml-aarch64.h ggml/src/ggml-common.h
-	$(CC)  $(CFLAGS) -c $< -o $@
+ggml-cpu-traits.o: ggml/src/ggml-cpu/ggml-cpu-traits.cpp ggml/src/ggml-cpu/ggml-cpu-traits.h ggml/include/ggml.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 ggml-threading.o: ggml/src/ggml-threading.cpp ggml/include/ggml.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 ggml-cpu-cpp.o: ggml/src/ggml-cpu/ggml-cpu.cpp ggml/include/ggml.h ggml/src/ggml-common.h
@@ -573,7 +605,7 @@ ggml_v1_failsafe.o: otherarch/ggml_v1.c otherarch/ggml_v1.h
 	$(CC)  $(FASTCFLAGS) $(NONECFLAGS) -c $< -o $@
 
 #opencl
-ggml-opencl.o: ggml-opencl.cpp ggml-opencl.h
+ggml-opencl.o: otherarch/ggml_v3b-opencl.cpp otherarch/ggml_v3b-opencl.h
 	$(CXX) $(CXXFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
 ggml_v2-opencl.o: otherarch/ggml_v2-opencl.cpp otherarch/ggml_v2-opencl.h
 	$(CXX) $(CXXFLAGS) $(CLBLAST_FLAGS) -c $< -o $@
@@ -749,4 +781,9 @@ simpleclinfo: simpleclinfo.cpp
 	$(CXX) $(CXXFLAGS) $^ lib/OpenCL.lib lib/clblast.lib -o $@ $(LDFLAGS)
 
 build-info.h:
+	$(DONOTHING)
+
+#phony for printing messages
+finishedmsg:
+	$(NOTIFY_MSG)
 	$(DONOTHING)
