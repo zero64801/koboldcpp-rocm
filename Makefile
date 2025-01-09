@@ -5,9 +5,6 @@
 
 default: koboldcpp_default koboldcpp_failsafe koboldcpp_noavx2 koboldcpp_clblast koboldcpp_clblast_noavx2 koboldcpp_cublas koboldcpp_hipblas koboldcpp_vulkan koboldcpp_vulkan_noavx2 finishedmsg
 tools: quantize_gpt2 quantize_gptj quantize_gguf quantize_neox quantize_mpt quantize_clip whispermain sdmain gguf-split llama-bench perplexity 
-dev: koboldcpp_default
-dev2: koboldcpp_clblast
-dev3: koboldcpp_vulkan finishedmsg
 
 ifndef UNAME_S
 UNAME_S := $(shell uname -s)
@@ -99,10 +96,10 @@ OBJS_SIMPLE += ggml-alloc.o ggml-cpu-traits.o ggml-quants_noavx2.o ggml-cpu-quan
 OBJS_FAILSAFE += ggml-alloc.o ggml-cpu-traits.o ggml-quants_failsafe.o ggml-cpu-quants_failsafe.o ggml-cpu-aarch64_failsafe.o unicode.o unicode-data.o ggml-threading.o ggml-cpu-cpp.o sgemm_failsafe.o common.o sampling.o
 
 # OS specific
-# TODO: support Windows
 ifeq ($(UNAME_S),Linux)
 	CFLAGS   += -pthread
 	CXXFLAGS += -pthread
+	LDFLAGS += -ldl
 endif
 
 ifeq ($(UNAME_S),Darwin)
@@ -149,6 +146,7 @@ ifeq ($(UNAME_M),$(filter $(UNAME_M),x86_64 i686 amd64))
 	# Use all CPU extensions that are available:
 # old library NEEDS mf16c to work. so we must build with it. new one doesnt
 	ifeq ($(OS),Windows_NT)
+		ifdef LLAMA_PORTABLE
 		CFLAGS +=
 		NONECFLAGS +=
 		SIMPLECFLAGS += -mavx -msse3
@@ -157,8 +155,10 @@ ifeq ($(UNAME_M),$(filter $(UNAME_M),x86_64 i686 amd64))
 		else
 			FULLCFLAGS += -mavx2 -msse3 -mfma -mf16c -mavx
 		endif
+		else
+		CFLAGS += -march=native -mtune=native
+		endif
 	else
-# if not on windows, they are clearly building it themselves, so lets just use whatever is supported
 		ifdef LLAMA_PORTABLE
 		CFLAGS +=
 		NONECFLAGS +=
@@ -394,10 +394,17 @@ NOTIFY_MSG =
 
 ifeq ($(OS),Windows_NT)
 	DEFAULT_BUILD = $(CXX) $(CXXFLAGS)  $^ -shared -o $@.dll $(LDFLAGS)
+	ifdef LLAMA_PORTABLE
 	FAILSAFE_BUILD = $(CXX) $(CXXFLAGS) $^ -shared -o $@.dll $(LDFLAGS)
 	NOAVX2_BUILD = $(CXX) $(CXXFLAGS) $^ -shared -o $@.dll $(LDFLAGS)
+	endif
+
+	ifdef LLAMA_CLBLAST
 	CLBLAST_BUILD = $(CXX) $(CXXFLAGS) $^ lib/OpenCL.lib lib/clblast.lib -shared -o $@.dll $(LDFLAGS)
+	endif
+	ifdef LLAMA_VULKAN
 	VULKAN_BUILD = $(CXX) $(CXXFLAGS) $^ lib/vulkan-1.lib -shared -o $@.dll $(LDFLAGS)
+	endif
 
 	ifdef LLAMA_CUBLAS
 		CUBLAS_BUILD = $(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $^ -shared -o $@.dll $(CUBLASLD_FLAGS) $(LDFLAGS)
@@ -430,18 +437,18 @@ else
 	ifdef LLAMA_VULKAN
 		VULKAN_BUILD = $(CXX) $(CXXFLAGS) $^ -lvulkan -shared -o $@.so $(LDFLAGS)
 	endif
+endif
 
-	ifndef LLAMA_CLBLAST
-	ifndef LLAMA_CUBLAS
-	ifndef LLAMA_HIPBLAS
-	ifndef LLAMA_VULKAN
-	ifndef LLAMA_METAL
-	NOTIFY_MSG = @echo -e '\n***\nYou did a basic CPU build. For faster speeds, consider installing and linking a GPU BLAS library. For example, set LLAMA_VULKAN=1 to compile with Vulkan support. Read the KoboldCpp Wiki for more information. This is just a reminder, not an error.\n***\n'
-	endif
-	endif
-	endif
-	endif
-	endif
+ifndef LLAMA_CLBLAST
+ifndef LLAMA_CUBLAS
+ifndef LLAMA_HIPBLAS
+ifndef LLAMA_VULKAN
+ifndef LLAMA_METAL
+NOTIFY_MSG = @echo -e '\n***\nYou did a basic CPU build. For faster speeds, consider installing and linking a GPU BLAS library. For example, set LLAMA_CLBLAST=1 LLAMA_VULKAN=1 to compile with Vulkan and CLBlast support. Add LLAMA_PORTABLE=1 to make a sharable build that other devices can use. Read the KoboldCpp Wiki for more information. This is just a reminder, not an error.\n***\n'
+endif
+endif
+endif
+endif
 endif
 
 CCV := $(shell $(CC) --version | head -n 1)
@@ -646,7 +653,7 @@ whispercpp_cublas.o: otherarch/whispercpp/whisper_adapter.cpp
 	$(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
 
 # idiotic "for easier compilation"
-GPTTYPE_ADAPTER = gpttype_adapter.cpp otherarch/llama_v2.cpp otherarch/llama_v3.cpp src/llama.cpp src/llama-grammar.cpp src/llama-sampling.cpp src/llama-vocab.cpp otherarch/utils.cpp otherarch/gptj_v1.cpp otherarch/gptj_v2.cpp otherarch/gptj_v3.cpp otherarch/gpt2_v1.cpp otherarch/gpt2_v2.cpp otherarch/gpt2_v3.cpp otherarch/rwkv_v2.cpp otherarch/rwkv_v3.cpp otherarch/neox_v2.cpp otherarch/neox_v3.cpp otherarch/mpt_v3.cpp ggml/include/ggml.h ggml/include/ggml-cpu.h ggml/include/ggml-cuda.h include/llama.h otherarch/llama-util.h
+GPTTYPE_ADAPTER = gpttype_adapter.cpp otherarch/llama_v2.cpp otherarch/llama_v3.cpp src/llama.cpp src/llama-impl.cpp src/llama-chat.cpp src/llama-mmap.cpp src/llama-context.cpp src/llama-adapter.cpp src/llama-arch.cpp src/llama-batch.cpp src/llama-vocab.cpp src/llama-grammar.cpp src/llama-sampling.cpp src/llama-kv-cache.cpp src/llama-model-loader.cpp src/llama-model.cpp src/llama-quant.cpp src/llama-hparams.cpp otherarch/utils.cpp otherarch/gptj_v1.cpp otherarch/gptj_v2.cpp otherarch/gptj_v3.cpp otherarch/gpt2_v1.cpp otherarch/gpt2_v2.cpp otherarch/gpt2_v3.cpp otherarch/rwkv_v2.cpp otherarch/rwkv_v3.cpp otherarch/neox_v2.cpp otherarch/neox_v3.cpp otherarch/mpt_v3.cpp ggml/include/ggml.h ggml/include/ggml-cpu.h ggml/include/ggml-cuda.h include/llama.h otherarch/llama-util.h
 gpttype_adapter_failsafe.o: $(GPTTYPE_ADAPTER)
 	$(CXX) $(CXXFLAGS) $(FAILSAFE_FLAGS) -c $< -o $@
 gpttype_adapter.o: $(GPTTYPE_ADAPTER)

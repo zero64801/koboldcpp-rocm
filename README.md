@@ -184,6 +184,7 @@ You can then run koboldcpp anywhere from the terminal by running `koboldcpp` to 
 - Clone the repo `git clone https://github.com/LostRuins/koboldcpp.git`
 - Navigate to the koboldcpp folder `cd koboldcpp`
 - Build the project `make`
+- To make your build sharable and capable of working on other devices, you must use `LLAMA_PORTABLE=1`, this disables usage of ARM instrinsics.
 - Grab a small GGUF model, such as `wget https://huggingface.co/concedo/KobbleTinyV2-1.1B-GGUF/resolve/main/KobbleTiny-Q4_K.gguf`
 - Start the python server `python koboldcpp.py --model KobbleTiny-Q4_K.gguf`
 - Connect to `http://localhost:5001` on your mobile browser

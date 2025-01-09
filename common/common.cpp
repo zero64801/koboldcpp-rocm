@@ -20,6 +20,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -64,7 +65,9 @@
 #ifdef __linux__
 #include <linux/limits.h>
 #elif defined(_WIN32)
-#define PATH_MAX MAX_PATH
+#   if !defined(PATH_MAX)
+#   define PATH_MAX MAX_PATH
+#   endif
 #else
 #include <sys/syslimits.h>
 #endif
@@ -888,9 +891,8 @@ struct common_init_result common_init_from_params(common_params & params) {
     }
 
     if (params.ctx_shift && !llama_kv_cache_can_shift(lctx)) {
-        LOG_ERR("%s: KV cache shifting is not supported for this model (--no-context-shift to disable)'\n", __func__);
-        llama_free_model(model);
-        return iparams;
+        LOG_WRN("%s: KV cache shifting is not supported for this model, disabling KV cache shifting\n", __func__);
+        params.ctx_shift = false;
     }
 
     if (!params.control_vectors.empty()) {
@@ -921,20 +923,21 @@ struct common_init_result common_init_from_params(common_params & params) {
 
     // load and optionally apply lora adapters
     for (auto & la : params.lora_adapters) {
-        common_lora_adapter_container loaded_la;
-        loaded_la.path = la.path;
-        loaded_la.scale = la.scale;
-        loaded_la.adapter = llama_lora_adapter_init(model, la.path.c_str());
-        if (loaded_la.adapter == nullptr) {
+        llama_lora_adapter_ptr lora;
+        lora.reset(llama_lora_adapter_init(model, la.path.c_str()));
+        if (lora == nullptr) {
             LOG_ERR("%s: failed to apply lora adapter '%s'\n", __func__, la.path.c_str());
             llama_free(lctx);
             llama_free_model(model);
             return iparams;
         }
-        iparams.lora_adapters.push_back(loaded_la); // copy to list of loaded adapters
+
+        la.ptr = lora.get();
+        iparams.lora.emplace_back(std::move(lora)); // copy to list of loaded adapters
     }
+
     if (!params.lora_init_without_apply) {
-        common_lora_adapters_apply(lctx, iparams.lora_adapters);
+        common_lora_adapters_apply(lctx, params.lora_adapters);
     }
 
     if (params.sampling.ignore_eos && llama_token_eos(model) == LLAMA_TOKEN_NULL) {
@@ -995,17 +998,17 @@ struct common_init_result common_init_from_params(common_params & params) {
         llama_perf_context_reset(lctx);
     }
 
-    iparams.model   = model;
-    iparams.context = lctx;
+    iparams.model.reset(model);
+    iparams.context.reset(lctx);
 
     return iparams;
 }
 
-void common_lora_adapters_apply(struct llama_context * ctx, std::vector<common_lora_adapter_container> & lora_adapters) {
+void common_lora_adapters_apply(struct llama_context * ctx, std::vector<common_lora_adapter_info> & lora) {
     llama_lora_adapter_clear(ctx);
-    for (auto & la : lora_adapters) {
+    for (auto & la : lora) {
         if (la.scale != 0.0f) {
-            llama_lora_adapter_set(ctx, la.adapter, la.scale);
+            llama_lora_adapter_set(ctx, la.ptr, la.scale);
         }
     }
 }
@@ -1150,8 +1153,7 @@ static bool common_download_file(const std::string & url, const std::string & pa
 #endif
 
     // Check if the file already exists locally
-    struct stat model_file_info;
-    auto file_exists = (stat(path.c_str(), &model_file_info) == 0);
+    auto file_exists = std::filesystem::exists(path);
 
     // If the file exists, check its JSON metadata companion file.
     std::string metadata_path = path + ".json";
@@ -1363,7 +1365,7 @@ struct llama_model * common_load_model_from_url(
             return NULL;
         }
 
-        auto key_n_split = gguf_find_key(ctx_gguf, LLM_KV_SPLIT_COUNT_STR);
+        auto key_n_split = gguf_find_key(ctx_gguf, LLM_KV_SPLIT_COUNT);
         if (key_n_split >= 0) {
             n_split = gguf_get_val_u16(ctx_gguf, key_n_split);
         }
@@ -1613,6 +1615,18 @@ std::string common_detokenize(llama_context * ctx, const std::vector<llama_token
 //
 // Chat template utils
 //
+
+std::string common_get_builtin_chat_template(const struct llama_model * model) {
+    static const char * template_key = "tokenizer.chat_template";
+    // call with NULL buffer to get the total size of the string
+    int32_t res = llama_model_meta_val_str(model, template_key, NULL, 0);
+    if (res > 0) {
+        std::vector<char> model_template(res + 1, 0);
+        llama_model_meta_val_str(model, template_key, model_template.data(), model_template.size());
+        return std::string(model_template.data(), model_template.size() - 1);
+    }
+    return "";
+}
 
 bool common_chat_verify_template(const std::string & tmpl) {
     llama_chat_message chat[] = {{"user", "test"}};
