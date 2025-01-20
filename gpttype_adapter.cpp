@@ -21,12 +21,13 @@
 #include <cctype>
 #include <locale>
 
+#include "utils.h"
+
 //for easier compilation
 //concat source files into one file for compilation purposes
 #include "llama_v2.cpp"
 #include "llama_v3.cpp"
 #include "src/llama.cpp"
-#include "utils.cpp"
 #include "gptj_v1.cpp"
 #include "gptj_v2.cpp"
 #include "gptj_v3.cpp"
@@ -209,7 +210,8 @@ static void TokenizeString(const std::string & str_to_tokenize, std::vector<int>
             output_tokens = ::common_tokenize(llama_ctx_v4, str_to_tokenize, add_bos, true);
             if(add_bos)
             {
-                llama_token bostoadd = llama_token_bos(&(llama_ctx_v4->model));
+                const llama_vocab * tmpvocab = llama_model_get_vocab(&(llama_ctx_v4->model));
+                llama_token bostoadd = llama_vocab_bos(tmpvocab);
                 if(bostoadd != LLAMA_TOKEN_NULL) //if bos does not exist, do not add it
                 {
                     if(output_tokens.size()==0)
@@ -241,7 +243,8 @@ static int GetEosID(FileFormat file_format, int32_t n_vocab)
     {
         if(file_format == FileFormat::GGUF_GENERIC)
         {
-            eosID = llama_token_eos(&(llama_ctx_v4->model));
+            const llama_vocab * tmpvocab = llama_model_get_vocab(&(llama_ctx_v4->model));
+            eosID = llama_vocab_eos(tmpvocab);
         }
         else if(file_format == FileFormat::GGJT_3)
         {
@@ -292,7 +295,8 @@ static int GetEotID(FileFormat file_format)
 {
     if(file_format == FileFormat::GGUF_GENERIC)
     {
-        return llama_token_eot(&(llama_ctx_v4->model));
+        const llama_vocab * tmpvocab = llama_model_get_vocab(&(llama_ctx_v4->model));
+        return llama_vocab_eot(tmpvocab);
     }
     return -1;
 }
@@ -535,99 +539,6 @@ const char * kcpp_print_system_info(void) {
     return s.c_str();
 }
 
-struct kcpp_embd_batch { //duplcated from llava_embd_batch
-    std::vector<int32_t> pos;
-    std::vector<int32_t> n_seq_id;
-    std::vector<int32_t> seq_id_0;
-    std::vector<int32_t *> seq_ids;
-    std::vector<int8_t> logits;
-    llama_batch batch;
-    kcpp_embd_batch(float * embd, int32_t n_tokens, int32_t npast, bool use_mrope) {
-        int32_t seq_id = 0;
-        pos.resize(n_tokens * (use_mrope?4:1));
-        std::fill(pos.begin(), pos.end(), 0);
-        n_seq_id.resize(n_tokens);
-        seq_ids.resize(n_tokens + 1);
-        logits.resize(n_tokens);
-        seq_id_0.resize(1);
-        seq_id_0[0] = seq_id;
-        seq_ids [n_tokens] = nullptr;
-        batch = {
-            /*n_tokens       =*/ n_tokens,
-            /*tokens         =*/ nullptr,
-            /*embd           =*/ embd,
-            /*pos            =*/ pos.data(),
-            /*n_seq_id       =*/ n_seq_id.data(),
-            /*seq_id         =*/ seq_ids.data(),
-            /*logits         =*/ logits.data(),
-        };
-
-        if(!use_mrope)
-        {
-           for (int i = 0; i < n_tokens; i++) {
-                batch.pos     [i] = npast + i;
-                batch.n_seq_id[i] = 1;
-                batch.seq_id  [i] = seq_id_0.data();
-                batch.logits  [i] = false;
-            }
-        }
-        else
-        {
-            for (int i = 0; i < n_tokens; i++) {
-                batch.n_seq_id[i] = 1;
-                batch.seq_id  [i] = seq_id_0.data();
-                batch.logits  [i] = false;
-            }
-             for (int j = 0; j < batch.n_tokens * 3; j++) {
-                batch.pos[j] = npast + (j % batch.n_tokens);
-            }
-        }
-    }
-    kcpp_embd_batch(std::vector<llama_token> & tokens, int32_t npast, bool use_mrope, bool return_all_logits) {
-        int32_t seq_id = 0;
-        int32_t n_tokens = tokens.size();
-        pos.resize(n_tokens * (use_mrope?4:1));
-        std::fill(pos.begin(), pos.end(), 0);
-        n_seq_id.resize(n_tokens);
-        seq_ids.resize(n_tokens + 1);
-        logits.resize(n_tokens);
-        seq_id_0.resize(1);
-        seq_id_0[0] = seq_id;
-        seq_ids[n_tokens] = nullptr;
-        batch = {
-            /*n_tokens       =*/ n_tokens,
-            /*tokens         =*/ tokens.data(),
-            /*embd           =*/ nullptr,
-            /*pos            =*/ pos.data(),
-            /*n_seq_id       =*/ n_seq_id.data(),
-            /*seq_id         =*/ seq_ids.data(),
-            /*logits         =*/ logits.data(),
-        };
-
-        if(!use_mrope)
-        {
-           for (int i = 0; i < n_tokens; i++) {
-                batch.pos     [i] = npast + i;
-                batch.n_seq_id[i] = 1;
-                batch.seq_id  [i] = seq_id_0.data();
-                batch.logits  [i] = (return_all_logits?true:false);
-            }
-        }
-        else
-        {
-            for (int i = 0; i < n_tokens; i++) {
-                batch.n_seq_id[i] = 1;
-                batch.seq_id  [i] = seq_id_0.data();
-                batch.logits  [i] = (return_all_logits?true:false);
-            }
-             for (int j = 0; j < batch.n_tokens * 3; j++) {
-                batch.pos[j] = npast + (j % batch.n_tokens);
-            }
-        }
-        batch.logits[n_tokens - 1] = true;
-    }
-};
-
 //loads a model for speculative decoding.
 static void speculative_decoding_setup(std::string spec_model_filename, const llama_model_params & base_model_params, const llama_context_params & base_ctx_params, int base_n_vocab, const float * draft_gpusplit, int draft_gpulayers)
 {
@@ -664,7 +575,7 @@ static void speculative_decoding_setup(std::string spec_model_filename, const ll
     draft_ctx_params.type_k = base_ctx_params.type_k;
     draft_ctx_params.type_v = base_ctx_params.type_v;
 
-    llama_model * draftmodel = llama_load_model_from_file(spec_model_filename.c_str(), draft_model_params);
+    llama_model * draftmodel = llama_model_load_from_file(spec_model_filename.c_str(), draft_model_params);
     draft_ctx = llama_new_context_with_model(draftmodel, draft_ctx_params);
     if(draft_ctx == NULL)
     {
@@ -673,7 +584,8 @@ static void speculative_decoding_setup(std::string spec_model_filename, const ll
     }
     else
     {
-        int draftvocab = llama_n_vocab(draftmodel);
+        const llama_vocab * tmpvocab = llama_model_get_vocab(draftmodel);
+        int draftvocab = llama_vocab_n_tokens(tmpvocab);
         if(llama_model_is_recurrent(draftmodel))
         {
             printf("Error: Speculative decoding cannot be used with Recurrent draft models!\n");
@@ -2252,7 +2164,7 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
             kvos.push_back(kvo);
             model_params.kv_overrides = kvos.data();
         }
-        llama_model * llamamodel = llama_load_model_from_file(kcpp_data->model_filename.c_str(), model_params);
+        llama_model * llamamodel = llama_model_load_from_file(kcpp_data->model_filename.c_str(), model_params);
 
         if(overwriteRope)
         {
@@ -2282,7 +2194,7 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         if(file_format_meta.model_architecture==GGUFArch::ARCH_RWKV)
         {
             printf("\nRWKV6 Overriding EOS and BOS IDs to 0\n");
-            llamamodel->vocab.special_bos_id = llamamodel->vocab.special_eos_id = 0;
+            llamamodel->vocab.set_eos_bos(0,0);
         }
 
         llama_ctx_params.flash_attn = kcpp_data->flash_attn;
@@ -2305,12 +2217,12 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
                 lora_base_arg = lora_base.c_str();
             }
 
-            auto adapter = llama_lora_adapter_init(llamamodel, lora_filename.c_str());
+            auto adapter = llama_adapter_lora_init(llamamodel, lora_filename.c_str());
             if (adapter == nullptr) {
                 fprintf(stderr, "%s: error: failed to apply lora adapter\n", __func__);
                 return ModelLoadResult::FAIL;
             }
-            llama_lora_adapter_set(llama_ctx_v4, adapter, 1.0f);
+            llama_set_adapter_lora(llama_ctx_v4, adapter, 1.0f);
         }
 
         if(mmproj_filename != "" && file_format==FileFormat::GGUF_GENERIC)
@@ -2337,7 +2249,8 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
             clp_img_data = clip_image_u8_init();
         }
 
-        n_vocab = llama_n_vocab(llamamodel);
+        const llama_vocab * tmpvocab = llama_model_get_vocab(llamamodel);
+        n_vocab = llama_vocab_n_tokens(tmpvocab);
 
         if(draftmodel_filename !="" && file_format==FileFormat::GGUF_GENERIC)
         {

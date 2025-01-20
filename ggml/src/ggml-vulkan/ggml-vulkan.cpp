@@ -1,3 +1,7 @@
+#ifndef GGML_VULKAN_COOPMAT_GLSLC_SUPPORT
+#define GGML_VULKAN_COOPMAT_GLSLC_SUPPORT
+#endif
+
 #include "ggml-vulkan.h"
 #include <vulkan/vulkan_core.h>
 #if defined(GGML_VULKAN_RUN_TESTS) || defined(GGML_VULKAN_PERF) || defined(GGML_VULKAN_CHECK_RESULTS)
@@ -228,6 +232,8 @@ struct vk_device_struct {
     vk_pipeline pipeline_repeat_f32;
     vk_pipeline pipeline_cpy_f32_f32, pipeline_cpy_f32_f16, pipeline_cpy_f16_f16;
     vk_pipeline pipeline_contig_cpy_f32_f32, pipeline_contig_cpy_f32_f16, pipeline_contig_cpy_f16_f16;
+    vk_pipeline pipeline_cpy_f32_quant[GGML_TYPE_COUNT];
+    vk_pipeline pipeline_cpy_quant_f32[GGML_TYPE_COUNT];
     vk_pipeline pipeline_norm_f32;
     vk_pipeline pipeline_group_norm_f32;
     vk_pipeline pipeline_rms_norm_f32;
@@ -1645,6 +1651,7 @@ static void ggml_vk_load_shaders(vk_device& device) {
 #undef CREATE_MM2
     } else
 #endif  // defined(VK_NV_cooperative_matrix2) && defined(GGML_VULKAN_COOPMAT2_GLSLC_SUPPORT)
+#if defined(VK_KHR_cooperative_matrix) && defined(GGML_VULKAN_COOPMAT_GLSLC_SUPPORT)
     if (device->coopmat_support) {
         // Create 6 variants, {s,m,l}x{unaligned,aligned}
 #define CREATE_MM(PIPELINE_NAME, NAMELC, F16ACC, WG_DENOMS, WARPTILE, PUSHCONST, PARAMCOUNT, ID) \
@@ -1739,7 +1746,9 @@ static void ggml_vk_load_shaders(vk_device& device) {
         }
 #undef CREATE_MM2
 #undef CREATE_MM
-    } else if (device->fp16) {
+    } else
+#endif  // defined(VK_KHR_cooperative_matrix) && defined(GGML_VULKAN_COOPMAT_GLSLC_SUPPORT)
+    if (device->fp16) {
         // Create 6 variants, {s,m,l}x{unaligned,aligned}
 #define CREATE_MM(PIPELINE_NAME, NAMELC, F16ACC, WG_DENOMS, WARPTILE, PUSHCONST, PARAMCOUNT, ID) \
         if (device->mul_mat ## ID ## _l) \
@@ -1962,6 +1971,20 @@ static void ggml_vk_load_shaders(vk_device& device) {
     ggml_vk_create_pipeline(device, device->pipeline_contig_cpy_f32_f16, "contig_cpy_f32_f16", contig_cpy_f32_f16_len, contig_cpy_f32_f16_data, "main", 2, sizeof(vk_op_unary_push_constants), {512, 1, 1}, {}, 1);
     ggml_vk_create_pipeline(device, device->pipeline_contig_cpy_f16_f16, "contig_cpy_f16_f16", contig_cpy_f16_f16_len, contig_cpy_f16_f16_data, "main", 2, sizeof(vk_op_unary_push_constants), {512, 1, 1}, {}, 1);
 
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_f32_quant[GGML_TYPE_Q4_0], "cpy_f32_q4_0", cpy_f32_q4_0_len, cpy_f32_q4_0_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q4_0), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_f32_quant[GGML_TYPE_Q4_1], "cpy_f32_q4_1", cpy_f32_q4_1_len, cpy_f32_q4_1_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q4_1), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_f32_quant[GGML_TYPE_Q5_0], "cpy_f32_q5_0", cpy_f32_q5_0_len, cpy_f32_q5_0_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q5_0), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_f32_quant[GGML_TYPE_Q5_1], "cpy_f32_q5_1", cpy_f32_q5_1_len, cpy_f32_q5_1_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q5_1), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_f32_quant[GGML_TYPE_Q8_0], "cpy_f32_q8_0", cpy_f32_q8_0_len, cpy_f32_q8_0_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q8_0), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_f32_quant[GGML_TYPE_IQ4_NL], "cpy_f32_iq4_nl", cpy_f32_iq4_nl_len, cpy_f32_iq4_nl_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_IQ4_NL), 1, 1}, {}, 1);
+
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_quant_f32[GGML_TYPE_Q4_0], "cpy_q4_0_f32", cpy_q4_0_f32_len, cpy_q4_0_f32_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q4_0), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_quant_f32[GGML_TYPE_Q4_1], "cpy_q4_1_f32", cpy_q4_1_f32_len, cpy_q4_1_f32_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q4_1), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_quant_f32[GGML_TYPE_Q5_0], "cpy_q5_0_f32", cpy_q5_0_f32_len, cpy_q5_0_f32_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q5_0), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_quant_f32[GGML_TYPE_Q5_1], "cpy_q5_1_f32", cpy_q5_1_f32_len, cpy_q5_1_f32_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q5_1), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_quant_f32[GGML_TYPE_Q8_0], "cpy_q8_0_f32", cpy_q8_0_f32_len, cpy_q8_0_f32_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_Q8_0), 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_cpy_quant_f32[GGML_TYPE_IQ4_NL], "cpy_iq4_nl_f32", cpy_iq4_nl_f32_len, cpy_iq4_nl_f32_data, "main", 2, sizeof(vk_op_unary_push_constants), {(uint32_t)ggml_blck_size(GGML_TYPE_IQ4_NL), 1, 1}, {}, 1);
+
     ggml_vk_create_pipeline(device, device->pipeline_add_f32, "add_f32", add_f32_len, add_f32_data, "main", 3, sizeof(vk_op_binary_push_constants), {512, 1, 1}, {0}, 1);
     ggml_vk_create_pipeline(device, device->pipeline_add_f32_norepeat, "add_f32_norepeat", add_f32_len, add_f32_data, "main", 3, sizeof(vk_op_binary_push_constants), {512, 1, 1}, {1}, 1);
     ggml_vk_create_pipeline(device, device->pipeline_add_f16_f32_f16, "add_f16_f32_f16", add_f16_f32_f16_len, add_f16_f32_f16_data, "main", 3, sizeof(vk_op_binary_push_constants), {512, 1, 1}, {0}, 1);
@@ -2039,6 +2062,8 @@ static void ggml_vk_load_shaders(vk_device& device) {
     }
     std::cerr << "Done!" << std::endl;
 }
+
+static bool ggml_vk_khr_cooperative_matrix_support(const vk::PhysicalDeviceProperties& props, const vk::PhysicalDeviceDriverProperties& driver_props);
 
 static vk_device ggml_vk_get_device(size_t idx) {
     VK_LOG_DEBUG("ggml_vk_get_device(" << idx << ")");
@@ -2175,11 +2200,13 @@ static vk_device ggml_vk_get_device(size_t idx) {
 
         device->fp16 = !force_disable_f16 && fp16_storage && fp16_compute;
 
-        if (device->vendor_id == VK_VENDOR_ID_INTEL || (device->vendor_id == VK_VENDOR_ID_AMD && (driver_props.driverID == vk::DriverId::eAmdProprietary || driver_props.driverID == vk::DriverId::eAmdOpenSource))) {
-            // Intel drivers don't support coopmat properly yet
-            // Only RADV supports coopmat properly on AMD
+        if (!ggml_vk_khr_cooperative_matrix_support(device->properties, driver_props)) {
             device->coopmat_support = false;
         }
+
+        #if !defined(GGML_VULKAN_COOPMAT_GLSLC_SUPPORT) //prevent crash if we do a non-coopmat build
+                device->coopmat_support = false;
+        #endif
 
         std::vector<vk::QueueFamilyProperties> queue_family_props = device->physical_device.getQueueFamilyProperties();
 
@@ -2242,6 +2269,7 @@ static vk_device ggml_vk_get_device(size_t idx) {
             last_struct = (VkBaseOutStructure *)&subgroup_size_control_features;
         }
 
+#if defined(VK_KHR_cooperative_matrix)
         VkPhysicalDeviceCooperativeMatrixFeaturesKHR coopmat_features;
         coopmat_features.pNext = nullptr;
         coopmat_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR;
@@ -2251,6 +2279,7 @@ static vk_device ggml_vk_get_device(size_t idx) {
             last_struct->pNext = (VkBaseOutStructure *)&coopmat_features;
             last_struct = (VkBaseOutStructure *)&coopmat_features;
         }
+#endif
 
 #if defined(VK_NV_cooperative_matrix2)
         VkPhysicalDeviceCooperativeMatrix2FeaturesNV coopmat2_features {};
@@ -2272,6 +2301,7 @@ static vk_device ggml_vk_get_device(size_t idx) {
         if (device->subgroup_size_control) {
             device->subgroup_min_size = subgroup_size_control_props.minSubgroupSize;
             device->subgroup_max_size = subgroup_size_control_props.maxSubgroupSize;
+            device_extensions.push_back("VK_EXT_subgroup_size_control");
         }
 
         device->subgroup_size_control = device->subgroup_size_control &&
@@ -2280,10 +2310,11 @@ static vk_device ggml_vk_get_device(size_t idx) {
 
         if (device->subgroup_size_control) {
             device->subgroup_require_full_support = subgroup_size_control_features.computeFullSubgroups;
-            device_extensions.push_back("VK_EXT_subgroup_size_control");
         }
 
+#if defined(VK_KHR_cooperative_matrix)
         device->coopmat_support = device->coopmat_support && coopmat_features.cooperativeMatrix;
+#endif
 
         if (coopmat2_support) {
 #if defined(VK_NV_cooperative_matrix2) && defined(GGML_VULKAN_COOPMAT2_GLSLC_SUPPORT)
@@ -2376,6 +2407,7 @@ static vk_device ggml_vk_get_device(size_t idx) {
             device_extensions.push_back("VK_KHR_shader_float16_int8");
         }
 
+#if defined(VK_KHR_cooperative_matrix)
         if (device->coopmat_support) {
             // Query supported shapes
             std::vector<VkCooperativeMatrixPropertiesKHR> cm_props;
@@ -2442,7 +2474,7 @@ static vk_device ggml_vk_get_device(size_t idx) {
         if (device->coopmat_support) {
             device_extensions.push_back("VK_KHR_cooperative_matrix");
         }
-
+#endif
         device->name = GGML_VK_NAME + std::to_string(idx);
 
         device_create_info = {
@@ -2515,7 +2547,6 @@ static vk_device ggml_vk_get_device(size_t idx) {
     return vk_instance.devices[idx];
 }
 
-
 static void ggml_vk_print_gpu_info(size_t idx) {
     GGML_ASSERT(idx < vk_instance.device_indices.size());
     size_t dev_num = vk_instance.device_indices[idx];
@@ -2554,9 +2585,11 @@ static void ggml_vk_print_gpu_info(size_t idx) {
             fp16_storage = true;
         } else if (strcmp("VK_KHR_shader_float16_int8", properties.extensionName) == 0) {
             fp16_compute = true;
-        } else if (strcmp("VK_KHR_cooperative_matrix", properties.extensionName) == 0 &&
+#if defined(GGML_VULKAN_COOPMAT_GLSLC_SUPPORT)
+       } else if (strcmp("VK_KHR_cooperative_matrix", properties.extensionName) == 0 &&
                    !getenv("GGML_VK_DISABLE_COOPMAT")) {
             coopmat_support = true;
+#endif
 #if defined(GGML_VULKAN_COOPMAT2_GLSLC_SUPPORT)
         } else if (strcmp("VK_NV_cooperative_matrix2", properties.extensionName) == 0 &&
                    !getenv("GGML_VK_DISABLE_COOPMAT2")) {
@@ -2565,9 +2598,7 @@ static void ggml_vk_print_gpu_info(size_t idx) {
         }
     }
 
-    if (props2.properties.vendorID == VK_VENDOR_ID_INTEL || (props2.properties.vendorID == VK_VENDOR_ID_AMD && (driver_props.driverID == vk::DriverId::eAmdProprietary || driver_props.driverID == vk::DriverId::eAmdOpenSource))) {
-        // Intel drivers don't support coopmat properly yet
-        // Only RADV supports coopmat properly on AMD
+    if (!ggml_vk_khr_cooperative_matrix_support(props2.properties, driver_props)) {
         coopmat_support = false;
     }
 
@@ -2596,6 +2627,7 @@ static void ggml_vk_print_gpu_info(size_t idx) {
     // Pointer to the last chain element
     VkBaseOutStructure * last_struct = (VkBaseOutStructure *)&vk12_features;
 
+#if defined(GGML_VULKAN_COOPMAT_GLSLC_SUPPORT)
     VkPhysicalDeviceCooperativeMatrixFeaturesKHR coopmat_features;
     coopmat_features.pNext = nullptr;
     coopmat_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR;
@@ -2611,6 +2643,7 @@ static void ggml_vk_print_gpu_info(size_t idx) {
     fp16 = fp16 && vk12_features.shaderFloat16;
 
     coopmat_support = coopmat_support && coopmat_features.cooperativeMatrix;
+#endif
 
     std::string matrix_cores = coopmat2_support ? "NV_coopmat2" : coopmat_support ? "KHR_coopmat" : "none";
 
@@ -3678,6 +3711,33 @@ static vk_pipeline ggml_vk_get_cpy_pipeline(ggml_backend_vk_context * ctx, const
             return ctx->device->pipeline_contig_cpy_f16_f16;
         } else {
             return ctx->device->pipeline_cpy_f16_f16;
+        }
+    }
+    if (src->type == GGML_TYPE_F32) {
+        switch (to) {
+        case GGML_TYPE_Q4_0:
+        case GGML_TYPE_Q4_1:
+        case GGML_TYPE_Q5_0:
+        case GGML_TYPE_Q5_1:
+        case GGML_TYPE_Q8_0:
+        case GGML_TYPE_IQ4_NL:
+            return ctx->device->pipeline_cpy_f32_quant[to];
+        default:
+            break;
+        }
+    }
+
+    if (to == GGML_TYPE_F32) {
+        switch (src->type) {
+        case GGML_TYPE_Q4_0:
+        case GGML_TYPE_Q4_1:
+        case GGML_TYPE_Q5_0:
+        case GGML_TYPE_Q5_1:
+        case GGML_TYPE_Q8_0:
+        case GGML_TYPE_IQ4_NL:
+            return ctx->device->pipeline_cpy_quant_f32[src->type];
+        default:
+            break;
         }
     }
 
@@ -5151,7 +5211,7 @@ static void ggml_vk_op_f32(ggml_backend_vk_context * ctx, vk_context& subctx, co
     }
     std::cerr << "), (" << dst << ", name=" << dst->name << ", type=" << dst->type << ", ne0=" << dst->ne[0] << ", ne1=" << dst->ne[1] << ", ne2=" << dst->ne[2] << ", ne3=" << dst->ne[3] << ", nb0=" << dst->nb[0] << ", nb1=" << dst->nb[1] << ", nb2=" << dst->nb[2] << ", nb3=" << dst->nb[3];
     std::cerr << "), " << ggml_op_name(op) << ", " << (dryrun ? "dryrun" : "") << ")");
-    GGML_ASSERT(op == GGML_OP_GET_ROWS || (!ggml_is_quantized(src0->type) && (src1 == nullptr || !ggml_is_quantized(src1->type))));  // NOLINT
+    GGML_ASSERT(op == GGML_OP_GET_ROWS || op == GGML_OP_CPY || (!ggml_is_quantized(src0->type) && (src1 == nullptr || !ggml_is_quantized(src1->type))));  // NOLINT
     GGML_ASSERT(ggml_vk_op_supports_incontiguous(op) || ggml_vk_dim01_contiguous(src0));  // NOLINT
     GGML_ASSERT(dst->buffer != nullptr);
     const uint64_t ne00 = src0->ne[0];
@@ -5624,9 +5684,9 @@ static void ggml_vk_op_f32_rwkv6(ggml_backend_vk_context * ctx, vk_context& subc
 }
 
 static void ggml_vk_rwkv_wkv6(ggml_backend_vk_context * ctx, vk_context& subctx, ggml_tensor * dst, bool dryrun = false) {
-    const size_t seq_length = dst->src[0]->ne[3];
+    const size_t seq_length = dst->src[0]->ne[2];
     const size_t n_embed = dst->ne[0];
-    const size_t n_heads = dst->src[0]->ne[2];
+    const size_t n_heads = dst->src[0]->ne[1];
     const size_t n_seqs = dst->src[5]->ne[1];
 
     ggml_vk_op_f32_rwkv6(
@@ -7896,12 +7956,36 @@ static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggm
             {
                 ggml_type src0_type = op->src[0]->type;
                 ggml_type src1_type = op->src[1] != nullptr ? op->src[1]->type : src0_type;
-                if (src0_type == GGML_TYPE_F32 && src1_type == GGML_TYPE_F32) {
-                    return true;
+
+                if (src0_type == GGML_TYPE_F32) {
+                    switch (src1_type) {
+                    case GGML_TYPE_F32:
+                    case GGML_TYPE_F16:
+                    case GGML_TYPE_Q4_0:
+                    case GGML_TYPE_Q4_1:
+                    case GGML_TYPE_Q5_0:
+                    case GGML_TYPE_Q5_1:
+                    case GGML_TYPE_Q8_0:
+                    case GGML_TYPE_IQ4_NL:
+                        return true;
+                    default:
+                        break;
+                    }
                 }
-                if (src0_type == GGML_TYPE_F32 && src1_type == GGML_TYPE_F16) {
-                    return true;
+                if (src1_type == GGML_TYPE_F32) {
+                    switch (src0_type) {
+                    case GGML_TYPE_Q4_0:
+                    case GGML_TYPE_Q4_1:
+                    case GGML_TYPE_Q5_0:
+                    case GGML_TYPE_Q5_1:
+                    case GGML_TYPE_Q8_0:
+                    case GGML_TYPE_IQ4_NL:
+                        return true;
+                    default:
+                        break;
+                    }
                 }
+
                 if (src0_type == GGML_TYPE_F16 && src1_type == GGML_TYPE_F16) {
                     return true;
                 }
@@ -8086,6 +8170,25 @@ static bool ggml_vk_instance_portability_enumeration_ext_available(const std::ve
     return false;
 
     UNUSED(instance_extensions);
+}
+
+static bool ggml_vk_khr_cooperative_matrix_support(const vk::PhysicalDeviceProperties& props, const vk::PhysicalDeviceDriverProperties& driver_props) {
+    switch (props.vendorID) {
+    case VK_VENDOR_ID_INTEL:
+        // Intel drivers don't support coopmat properly yet
+        return false;
+    case VK_VENDOR_ID_AMD:
+        if (driver_props.driverID == vk::DriverId::eAmdProprietary || driver_props.driverID == vk::DriverId::eAmdOpenSource) {
+            // Workaround for AMD proprietary driver reporting support on all GPUs
+            const std::string name = props.deviceName;
+            return name.rfind("AMD Radeon RX 7", 0) == 0   || name.rfind("AMD Radeon(TM) RX 7", 0) == 0   || // RDNA 3 consumer GPUs
+                   name.rfind("AMD Radeon PRO W7", 0) == 0 || name.rfind("AMD Radeon(TM) PRO W7", 0) == 0 || // RDNA 3 workstation GPUs
+                   name.rfind("AMD Radeon 7", 0) == 0      || name.rfind("AMD Radeon(TM) 7", 0) == 0;        // RDNA 3 APUs
+        }
+        return true;
+    default:
+        return true;
+    }
 }
 
 // checks
