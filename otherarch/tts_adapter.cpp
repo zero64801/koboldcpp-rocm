@@ -336,13 +336,12 @@ static std::string process_text(const std::string & text, TTS_VER ver) {
     std::transform(processed_text.begin(), processed_text.end(),
                   processed_text.begin(), ::tolower);
 
-    // replace multiple punctuation with single
-    processed_text = std::regex_replace(processed_text, std::regex(R"(([,.!?])\1+)"), "$1");
-    //handle words connected by periods, replace the matches with " dot ".
-    processed_text = std::regex_replace(processed_text, std::regex(R"((\S)\.(\S))"), "$1 dot $2");
-
     if(ver==TTS_VER_2)
     {
+        // replace multiple punctuation with single
+        processed_text = std::regex_replace(processed_text, std::regex(R"(([,.!?])\1+)"), "$1");
+        //handle words connected by periods, add a space
+        processed_text = std::regex_replace(processed_text, std::regex(R"(([.,?!])([^\s]))"), "$1 $2"); //add space after punctuation
         std::regex special_chars(R"([\(\)\[\]\{\}\:-_/,\.\\])");
         processed_text = std::regex_replace(processed_text, special_chars, " ");
         std::regex non_alpha(R"([^a-z\s])");
@@ -356,12 +355,15 @@ static std::string process_text(const std::string & text, TTS_VER ver) {
         processed_text = std::regex_replace(processed_text, special_chars, " ");
         std::regex non_alpha(R"([^a-z\s.,?!])");
         processed_text = std::regex_replace(processed_text, non_alpha, "");
+        processed_text = std::regex_replace(processed_text, std::regex(R"(\s+)"), " "); // compress multiple spaces
+        processed_text = std::regex_replace(processed_text, std::regex(R"(([,.!?])\1+)"), "$1"); // replace multiple punctuation with single
+        processed_text = std::regex_replace(processed_text, std::regex(R"(\s+([.,!?]))"), "$1"); // Remove whitespace before punctuation
+        processed_text = std::regex_replace(processed_text, std::regex(R"(([.,?!])([^\s]))"), "$1 $2"); //add space after punctuation
         processed_text = std::regex_replace(processed_text, std::regex(R"(\,)"), "<|comma|>");
         processed_text = std::regex_replace(processed_text, std::regex(R"(\.)"), "<|period|>");
         processed_text = std::regex_replace(processed_text, std::regex(R"(\?)"), "<|question_mark|>");
         processed_text = std::regex_replace(processed_text, std::regex(R"(\!)"), "<|exclamation_mark|>");
-        std::regex multiple_spaces(R"(\s+)");
-        processed_text = std::regex_replace(processed_text, multiple_spaces, " ");
+        processed_text = std::regex_replace(processed_text, std::regex(R"(\s+)"), " "); // compress multiple spaces
         processed_text = std::regex_replace(processed_text, std::regex(R"(^\s+|\s+$)"), "");
         processed_text = std::regex_replace(processed_text, std::regex(R"(\s)"), "<|space|>");
     }
@@ -527,7 +529,7 @@ bool ttstype_load_model(const tts_load_model_inputs inputs)
     tts_ctx_params.n_ubatch = 512;
     tts_ctx_params.n_threads = nthreads;
     tts_ctx_params.n_threads_batch = nthreads;
-    tts_ctx_params.flash_attn = false;
+    tts_ctx_params.flash_attn = inputs.flash_attention;
 
     llama_model * ttcmodel = llama_model_load_from_file(modelfile_ttc.c_str(), tts_model_params);
     ttc_ctx = llama_new_context_with_model(ttcmodel, tts_ctx_params);
@@ -972,10 +974,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
         last_generated_audio = save_wav16_base64(audio, t_sr);
         ttstime = timer_check();
 
-        if(!inputs.quiet)
-        {
-            printf("\nTTS Generated %d audio tokens in %.2fs.\n",(int) codes.size(),ttstime);
-        }
+        printf("\nTTS Generated %d audio tokens in %.2fs.\n",(int) codes.size(),ttstime);
 
         output.data = last_generated_audio.c_str();
         output.status = 1;
