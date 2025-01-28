@@ -59,7 +59,7 @@ maxhordelen = 400
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.82.1.yr0-ROCm"
+KcppVersion = "1.82.4.yr0-ROCm"
 showdebug = True
 guimode = False
 showsamplerwarning = True
@@ -388,7 +388,7 @@ lib_option_pairs = [
     (lib_vulkan_noavx2, "Use Vulkan (Old CPU)"),
     (lib_clblast_noavx2, "Use CLBlast (Older CPU)"),
     (lib_failsafe, "Failsafe Mode (Older CPU)")]
-default_option, clblast_option, cublas_option, hipblas_option, vulkan_option, noavx2_option, clblast_noavx2_option, vulkan_noavx2_option, failsafe_option = (opt if file_exists(lib) or (os.name == 'nt' and file_exists(opt + ".dll")) else None for lib, opt in lib_option_pairs)
+default_option, clblast_option, cublas_option, hipblas_option, vulkan_option, noavx2_option, vulkan_noavx2_option, clblast_noavx2_option, failsafe_option = (opt if file_exists(lib) or (os.name == 'nt' and file_exists(opt + ".dll")) else None for lib, opt in lib_option_pairs)
 runopts = [opt for lib, opt in lib_option_pairs if file_exists(lib)]
 
 def get_amd_gfx_vers_linux():
@@ -621,6 +621,8 @@ def exit_with_error(code, message, title="Error"):
     sys.exit(code)
 
 def utfprint(str, importance = 2): #0 = only debugmode, 1 = except quiet, 2 = always print
+    if args.quiet and importance<2: #quiet overrides debugmode
+        return
     if args.debugmode < 1:
         if importance==1 and (args.debugmode == -1 or args.quiet):
             return
@@ -3665,7 +3667,7 @@ def show_gui():
     def on_picked_model_file(filepath):
         if filepath.lower().endswith('.kcpps') or filepath.lower().endswith('.kcppt'):
             #load it as a config file instead
-            with open(filepath, 'r') as f:
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 dict = json.load(f)
                 import_vars(dict)
 
@@ -4269,7 +4271,7 @@ def show_gui():
         try:
             if kcpp_exporting_template and isinstance(args.chatcompletionsadapter, str) and args.chatcompletionsadapter!="" and os.path.exists(args.chatcompletionsadapter):
                 print("Embedding chat completions adapter...")   # parse and save embedded preload story
-                with open(args.chatcompletionsadapter, 'r') as f:
+                with open(args.chatcompletionsadapter, 'r', encoding='utf-8', errors='ignore') as f:
                     args.chatcompletionsadapter = json.load(f)
         except Exception:
             pass
@@ -4280,7 +4282,7 @@ def show_gui():
         try:
             if kcpp_exporting_template and isinstance(args.preloadstory, str) and args.preloadstory!="" and os.path.exists(args.preloadstory):
                 print("Embedding preload story...")   # parse and save embedded preload story
-                with open(args.preloadstory, 'r') as f:
+                with open(args.preloadstory, 'r', encoding='utf-8', errors='ignore') as f:
                     args.preloadstory = json.load(f)
         except Exception:
             pass
@@ -4539,7 +4541,7 @@ def show_gui():
         if not filename or filename=="":
             return
         runmode_untouched = False
-        with open(filename, 'r') as f:
+        with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
             dict = json.load(f)
             import_vars(dict)
         pass
@@ -5155,7 +5157,7 @@ def unload_libs():
 
 def load_config_cli(filename):
     print("Loading .kcpps configuration file...")
-    with open(filename, 'r') as f:
+    with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
         config = json.load(f)
         args.istemplate = False
         raw_args = (sys.argv[1:]) #a lousy hack to allow for overriding kcpps
@@ -5433,7 +5435,7 @@ def main(launch_args,start_server=True):
                 ccadapter_path = os.path.abspath(premade_adapt_path)
         if ccadapter_path:
             print(f"Loading Chat Completions Adapter: {ccadapter_path}")
-            with open(ccadapter_path, 'r') as f:
+            with open(ccadapter_path, 'r', encoding='utf-8', errors='replace') as f:
                 chatcompl_adapter = json.load(f)
                 canload = True
         else:
