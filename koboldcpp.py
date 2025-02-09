@@ -9,6 +9,7 @@
 # scenarios and everything Kobold and KoboldAI Lite have to offer.
 
 import ctypes
+import multiprocessing
 import os
 import math
 import re
@@ -36,6 +37,8 @@ bias_min_value = -100.0
 bias_max_value = 100.0
 logprobs_max = 5
 default_draft_amount = 8
+default_ttsmaxlen = 4096
+default_visionmaxres = 1024
 
 # abuse prevention
 stop_token_max = 256
@@ -44,6 +47,12 @@ logit_bias_max = 512
 dry_seq_break_max = 128
 
 # global vars
+KcppVersion = "1.83.1.yr0-ROCm"
+showdebug = True
+kcpp_instance = None #global running instance
+global_memory = {"tunnel_url": "", "restart_target":"", "input_to_exit":False, "load_complete":False}
+using_gui_launcher = False
+
 handle = None
 friendlymodelname = "inactive"
 friendlysdmodelname = "inactive"
@@ -59,9 +68,6 @@ maxhordelen = 400
 modelbusy = threading.Lock()
 requestsinqueue = 0
 defaultport = 5001
-KcppVersion = "1.82.4.yr0-ROCm"
-showdebug = True
-guimode = False
 showsamplerwarning = True
 showmaxctxwarning = True
 showusedmemwarning = True
@@ -97,8 +103,7 @@ start_time = time.time()
 last_req_time = time.time()
 last_non_horde_req_time = time.time()
 currfinishreason = "null"
-using_gui_launcher = False
-using_outdated_flags = False
+
 
 saved_stdout = None
 saved_stderr = None
@@ -151,6 +156,7 @@ class load_model_inputs(ctypes.Structure):
                 ("draft_gpulayers", ctypes.c_int),
                 ("draft_gpusplit", ctypes.c_float * tensor_split_max),
                 ("mmproj_filename", ctypes.c_char_p),
+                ("visionmaxres", ctypes.c_int),
                 ("use_mmap", ctypes.c_bool),
                 ("use_mlock", ctypes.c_bool),
                 ("use_smartcontext", ctypes.c_bool),
@@ -160,7 +166,6 @@ class load_model_inputs(ctypes.Structure):
                 ("cublas_info", ctypes.c_int),
                 ("vulkan_info", ctypes.c_char_p),
                 ("blasbatchsize", ctypes.c_int),
-                ("debugmode", ctypes.c_int),
                 ("forceversion", ctypes.c_int),
                 ("gpulayers", ctypes.c_int),
                 ("rope_freq_scale", ctypes.c_float),
@@ -169,7 +174,9 @@ class load_model_inputs(ctypes.Structure):
                 ("flash_attention", ctypes.c_bool),
                 ("tensor_split", ctypes.c_float * tensor_split_max),
                 ("quant_k", ctypes.c_int),
-                ("quant_v", ctypes.c_int)]
+                ("quant_v", ctypes.c_int),
+                ("quiet", ctypes.c_bool),
+                ("debugmode", ctypes.c_int)]
 
 class generation_inputs(ctypes.Structure):
     _fields_ = [("seed", ctypes.c_int),
@@ -202,7 +209,6 @@ class generation_inputs(ctypes.Structure):
                 ("stream_sse", ctypes.c_bool),
                 ("grammar", ctypes.c_char_p),
                 ("grammar_retain_state", ctypes.c_bool),
-                ("quiet", ctypes.c_bool),
                 ("dynatemp_range", ctypes.c_float),
                 ("dynatemp_exponent", ctypes.c_float),
                 ("smoothing_factor", ctypes.c_float),
@@ -242,6 +248,7 @@ class sd_load_model_inputs(ctypes.Structure):
                 ("vae_filename", ctypes.c_char_p),
                 ("lora_filename", ctypes.c_char_p),
                 ("lora_multiplier", ctypes.c_float),
+                ("quiet", ctypes.c_bool),
                 ("debugmode", ctypes.c_int)]
 
 class sd_generation_inputs(ctypes.Structure):
@@ -255,8 +262,7 @@ class sd_generation_inputs(ctypes.Structure):
                 ("height", ctypes.c_int),
                 ("seed", ctypes.c_int),
                 ("sample_method", ctypes.c_char_p),
-                ("clip_skip", ctypes.c_int),
-                ("quiet", ctypes.c_bool)]
+                ("clip_skip", ctypes.c_int)]
 
 class sd_generation_outputs(ctypes.Structure):
     _fields_ = [("status", ctypes.c_int),
@@ -268,14 +274,14 @@ class whisper_load_model_inputs(ctypes.Structure):
                 ("clblast_info", ctypes.c_int),
                 ("cublas_info", ctypes.c_int),
                 ("vulkan_info", ctypes.c_char_p),
+                ("quiet", ctypes.c_bool),
                 ("debugmode", ctypes.c_int)]
 
 class whisper_generation_inputs(ctypes.Structure):
     _fields_ = [("prompt", ctypes.c_char_p),
                 ("audio_data", ctypes.c_char_p),
                 ("suppress_non_speech", ctypes.c_bool),
-                ("langcode", ctypes.c_char_p),
-                ("quiet", ctypes.c_bool)]
+                ("langcode", ctypes.c_char_p)]
 
 class whisper_generation_outputs(ctypes.Structure):
     _fields_ = [("status", ctypes.c_int),
@@ -291,13 +297,14 @@ class tts_load_model_inputs(ctypes.Structure):
                 ("vulkan_info", ctypes.c_char_p),
                 ("gpulayers", ctypes.c_int),
                 ("flash_attention", ctypes.c_bool),
+                ("ttsmaxlen", ctypes.c_int),
+                ("quiet", ctypes.c_bool),
                 ("debugmode", ctypes.c_int)]
 
 class tts_generation_inputs(ctypes.Structure):
     _fields_ = [("prompt", ctypes.c_char_p),
                 ("speaker_seed", ctypes.c_int),
                 ("audio_seed", ctypes.c_int),
-                ("quiet", ctypes.c_bool),
                 ("nocache", ctypes.c_bool)]
 
 class tts_generation_outputs(ctypes.Structure):
@@ -373,6 +380,7 @@ lib_failsafe = pick_existant_file("koboldcpp_failsafe.dll","koboldcpp_failsafe.s
 lib_noavx2 = pick_existant_file("koboldcpp_noavx2.dll","koboldcpp_noavx2.so")
 lib_clblast = pick_existant_file("koboldcpp_clblast.dll","koboldcpp_clblast.so")
 lib_clblast_noavx2 = pick_existant_file("koboldcpp_clblast_noavx2.dll","koboldcpp_clblast_noavx2.so")
+lib_clblast_failsafe = pick_existant_file("koboldcpp_clblast_failsafe.dll","koboldcpp_clblast_failsafe.so")
 lib_cublas = pick_existant_file("koboldcpp_cublas.dll","koboldcpp_cublas.so")
 lib_hipblas = pick_existant_file("koboldcpp_hipblas.dll","koboldcpp_hipblas.so")
 lib_vulkan = pick_existant_file("koboldcpp_vulkan.dll","koboldcpp_vulkan.so")
@@ -380,15 +388,16 @@ lib_vulkan_noavx2 = pick_existant_file("koboldcpp_vulkan_noavx2.dll","koboldcpp_
 libname = ""
 lib_option_pairs = [
     (lib_default, "Use CPU"),
-    (lib_clblast, "Use CLBlast"),
     (lib_cublas, "Use CuBLAS"),
     (lib_hipblas, "Use hipBLAS (ROCm)"),
     (lib_vulkan, "Use Vulkan"),
+    (lib_clblast, "Use CLBlast"),
     (lib_noavx2, "Use CPU (Old CPU)"),
     (lib_vulkan_noavx2, "Use Vulkan (Old CPU)"),
-    (lib_clblast_noavx2, "Use CLBlast (Older CPU)"),
+    (lib_clblast_noavx2, "Use CLBlast (Old CPU)"),
+    (lib_clblast_failsafe, "Use CLBlast (Older CPU)"),
     (lib_failsafe, "Failsafe Mode (Older CPU)")]
-default_option, clblast_option, cublas_option, hipblas_option, vulkan_option, noavx2_option, vulkan_noavx2_option, clblast_noavx2_option, failsafe_option = (opt if file_exists(lib) or (os.name == 'nt' and file_exists(opt + ".dll")) else None for lib, opt in lib_option_pairs)
+default_option, cublas_option, hipblas_option, vulkan_option, clblast_option, noavx2_option, vulkan_noavx2_option, clblast_noavx2_option, clblast_failsafe_option, failsafe_option = (opt if file_exists(lib) or (os.name == 'nt' and file_exists(opt + ".dll")) else None for lib, opt in lib_option_pairs)
 runopts = [opt for lib, opt in lib_option_pairs if file_exists(lib)]
 
 def get_amd_gfx_vers_linux():
@@ -418,13 +427,16 @@ def get_amd_gfx_vers_linux():
 
 def init_library():
     global handle, args, libname
-    global lib_default,lib_failsafe,lib_noavx2,lib_clblast,lib_clblast_noavx2,lib_cublas,lib_hipblas,lib_vulkan,lib_vulkan_noavx2
+    global lib_default,lib_failsafe,lib_noavx2,lib_clblast,lib_clblast_noavx2,lib_clblast_failsafe,lib_cublas,lib_hipblas,lib_vulkan,lib_vulkan_noavx2
 
     libname = lib_default
 
     if args.noavx2:
-        if args.useclblast and file_exists(lib_clblast_noavx2) and (os.name!='nt' or file_exists("clblast.dll")):
-            libname = lib_clblast_noavx2
+        if args.useclblast and (os.name!='nt' or file_exists("clblast.dll")):
+            if (args.failsafe) and file_exists(lib_clblast_failsafe):
+                libname = lib_clblast_failsafe
+            elif file_exists(lib_clblast_noavx2):
+                libname = lib_clblast_noavx2
         elif (args.usevulkan is not None) and file_exists(lib_vulkan_noavx2):
             libname = lib_vulkan_noavx2
         elif (args.failsafe) and file_exists(lib_failsafe):
@@ -538,6 +550,12 @@ def set_backend_props(inputs):
         inputs.vulkan_info = s.encode("UTF-8")
     else:
         inputs.vulkan_info = "".encode("UTF-8")
+
+    # set universal flags
+    inputs.quiet = args.quiet
+    inputs.debugmode = args.debugmode
+    inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
+
     return inputs
 
 def end_trim_to_sentence(input_text):
@@ -610,10 +628,10 @@ def unpack_to_dir(destpath = ""):
             messagebox.showwarning("Invalid Selection", "The target folder is not empty or invalid. Please select an empty folder.")
 
 def exit_with_error(code, message, title="Error"):
-    global guimode
+    global using_gui_launcher
     print("")
     time.sleep(1)
-    if guimode:
+    if using_gui_launcher:
         show_gui_msgbox(title, message)
     else:
         print(message, flush=True)
@@ -689,7 +707,8 @@ def get_capabilities():
     has_whisper = (fullwhispermodelpath!="")
     has_search = True if args.websearch else False
     has_tts = (ttsmodelpath!="")
-    return {"result":"KoboldCpp", "version":KcppVersion, "protected":has_password, "llm":has_llm, "txt2img":has_txt2img,"vision":has_vision,"transcribe":has_whisper,"multiplayer":has_multiplayer,"websearch":has_search,"tts":has_tts}
+    admin_type = (2 if args.admin and args.admindir and args.adminpassword else (1 if args.admin and args.admindir else 0))
+    return {"result":"KoboldCpp", "version":KcppVersion, "protected":has_password, "llm":has_llm, "txt2img":has_txt2img,"vision":has_vision,"transcribe":has_whisper,"multiplayer":has_multiplayer,"websearch":has_search,"tts":has_tts, "admin": admin_type}
 
 def dump_gguf_metadata(file_path): #if you're gonna copy this into your own project at least credit concedo
     chunk_size = 1024*1024*12  # read first 12mb of file
@@ -1076,6 +1095,7 @@ def load_model(model_filename):
         else:
             inputs.draft_gpusplit[n] = 0
     inputs.mmproj_filename = args.mmproj.encode("UTF-8") if args.mmproj else "".encode("UTF-8")
+    inputs.visionmaxres = (512 if args.visionmaxres < 512 else (2048 if args.visionmaxres > 2048 else args.visionmaxres))
     inputs.use_smartcontext = args.smartcontext
     inputs.use_contextshift = (0 if args.noshift else 1)
     inputs.use_fastforward = (0 if args.nofastforward else 1)
@@ -1103,41 +1123,38 @@ def load_model(model_filename):
 
     inputs.moe_experts = args.moeexperts
     inputs = set_backend_props(inputs)
-
-    inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
-    inputs.debugmode = args.debugmode
     ret = handle.load_model(inputs)
     return ret
 
-def generate(genparams, is_quiet=False, stream_flag=False):
+def generate(genparams, stream_flag=False):
     global maxctx, args, currentusergenkey, totalgens, pendingabortkey
 
     prompt = genparams.get('prompt', "")
     memory = genparams.get('memory', "")
     images = genparams.get('images', [])
-    max_context_length = genparams.get('max_context_length', maxctx)
-    max_length = genparams.get('max_length', 200)
-    temperature = genparams.get('temperature', 0.75)
-    top_k = genparams.get('top_k', 100)
-    top_a = genparams.get('top_a', 0.0)
-    top_p = genparams.get('top_p', 0.92)
-    min_p = genparams.get('min_p', 0.0)
-    typical_p = genparams.get('typical', 1.0)
-    tfs = genparams.get('tfs', 1.0)
-    rep_pen = genparams.get('rep_pen', 1.0)
-    rep_pen_range = genparams.get('rep_pen_range', 320)
-    rep_pen_slope = genparams.get('rep_pen_slope', 1.0)
-    presence_penalty = genparams.get('presence_penalty', 0.0)
-    mirostat = genparams.get('mirostat', 0)
-    mirostat_tau = genparams.get('mirostat_tau', 5.0)
-    mirostat_eta = genparams.get('mirostat_eta', 0.1)
-    dry_multiplier = genparams.get('dry_multiplier', 0.0)
-    dry_base = genparams.get('dry_base', 1.75)
-    dry_allowed_length = genparams.get('dry_allowed_length', 2)
-    dry_penalty_last_n = genparams.get('dry_penalty_last_n', 320)
+    max_context_length = int(genparams.get('max_context_length', maxctx))
+    max_length = int(genparams.get('max_length', 200))
+    temperature = float(genparams.get('temperature', 0.75))
+    top_k = int(genparams.get('top_k', 100))
+    top_a = float(genparams.get('top_a', 0.0))
+    top_p = float(genparams.get('top_p', 0.92))
+    min_p = float(genparams.get('min_p', 0.0))
+    typical_p = float(genparams.get('typical', 1.0))
+    tfs = float(genparams.get('tfs', 1.0))
+    rep_pen = float(genparams.get('rep_pen', 1.0))
+    rep_pen_range = int(genparams.get('rep_pen_range', 320))
+    rep_pen_slope = float(genparams.get('rep_pen_slope', 1.0))
+    presence_penalty = float(genparams.get('presence_penalty', 0.0))
+    mirostat = int(genparams.get('mirostat', 0))
+    mirostat_tau = float(genparams.get('mirostat_tau', 5.0))
+    mirostat_eta = float(genparams.get('mirostat_eta', 0.1))
+    dry_multiplier = float(genparams.get('dry_multiplier', 0.0))
+    dry_base = float(genparams.get('dry_base', 1.75))
+    dry_allowed_length = int(genparams.get('dry_allowed_length', 2))
+    dry_penalty_last_n = int(genparams.get('dry_penalty_last_n', 320))
     dry_sequence_breakers = genparams.get('dry_sequence_breakers', [])
-    xtc_threshold = genparams.get('xtc_threshold', 0.2)
-    xtc_probability = genparams.get('xtc_probability', 0)
+    xtc_threshold = float(genparams.get('xtc_threshold', 0.2))
+    xtc_probability = float(genparams.get('xtc_probability', 0))
     sampler_order = genparams.get('sampler_order', [6, 0, 1, 3, 4, 2, 5])
     seed = tryparseint(genparams.get('sampler_seed', -1))
     stop_sequence = genparams.get('stop_sequence', [])
@@ -1147,10 +1164,9 @@ def generate(genparams, is_quiet=False, stream_flag=False):
     grammar_retain_state = genparams.get('grammar_retain_state', False)
     genkey = genparams.get('genkey', '')
     trimstop = genparams.get('trim_stop', True)
-    quiet = is_quiet
-    dynatemp_range = genparams.get('dynatemp_range', 0.0)
-    dynatemp_exponent = genparams.get('dynatemp_exponent', 1.0)
-    smoothing_factor = genparams.get('smoothing_factor', 0.0)
+    dynatemp_range = float(genparams.get('dynatemp_range', 0.0))
+    dynatemp_exponent = float(genparams.get('dynatemp_exponent', 1.0))
+    smoothing_factor = float(genparams.get('smoothing_factor', 0.0))
     logit_biases = genparams.get('logit_bias', {})
     render_special = genparams.get('render_special', False)
     banned_strings = genparams.get('banned_strings', []) # SillyTavern uses that name
@@ -1196,7 +1212,6 @@ def generate(genparams, is_quiet=False, stream_flag=False):
     inputs.rep_pen_slope = rep_pen_slope
     inputs.presence_penalty = presence_penalty
     inputs.stream_sse = stream_sse
-    inputs.quiet = quiet
     inputs.dynatemp_range = dynatemp_range
     inputs.dynatemp_exponent = dynatemp_exponent
     inputs.smoothing_factor = smoothing_factor
@@ -1315,8 +1330,6 @@ def generate(genparams, is_quiet=False, stream_flag=False):
 def sd_load_model(model_filename,vae_filename,lora_filename,t5xxl_filename,clipl_filename,clipg_filename):
     global args
     inputs = sd_load_model_inputs()
-    inputs.debugmode = args.debugmode
-    inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
     inputs.model_filename = model_filename.encode("UTF-8")
     thds = args.threads
     quant = 0
@@ -1394,7 +1407,6 @@ def sd_generate(genparams):
     height = tryparseint(genparams.get("height", 512))
     seed = tryparseint(genparams.get("seed", -1))
     sample_method = genparams.get("sampler_name", "k_euler_a")
-    is_quiet = True if (args.quiet or args.debugmode == -1) else False
     clip_skip = tryparseint(genparams.get("clip_skip", -1))
 
     #clean vars
@@ -1431,7 +1443,6 @@ def sd_generate(genparams):
     inputs.height = height
     inputs.seed = seed
     inputs.sample_method = sample_method.lower().encode("UTF-8")
-    inputs.quiet = is_quiet
     inputs.clip_skip = clip_skip
     ret = handle.sd_generate(inputs)
     outstr = ""
@@ -1443,8 +1454,6 @@ def sd_generate(genparams):
 def whisper_load_model(model_filename):
     global args
     inputs = whisper_load_model_inputs()
-    inputs.debugmode = args.debugmode
-    inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
     inputs.model_filename = model_filename.encode("UTF-8")
     inputs = set_backend_props(inputs)
     ret = handle.whisper_load_model(inputs)
@@ -1452,7 +1461,6 @@ def whisper_load_model(model_filename):
 
 def whisper_generate(genparams):
     global args
-    is_quiet = True if (args.quiet or args.debugmode == -1) else False
     prompt = genparams.get("prompt", "")
     audio_data = genparams.get("audio_data", "")
     if audio_data.startswith("data:audio"):
@@ -1460,7 +1468,6 @@ def whisper_generate(genparams):
     inputs = whisper_generation_inputs()
     inputs.prompt = prompt.encode("UTF-8")
     inputs.audio_data = audio_data.encode("UTF-8")
-    inputs.quiet = is_quiet
     lc = genparams.get("langcode", genparams.get("language", "auto"))
     lc = lc.strip().lower() if (lc and lc.strip().lower()!="") else "auto"
     inputs.langcode = lc.encode("UTF-8")
@@ -1474,8 +1481,6 @@ def whisper_generate(genparams):
 def tts_load_model(ttc_model_filename,cts_model_filename):
     global args
     inputs = tts_load_model_inputs()
-    inputs.debugmode = args.debugmode
-    inputs.executable_path = (getdirpath()+"/").encode("UTF-8")
     inputs.ttc_model_filename = ttc_model_filename.encode("UTF-8")
     inputs.cts_model_filename = cts_model_filename.encode("UTF-8")
     inputs.gpulayers = (999 if args.ttsgpu else 0)
@@ -1486,13 +1491,13 @@ def tts_load_model(ttc_model_filename,cts_model_filename):
         if ttst > 0:
             thds = ttst
     inputs.threads = thds
+    inputs.ttsmaxlen = args.ttsmaxlen if args.ttsmaxlen < 4096 else 4096
     inputs = set_backend_props(inputs)
     ret = handle.tts_load_model(inputs)
     return ret
 
 def tts_generate(genparams):
     global args
-    is_quiet = True if (args.quiet or args.debugmode == -1) else False
     prompt = genparams.get("input", genparams.get("text", ""))
     prompt = prompt.strip()
     voice = 1
@@ -1512,7 +1517,6 @@ def tts_generate(genparams):
     except Exception:
         aseed = -1
     inputs.audio_seed = aseed
-    inputs.quiet = is_quiet
     inputs.nocache = genparams.get("nocache", False)
     ret = handle.tts_generate(inputs)
     outstr = ""
@@ -1803,9 +1807,9 @@ def transform_genparams(genparams, api_format):
     global chatcompl_adapter, maxctx
     #api format 1=basic,2=kai,3=oai,4=oai-chat,5=interrogate,6=ollama,7=ollamachat
     #alias all nonstandard alternative names for rep pen.
-    rp1 = genparams.get('repeat_penalty', 1.0)
-    rp2 = genparams.get('repetition_penalty', 1.0)
-    rp3 = genparams.get('rep_pen', 1.0)
+    rp1 = float(genparams.get('repeat_penalty', 1.0))
+    rp2 = float(genparams.get('repetition_penalty', 1.0))
+    rp3 = float(genparams.get('rep_pen', 1.0))
     rp_max = max(rp1,rp2,rp3)
     genparams["rep_pen"] = rp_max
     if "use_default_badwordsids" in genparams and "ban_eos_token" not in genparams:
@@ -1814,7 +1818,7 @@ def transform_genparams(genparams, api_format):
     if api_format==1:
         genparams["prompt"] = genparams.get('text', "")
         genparams["top_k"] = int(genparams.get('top_k', 120))
-        genparams["max_length"] = genparams.get('max', 200)
+        genparams["max_length"] = int(genparams.get('max', 200))
 
     elif api_format==2:
         pass
@@ -1823,9 +1827,9 @@ def transform_genparams(genparams, api_format):
         default_adapter = {} if chatcompl_adapter is None else chatcompl_adapter
         adapter_obj = genparams.get('adapter', default_adapter)
         default_max_tok = (adapter_obj.get("max_length", 512) if (api_format==4 or api_format==7) else 200)
-        genparams["max_length"] = genparams.get('max_tokens', genparams.get('max_completion_tokens', default_max_tok))
+        genparams["max_length"] = int(genparams.get('max_tokens', genparams.get('max_completion_tokens', default_max_tok)))
         presence_penalty = genparams.get('presence_penalty', genparams.get('frequency_penalty', 0.0))
-        genparams["presence_penalty"] = presence_penalty
+        genparams["presence_penalty"] = float(presence_penalty)
         # openai allows either a string or a list as a stop sequence
         if isinstance(genparams.get('stop',[]), list):
             genparams["stop_sequence"] = genparams.get('stop', [])
@@ -2015,7 +2019,7 @@ def LaunchWebbrowser(target_url, failedmsg):
 ### A hacky simple HTTP server simulating a kobold api by Concedo
 ### we are intentionally NOT using flask, because we want MINIMAL dependencies
 #################################################################
-class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
+class KcppServerRequestHandler(http.server.SimpleHTTPRequestHandler):
     sys_version = ""
     server_version = "ConcedoLlamaForKoboldServer"
 
@@ -2070,7 +2074,6 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     async def generate_text(self, genparams, api_format, stream_flag):
         global friendlymodelname, chatcompl_adapter, currfinishreason
-        is_quiet = args.quiet
         currfinishreason = "null"
 
         def run_blocking():  # api format 1=basic,2=kai,3=oai,4=oai-chat
@@ -2080,7 +2083,7 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 global last_non_horde_req_time
                 last_non_horde_req_time = time.time()
 
-            return generate(genparams=genparams,is_quiet=is_quiet,stream_flag=stream_flag)
+            return generate(genparams=genparams,stream_flag=stream_flag)
 
         genout = {"text": "", "status": -1, "stopreason": -1, "prompt_tokens":0, "completion_tokens": 0, "total_tokens": 0}
         if stream_flag:
@@ -2272,9 +2275,9 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return False
         return True
 
-    def secure_endpoint(self): #returns false if auth fails. caller should exit
-        #handle password stuff
-        if password and password !="":
+    def check_header_password(self, target_password):
+        auth_ok = True
+        if target_password and target_password !="":
             auth_header = None
             auth_ok = False
             if 'Authorization' in self.headers:
@@ -2283,17 +2286,22 @@ class ServerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 auth_header = self.headers['authorization']
             if auth_header is not None and auth_header.startswith('Bearer '):
                 token = auth_header[len('Bearer '):].strip()
-                if token==password:
+                if token==target_password:
                     auth_ok = True
-            if auth_ok is False:
-                self.send_response(401)
-                self.end_headers(content_type='application/json')
-                self.wfile.write(json.dumps({"detail": {
-                        "error": "Unauthorized",
-                        "msg": "Authentication key is missing or invalid.",
-                        "type": "unauthorized",
-                    }}).encode())
-                return False
+        return auth_ok
+
+    def secure_endpoint(self): #returns false if auth fails. caller should exit
+        #handle password stuff
+        auth_ok = self.check_header_password(password)
+        if auth_ok is False:
+            self.send_response(401)
+            self.end_headers(content_type='application/json')
+            self.wfile.write(json.dumps({"detail": {
+                    "error": "Unauthorized",
+                    "msg": "Authentication key is missing or invalid.",
+                    "type": "unauthorized",
+                }}).encode())
+            return False
         return True
 
     def noscript_webui(self):
@@ -2376,6 +2384,7 @@ Enter Prompt:<br>
 
     def do_GET(self):
         global embedded_kailite, embedded_kcpp_docs, embedded_kcpp_sdui
+        global last_req_time, start_time
         global has_multiplayer, multiplayer_turn_major, multiplayer_turn_minor, multiplayer_story_data_compressed, multiplayer_dataformat, multiplayer_lastactive, maxctx, maxhordelen, friendlymodelname, lastgeneratedcomfyimg, KcppVersion, totalgens, preloaded_story, exitcounter, currentusergenkey, friendlysdmodelname, fullsdmodelpath, mmprojpath, password
         self.path = self.path.rstrip('/')
         response_body = None
@@ -2396,18 +2405,7 @@ Enter Prompt:<br>
             response_body = (json.dumps({"name":"KoboldAI Lite","short_name":"KoboldAI Lite","description":"Progressive Web App for KoboldAI Lite","start_url":"./","scope":".","display":"standalone","background_color":"#303030","theme_color":"#337ab7","orientation":"portrait-primary","icons":[{"src":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAACWCAMAAAAL34HQAAAAAXNSR0IB2cksfwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAJZQTFRFAAAA+3F0nlRTBAMD+9Oq9HR2DwoKHBIT+Pj3s1dY5WttlUtL8MOhMhsaSygngENC8YB+ZjY1JyEmOTI3AAAA0l5gzUlKTENIdG3SAgEBAQEAAgIBAQAAAQEBraup8KCWY1tarZqQ3tvdamOriYaG3nR0kGRf1ayUdWxto3909WRovby9x673UEp1x4R9lIfPs57jv6znVipSqwAAADJ0Uk5TAP///f////7///////7+/v/+//8G/////35O1yCv///////////+///////////////GhbwlAAAU9klEQVR4nO2ca3ejug6GT6Dg4R5wCW1zgzTckkna/v8/d17JQEhCLjNN96fRWjO7003MY1mWJdnO//73T/7JP/knD5Xn2VzX9enr7PnKQ2/zqa7PZ/8V0+x1Ti8krvkVrhk/NJ3O5/PXn2Z7nr29KiYv9IWuX37h7HVq+qGu8F/frqn1+1Cvrxg9M/KE7juOb+rTC+97Zqog1IXve3hs/np9wL8F9fYKRZnCD4LQ80Jr4pO6ht4GKh3gofDCQgt8YdKAv739xFg2UJ4fBlq913wvmEzEBbMnKs8JPL/Y15oT+h6B0bMPp3ruNOU4jpXnhfScWBOD7yIq0wJVneeW4wSQUJCRPZwLtgJNJSGoNIiV74PIn8TBIBeeFdrEk8U+t+hpkIVsY/qDJyVRiaij0hyMTiLCzSTwdHIBx4JnAzvwgv1+r6nHgzAMPTWQj7T8N+jK9EIeQX6PZu2LyIs3EzU6JyJCOyfDygut0VZAhm/Cp0zfHoml64kQxEVkPIxW4QvLJi78DxYfAwXBv8PYiEVS75shBJYDZYnQgm5fH4plLtKo4eKBtCwtFI69wTiGpEPIZDJhhDC0RrYDLEVFH4DJQ9nx5PFY5bKgDve4QjOwR5tBGdmBGYC80NqJaHrow+Thg2hmy6Xl66YM6EXggrYIyzBGQ2IHgrD4WTgwXY80wyCsRypLYY3zOFCGryz/CpYBrFCZlcM+K7RyKPYHsOrl2DBszRfCbyw/NB3COhfC0kQCkyIouHhfi/HLTez8DNZolMN5i8j3Q6B5whoeQWAZsQc3B0E3vMDK6cENed+fwSKFof/Ck74v/PwyluGLKCJv4YWa3ajw8VhTsyrH3PjIyAFG7/MDYzTMRc8FHju0UMsZ6Wew5nqqsLjjhu1gFGHFlyyehlvDEDo2f+LHsKaMNVLa4XfkeT4eqXcOYtEDRsvNfz3atp5BpQf52Oi9daT0dkXUiBvGeLl0WZbj4YDjb6koqIHjGfMrIOOG5zqWeoKZnlhct0wfx0VUWGUVUdPve7HGywap4dpjAbuRx90pFGp5xf7QaWq/Gc9bWMa4TwUstywuJgB/RgXfENVHrTNXO0hXNWaMTz4GqZEwfZtrhkjLO6N6emrN/zrWeHnaHUjGXN+iIrvysnMqGsbblnWOpQzsu1ygMgepnp6Wd2ENdYi5vjMfSVfndtVgjf8Si7hq+R0ueNGoGKZ6gnO8STWMRWC1/0c50OytL1eoSF2jmx5iPPxROL4CUf3Ru64VT56p8tHIdAovWnUOuv3hMVjwX0JvylFKrtSknmf8oGlSokl/grJpJMuyksjcg6W53cp9F1bXP/4ZTTrqTUquFgJAZfoBJVYIios0DPdP6FbCqR/Fc7Vb+n72V1hlVaOL+yJNZJLgZ1ofQ6coCpXHhebllIhcJ6isOI4ncV6S1In00BeT9Wx6abb2/EZhf4Ll7kNZlzWFtaYpTETdYVDzC5Y23hVPHORGl6xrNseS7Fg2clKb1lg3S6VK5c02iU/WacvF6/WdWGUo0rriOpfOI0a1n2JPVrGktDJ2sFLOh9XFpbJAi8l/20RVJ2hHyCRNoXqhWpNVEvn1Aes6l8KieCYp0kj1MIJQYybSbuKiYDe3Qqhr2GMgMDYDzYo5tFyCysPoRcl6QbJOo4YrTQTb1/1YTJUIUjraS6uq7SUGVq1iRuwgmRxUFy00vkZYI8bKqHciBVKWrSGpUCMALi9gD3EnFvoXZXgr9IT21pjUqpcAI7fIjoYqUuagujCGwrGANWJtZZIYSFcYNtHYPE9l4ipbrDtsK5NRRbqKMIxmJGkmkvobfdHiymE+1u+hIj7GMCqgLZvetdyn0HgSRRJIrcE3YiapCN27sdzUS1JqQ5AZ0LTGZJQVuNgm9ktOxO2Aal8D+cfrFBagaXFOMRQtDrq5TqITJDUfZSIQVtyJVfsyPZ7PbPipsgqRqADciMPBIhN5h6A1rXEdUhupNJvJo7P6o6byF6WiKu+0LTeVUg71Lam4dVHnRDWyHS4VnloXRVYOjyE1FzCA0hUmjwTUbrerdolo1CWzO2diBiqzUXKa7iRMPeJ5KCQ3b/qxwc3EtP0wP8UiV6phDG3yI7HfKRyealFF0e795eXl4/Njp7hSsb4TK41IWeQadh9fX2hAkk+Wh4qrqXHZZ2THVB4+MfpnBMeBFiCBz3M7P9RphcRcTEQCqJf394+vD27QTEVaLu8IA59cP6FPmET1+fn79+/P90hki3Vy4Apj1dBmEtIKdKQvxFZwWoEfhj6km3xmgrlcRZJ09bKLkq/fHzwknkTecU90WotEsnmihXf5xVwmnGGWduMhgngMMTYbhxbs2dkY1oUn2jhDUZE3bZX1Ik2Z/f69pjEx06i4R1tu4El2yzvqlViTvj4iGoEsbScn/AXXqYOJE9GGQh8Ly2Gxz6nYd+SheOWR0Y7HMNKjCr2tIp6kxf52kjF2fZ7NJkzzPYGd8jDCMBdH+uJ3+U5MozifH2PBWMaGbQUHa9cVVdaMIbBMjOLvj5RdfRHfTvbHpVdF3RBCaR88iqLidpO+I/Mx22KEhq+vp1iuixGmmlozipFapSuBvn58fABLj6jdNX4Q1T6/neyP3YqwWNs0h82PLx5F1d+D3ZteaMHTxwGwjtZrZBPkIcEFMNo2wtzhPm1h8buXj9Vq9blDmPOu1GXq63LMWNez6icXKjElfMvLjjr7zqOYyPV2uyUu7r/wfK5jsoc4NnmqyiQcZoyMcY6h9LCg4rPb1aoij/MLspBQEtr9omU2ze7D8llZn1+fO9FifaVy8evXyt1u15LsPYTnGimqs4iealjS5fCHKnl7KGr1iyWFaX3iv6sFjDahdrdQl6zvwYKDQCjEvVpVHVZFWPSrbVZVNHXo2RgdOPfyMwQ2cACuSkuNZbnY/jpgfXx+QWsmz6UVAPGTcxdWgMhdKXtFJslYK4zBr4YLlr/nAM/i7cbzQPCZudal4hofY8E4vthmI8L6tcKsD+07TL7EvKZerVYLDm/f+eOdAKvcU6pia545nb8N5Yq0G4+Qq+TFbryvj7FefvexECxhzbjDQUSMBW2/cxhxggW9l3mzHEJVl08J6F5B/gtKTfu2BbejtCVVu1tp+tYdWHtyceS0Pl6SIaztOsuNTYw1eHqJqjF8rCrE5UTrPtb7+yeFbWTy/OtURBpee8O2DAtLC3189/GxI/9EttXHWic1sMgxXC8QIkYNuJTseGmDRX6rxWIHodQlgttYdkA73Nyrj7TF6qlrVXkFYYnzKXiGlZLNjx0RfTU9Yif9/kKJnuCp9PvXCrB3YMWhXiU7hbUzG6we1yLxNGO0QU59EwuDSG9zTNGM4lZyDPie8uIDL//58S63iyQwjFslrtgX6zThT7+rxQcfxkKWNWRrz7dGjDW9CwsRv2kmzYcbLMSVHAKg4Z3Yrmrt1jYGaStdpFLFHztKx7C00vJYqVm+ShGo58Dyb2IhdcPKaFG6KRoXofpLXPL98xNU7xLEJe183cCyrWxRSRWtvSdN6I1QpBkHrGaY0PlmchNrrstsObbo5ACWY/XpLGma21EowR1f//rlGrexDKxhaxm9v3QfV3rbtpMJ1oqI5h6sZL8cI3jWHKHLVtdqGMlC3mm2k7J+LUeGcTPiGiMESSOlrlbeo2aOrxLT9HzPn9yLxQkSls5afX4tlX3whMQQygxtLlkdt9RVLrDCR7s+1U4s2imu+zWiFcsK78DKEElR+u0g5MraBqK01dcOoTh+1Wz7dFZ/2D4/HsVydcwFE6saZSGqCegjd9kWtGVvNgbNRUp8mqUrgVtkkUjR0CxvxbY7hobNEsf0t9psbTHzcstcnXlK2VKlCC4C8kV3Yfm1HU8myHEF1bcSZfarLdVtIBGiw9Vqnaax2sK0LTq84vclDMPAQXrOfOOiyjh8QBYLiaKk9YaVYHu378WyYmsyAZXkqD5K1xnC1NV2XaVJktK/KClO8xFiby1oT7L1SsZU6PNAR1XYzbjwqSPbNZUU8afiAID+HQEK/XHiOL7tTue6pxFW4PuFsadyBRVFkrSq67qq0opKeZHwgn0eW07IaaVoTiOxqLNJgtNNzw8dqw4FlY0W2XpdrdEnzi2gepMOKCGg8amufZeXj6kkHThIuOBWvX42ZypVIPi2+f8QE96tjpqRFEVBR5BCUiIVxujoC37Egi2VZUZRU5tC12rDsEKfyt/3YKXxZjKxoLERnxHwOiYlPnLz3OIqheklaaFdECdNVL3CD6Aws9exJi/kGgyV5e/DCgiLZYPVI6CqDw0VOhwGRY3U27aolG1GSeBcYtLaU25ScK1b46M2B61HYUFlLZpcbMd3BDZhHCsqmkyx09V8hE9nZQysvzQTyKSvQ7WnAj06xTSJY0sL2+mh8tXRRr2IC1vXj0fzacNGWRNKItCaow4gYWIRJx3yA+E9TC2YLwQdtIFDx9SLInIi3MNmVLgOeJnrefZGhRvLiLtBVP678ZLkHbXAA1R4N1QHBk8Aj2LRuTzL4g4a3XswQS5uRTVng8kUW3VtNt36YvAOT65FYgDKGpTeA0XgYebl/RNe1G47KhOH0/xBdVHaowszhPsebVptbbr1mLKhmJJRGZzwqDWn1adSKi9FfTQMPbh6mSWtby0V5lgA83qbDQwkUemOz1g0R2yKIiZxt+jyKml6QZ8pjg8Hb46XaKxLEPjc7vHU95w2QOPxizuszWZDZyyn0/P9ApgVHHzut5XMUaO0uNMXsjkv6caPiqx5t1afHsI7xBQNGf7CnLTaQ3vsGajbBIUPsLoG7gXQbrA/sQ3f7x2s467wGyiXcMKwdZ4wWfskirkU13dgZPp5c/5L8YzU6VC0PjZIXULQ3vCRwmjfVYP75FSklbivLcPC0nKAGmQ4sPT/ATtrwLpDe5u2w+oJWMImxFwS59VAnzQce31twWzjTfdZdZqboY4Q7CE5wjaMhstqueBIDy2rblieFyLEO62dBlQJ1Ly+bZHHOmna4qnQqKMJ/njOdRKztHStnSmPpcXtL+yTvmGqh54PA5tOj7FSiuED0cfqf05ZSBPcNcxx3zedCXvNvPVRtrL8gxp7r1HxLNIt/7QAPqX8cDn2zWDYbIxY61PdZOrYYrsda24hHmpeYdl0z+Vkd2U+FZW7HHumMzyjqLOW1Q7KvVCss/zoM0NVMYU1ov2vE1fPRyWXe0FVqwvKsuLWYO+F4mMO3cAZNk2armvnWJZ/vhVF6bRbmGE8hEWW8edUnHtgAeVxNBoXZg28QP1mow1kGq80iurw9ABWjmWmXWfUlHS6g/MXxKFoGQG2w1unzXpASdsFrM1gmQujmJTCtAbrCv1FpfFBIWUT8nIsSLccENJytGF1VYGhFLfFmoQDh6dmtIOuC2u4fNxrSs10WuEomO4t3ScjSGmgp8INK+43Ndy6wVWu85iLdoX15Pr+Eh9nbhy2E/q06+8Pc1EgLHzZUA8dYO97bcZCzDU/o+IQQucthaMY4Ky1ztxDjzadeSt5AMtDaoGQ0TnFOlQIjpVlTyiiP8d6fnvV9WzZj5+GogK7w0JkR7mgP4hV0GaWaFVp2VfbJGGDHzzN8gYsd3mEda76AxamGiX33qDRO5TvHBKR4RWtx7ghZV04+6Pr63LZFYiGJ03fZwVkXRewfK8f8x9hdSYyHrdv2Uyci3dt4CMkbfn05ZTLOPKkBdzEsG1Bl/182+rHC82yOh4v23cZV5TFB7hq92nZl1Mu49618FiGsPpvsR39yik8qCsjrPG+xnIWpLQtZfwMlpEHVCyo93s6imddThRZXWYkm1IQSXXG9QAsRcXJHdXxSKisffkkpbou3Qn8fuWenMb9S6z4dH7bdEjxznOnsPpXugbdCE2BurtK0Djjv8fqT25F1b7ola5eXy3ZzN7eDikR1iOytYPL+A5WP4s0EFr1LmU8z2Z/cu6a8n+ZHU3Hv8Zqo22uQtOJp29cyaA54JfL3iH0B2DRToR56ZTpH3BlT4f5+C3bitXhUUX1ndsYz90xhNbC/h4LZu7RhbLvU7VcVV1oew6a/w6LSn88+Twnt5jqu1eQ+EsBIhl5YZH/LRalFUxFX4wQPoLqf009TqfqPhVcTrDUhdtOgsMN514SAh+fI9KJ1Hm8q0cL/pDLjCJwUfGkufvbiN/sC7Sle+F5fkPX7ADR/g8F6jAFN5MP/UIBii0SydWcWPOF2b8VcPSPA1533JiKzPlE6HQnwBGPGcBGnunaZJZ6voZ5RCfxRbcvgemQsZR0MyKri7SpvUdJVVUJ1/PDQIiifHpyA/HgO/tzs9qWqaCv8qBNMxY6jJfSHQ0WdRPLdcuyoKwn5W2nNagoUvBqvtXx8JvCwFo9ZSneIfkg5GKx3WZCF/XQxZQ6MelUIm1w6qKqpJc0FxK0x1/JXaPlskjSdSLpHNwK7xRYmQZvzNQ+sOiQ1tb0yrIumvtebv14LNXhvftUeOmCz7lsTb0YxnILYNF+5gLZweFCjbuPHn85vm29EFKdodpy6D8omeBt1tVaT34Ya9GNkGxOfSzAegnL4+Nfq1Sv+ljlD2K5qeDzFVCFNzyGMMJE0PGerTzS549iPdURHyfZpmYwqCzMhm1hkka3QvTBXTe6lAz+NVa56lSh1LWQglRR1uRQy7JxWvCo6/V2tTCTLfRppsc3hf3HfpcTsPCWtvXaoyHKoAoXVJJvo6RKkoQOO1TbVYRHFkmUPR1hye9FpQNYi9VBXYUpF9vK9F11AbKfWNENQiRy20okGf4cX2AupflgLORm2w7M9c0klV7huntJ3xc1nx5kTrulmKsSa448UhYUO3yX5++xKK/lwzXNG3zEBrIkKqqVPfdFXU5drOkOVHMhkbuSJfqjvyaMj6SaQq6/yBspsxfJUznc/WcsCnKxlknZ0xTdGXrMvfgjLiTcdPahgrEzV11nZXIh1KQEIKG1uoWqFNTg6eBvCoPRbZ31glwT3e+7lMJwYpJirWY7rwFFO6s/9c1g6hvUWGWLLa3HV84hz2FZ25WbZQXf+LpwjvpB8tx8tRsC86ySp3cBzrjwDB0doun50986NyN30HioaylMV5T6D5hInp9ns7fpLarmBMOczPwnvwbvjOzWt+7N3t5eZ7P/Dqp9662hAdd/QvJP/skfyP8BnWh46M1E/qoAAAAASUVORK5CYII=","type":"image/png","sizes":"150x150"}]}).encode())
 
         elif self.path.endswith(('/api/v1/model', '/api/latest/model')):
-            auth_ok = True
-            if password and password !="":
-                auth_header = None
-                auth_ok = False
-                if 'Authorization' in self.headers:
-                    auth_header = self.headers['Authorization']
-                elif 'authorization' in self.headers:
-                    auth_header = self.headers['authorization']
-                if auth_header is not None and auth_header.startswith('Bearer '):
-                    token = auth_header[len('Bearer '):].strip()
-                    if token==password:
-                        auth_ok = True
+            auth_ok = self.check_header_password(password)
             response_body = (json.dumps({'result': (friendlymodelname if auth_ok else "koboldcpp/protected-model") }).encode())
 
         elif self.path.endswith(('/api/v1/config/max_length', '/api/latest/config/max_length')):
@@ -2432,8 +2430,14 @@ Enter Prompt:<br>
             caps = get_capabilities()
             response_body = (json.dumps(caps).encode())
 
+        elif self.path.endswith(('/api/admin/list_options')): #used by admin to get info about a kcpp instance
+            opts = []
+            if args.admin and args.admindir and os.path.exists(args.admindir) and self.check_header_password(args.adminpassword):
+                dirpath = os.path.abspath(args.admindir)
+                opts = [f for f in sorted(os.listdir(dirpath)) if f.endswith(".kcpps") and os.path.isfile(os.path.join(dirpath, f))]
+            response_body = (json.dumps(opts).encode())
+
         elif self.path.endswith(('/api/extra/perf')):
-            global last_req_time, start_time
             lastp = handle.get_last_process_time()
             laste = handle.get_last_eval_time()
             lastc = handle.get_last_token_count()
@@ -2558,7 +2562,7 @@ Enter Prompt:<br>
         if response_body is None:
             self.send_response(404)
             self.end_headers(content_type='text/html')
-            rp = 'Error: HTTP Server is running, but this endpoint does not exist. Please check the URL.'
+            rp = 'Error: KoboldCpp HTTP Server is running, but this endpoint does not exist. Please check the URL.'
             self.wfile.write(rp.encode())
         else:
             self.send_response(200)
@@ -2789,6 +2793,26 @@ Enter Prompt:<br>
             else:
                 response_body = (json.dumps([]).encode())
 
+        elif self.path.startswith(("/api/admin/reload_config")):
+            resp = {"success": False}
+            if global_memory and args.admin and args.admindir and os.path.exists(args.admindir) and self.check_header_password(args.adminpassword):
+                targetfile = ""
+                try:
+                    tempbody = json.loads(body)
+                    if isinstance(tempbody, dict):
+                        targetfile = tempbody.get('filename', "")
+                except Exception:
+                    targetfile = ""
+                if targetfile and targetfile!="":
+                    dirpath = os.path.abspath(args.admindir)
+                    targetfilepath = os.path.join(dirpath, targetfile)
+                    opts = [f for f in os.listdir(dirpath) if f.endswith(".kcpps") and os.path.isfile(os.path.join(dirpath, f))]
+                    if targetfile in opts and os.path.exists(targetfilepath):
+                        print(f"Admin: Received request to reload config to {targetfile}")
+                        global_memory["restart_target"] = targetfile
+                        resp = {"success": True}
+            response_body = (json.dumps(resp).encode())
+
         elif self.path.endswith('/set_tts_settings'): #return dummy response
             response_body = (json.dumps({"message": "Settings successfully applied"}).encode())
 
@@ -3009,11 +3033,11 @@ Enter Prompt:<br>
         self.send_header("cache-control", "no-store")
         if content_type is not None:
             self.send_header('content-type', content_type)
-        return super(ServerRequestHandler, self).end_headers()
+        return super(KcppServerRequestHandler, self).end_headers()
 
-def RunServerMultiThreaded(addr, port):
+def RunServerMultiThreaded(addr, port, server_handler):
     global exitcounter, sslvalid
-    global embedded_kailite, embedded_kcpp_docs, embedded_kcpp_sdui
+    global embedded_kailite, embedded_kcpp_docs, embedded_kcpp_sdui, global_memory
     if is_port_in_use(port):
         print(f"Warning: Port {port} already appears to be in use by another program.")
     ipv4_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -3057,7 +3081,7 @@ def RunServerMultiThreaded(addr, port):
 
         def run(self):
             global exitcounter
-            handler = ServerRequestHandler(addr, port)
+            handler = server_handler(addr, port)
             with http.server.HTTPServer((addr, port), handler, False) as self.httpd:
                 try:
                     if ipv6_sock:
@@ -3095,9 +3119,9 @@ def RunServerMultiThreaded(addr, port):
 
 # note: customtkinter-5.2.0
 def show_gui():
-    global guimode
-    guimode = True
-    from tkinter.filedialog import askopenfilename
+    global using_gui_launcher
+    using_gui_launcher = True
+    from tkinter.filedialog import askopenfilename, askdirectory
     from tkinter.filedialog import asksaveasfile
 
     # if args received, launch
@@ -3185,8 +3209,6 @@ def show_gui():
     else:
         root.resizable(True,True)
         root.bind("<Configure>", on_resize)
-    global using_gui_launcher
-    using_gui_launcher = True
     kcpp_exporting_template = False
 
     # trigger empty tooltip then remove it
@@ -3217,7 +3239,7 @@ def show_gui():
 
     tabs = ctk.CTkFrame(root, corner_radius = 0, width=windowwidth, height=windowheight-50)
     tabs.grid(row=0, stick="nsew")
-    tabnames= ["Quick Launch", "Hardware", "Tokens", "Model Files", "Network", "Horde Worker","Image Gen","Audio","Extra"]
+    tabnames= ["Quick Launch", "Hardware", "Tokens", "Model Files", "Network", "Horde Worker","Image Gen","Audio","Admin","Extra"]
     navbuttons = {}
     navbuttonframe = ctk.CTkFrame(tabs, width=100, height=int(tabs.cget("height")))
     navbuttonframe.grid(row=0, column=0, padx=2,pady=2)
@@ -3285,7 +3307,7 @@ def show_gui():
     customrope_var = ctk.IntVar()
     customrope_scale = ctk.StringVar(value="1.0")
     customrope_base = ctk.StringVar(value="10000")
-    chatcompletionsadapter_var = ctk.StringVar()
+    chatcompletionsadapter_var = ctk.StringVar(value="AutoGuess")
     moeexperts_var = ctk.StringVar(value=str(-1))
 
     model_var = ctk.StringVar()
@@ -3293,6 +3315,7 @@ def show_gui():
     lora_base_var = ctk.StringVar()
     preloadstory_var = ctk.StringVar()
     mmproj_var = ctk.StringVar()
+    visionmaxres_var = ctk.StringVar(value=str(default_visionmaxres))
     draftmodel_var = ctk.StringVar()
     draftamount_var = ctk.StringVar(value=str(default_draft_amount))
     draftgpulayers_var = ctk.StringVar(value=str(999))
@@ -3332,6 +3355,11 @@ def show_gui():
     wavtokenizer_var = ctk.StringVar()
     ttsgpu_var = ctk.IntVar(value=0)
     tts_threads_var = ctk.StringVar(value=str(default_threads))
+    ttsmaxlen_var = ctk.StringVar(value=str(default_ttsmaxlen))
+
+    admin_var = ctk.IntVar(value=0)
+    admin_dir_var = ctk.StringVar()
+    admin_password_var = ctk.StringVar()
 
     def tabbuttonaction(name):
         for t in tabcontent:
@@ -3395,12 +3423,16 @@ def show_gui():
         entry.grid(row=row, column=(0 if singleline else 1), padx=padx, sticky="nw")
         return entry, label
 
-    def makefileentry(parent, text, searchtext, var, row=0, width=200, filetypes=[], onchoosefile=None, singlerow=False, singlecol=True, tooltiptxt=""):
+    def makefileentry(parent, text, searchtext, var, row=0, width=200, filetypes=[], onchoosefile=None, singlerow=False, singlecol=True, is_dir=False, tooltiptxt=""):
         label = makelabel(parent, text, row,0,tooltiptxt,columnspan=3)
         def getfilename(var, text):
             initialDir = os.path.dirname(var.get())
             initialDir = initialDir if os.path.isdir(initialDir) else None
-            fnam = askopenfilename(title=text,filetypes=filetypes, initialdir=initialDir)
+            fnam = None
+            if is_dir:
+                fnam = askdirectory(title=text, mustexist=True, initialdir=initialDir)
+            else:
+                fnam = askopenfilename(title=text,filetypes=filetypes, initialdir=initialDir)
             if fnam:
                 var.set(fnam)
                 if onchoosefile:
@@ -3676,7 +3708,7 @@ def show_gui():
         # backend count label with the tooltip function
         nl = '\n'
         tooltxt = "Number of backends you have built and available." + (f"\n\nMissing Backends: \n\n{nl.join(antirunopts)}" if len(runopts) < 8 else "")
-        num_backends_built = makelabel(parent, str(len(runopts)) + "/8", 5, 2,tooltxt)
+        num_backends_built = makelabel(parent, str(len(runopts)) + "/9", 5, 2,tooltxt)
         num_backends_built.grid(row=1, column=1, padx=205, pady=0)
         num_backends_built.configure(text_color="#00ff00")
 
@@ -3697,7 +3729,7 @@ def show_gui():
         predicted_gpu_layers = autoset_gpu_layers(int(contextsize_text[context_var.get()]),(sd_quant_var.get()==1),int(blasbatchsize_values[int(blas_size_var.get())]))
         max_gpu_layers = (f"/{modelfile_extracted_meta[0][0]+3}" if (modelfile_extracted_meta and modelfile_extracted_meta[0] and modelfile_extracted_meta[0][0]!=0) else "")
         index = runopts_var.get()
-        gpu_be = (index == "Use Vulkan" or index == "Use Vulkan (Old CPU)" or index == "Use CLBlast" or index == "Use CLBlast (Older CPU)" or index == "Use CuBLAS" or index == "Use hipBLAS (ROCm)")
+        gpu_be = (index == "Use Vulkan" or index == "Use Vulkan (Old CPU)" or index == "Use CLBlast" or index == "Use CLBlast (Old CPU)" or index == "Use CLBlast (Older CPU)" or index == "Use CuBLAS" or index == "Use hipBLAS (ROCm)")
         layercounter_label.grid(row=6, column=1, padx=75, sticky="W")
         quick_layercounter_label.grid(row=6, column=1, padx=75, sticky="W")
         if sys.platform=="darwin" and gpulayers_var.get()=="-1":
@@ -3728,7 +3760,7 @@ def show_gui():
                 if v == "Use Vulkan" or v == "Use Vulkan (Old CPU)":
                     quick_gpuname_label.configure(text=VKDevicesNames[s])
                     gpuname_label.configure(text=VKDevicesNames[s])
-                elif v == "Use CLBlast" or v == "Use CLBlast (Older CPU)":
+                elif v == "Use CLBlast" or v == "Use CLBlast (Old CPU)" or v == "Use CLBlast (Older CPU)":
                     quick_gpuname_label.configure(text=CLDevicesNames[s])
                     gpuname_label.configure(text=CLDevicesNames[s])
                 elif v == "Use hipBLAS (ROCm)" and not any(CUDevicesNames) and any(CLDevicesNames):
@@ -3788,12 +3820,12 @@ def show_gui():
         global runmode_untouched
         runmode_untouched = False
         index = runopts_var.get()
-        if index == "Use Vulkan" or index == "Use Vulkan (Old CPU)" or index == "Use CLBlast" or index == "Use CLBlast (Older CPU)" or index == "Use CuBLAS" or index == "Use hipBLAS (ROCm)":
+        if index == "Use Vulkan" or index == "Use Vulkan (Old CPU)" or index == "Use CLBlast"  or index == "Use CLBlast (Old CPU)" or index == "Use CLBlast (Older CPU)" or index == "Use CuBLAS" or index == "Use hipBLAS (ROCm)":
             quick_gpuname_label.grid(row=3, column=1, padx=75, sticky="W")
             gpuname_label.grid(row=3, column=1, padx=75, sticky="W")
             gpu_selector_label.grid(row=3, column=0, padx = 8, pady=1, stick="nw")
             quick_gpu_selector_label.grid(row=3, column=0, padx = 8, pady=1, stick="nw")
-            if index == "Use CLBlast" or index == "Use CLBlast (Older CPU)":
+            if index == "Use CLBlast" or index == "Use CLBlast (Old CPU)" or index == "Use CLBlast (Older CPU)":
                 gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
                 quick_gpu_selector_box.grid(row=3, column=1, padx=8, pady=1, stick="nw")
                 CUDA_gpu_selector_box.grid_remove()
@@ -3837,7 +3869,7 @@ def show_gui():
         else:
             quick_use_flashattn.grid(row=22, column=1, padx=8, pady=1,  stick="nw")
 
-        if index == "Use Vulkan" or index == "Use Vulkan (Old CPU)" or index == "Use CLBlast" or index == "Use CLBlast (Older CPU)" or index == "Use CuBLAS" or index == "Use hipBLAS (ROCm)":
+        if index == "Use Vulkan" or index == "Use Vulkan (Old CPU)" or index == "Use CLBlast" or index == "Use CLBlast (Old CPU)" or index == "Use CLBlast (Older CPU)" or index == "Use CuBLAS" or index == "Use hipBLAS (ROCm)":
             gpu_layers_label.grid(row=6, column=0, padx = 8, pady=1, stick="nw")
             gpu_layers_entry.grid(row=6, column=1, padx=8, pady=1, stick="nw")
             quick_gpu_layers_label.grid(row=6, column=0, padx = 8, pady=1, stick="nw")
@@ -3998,10 +4030,11 @@ def show_gui():
     makefileentry(model_tab, "Text Lora:", "Select Lora File",lora_var, 3,width=280,singlerow=True,tooltiptxt="Select an optional GGML Text LoRA adapter to use.\nLeave blank to skip.")
     makefileentry(model_tab, "Lora Base:", "Select Lora Base File", lora_base_var, 5,width=280,singlerow=True,tooltiptxt="Select an optional F16 GGML Text LoRA base file to use.\nLeave blank to skip.")
     makefileentry(model_tab, "Vision mmproj:", "Select Vision mmproj File", mmproj_var, 7,width=280,singlerow=True,tooltiptxt="Select a mmproj file to use for vision models like LLaVA.\nLeave blank to skip.")
-    makefileentry(model_tab, "Draft Model:", "Select Speculative Text Model File", draftmodel_var, 9,width=280,singlerow=True,tooltiptxt="Select a draft text model file to use for speculative decoding.\nLeave blank to skip.")
-    makelabelentry(model_tab, "Draft Amount: ", draftamount_var, 11, 50,padx=100,singleline=True,tooltip="How many tokens to draft per chunk before verifying results")
-    makelabelentry(model_tab, "Splits: ", draftgpusplit_str_vars, 11, 50,padx=210,singleline=True,tooltip="Distribution of draft model layers. Leave blank to follow main model's gpu split. Only works if multi-gpu (All) selected in main model.", labelpadx=160)
-    makelabelentry(model_tab, "Layers: ", draftgpulayers_var, 11, 50,padx=320,singleline=True,tooltip="How many layers to GPU offload for the draft model", labelpadx=270)
+    makelabelentry(model_tab, "Vision MaxRes:", visionmaxres_var, 9, padx=100, singleline=True, tooltip=f"Clamp MMProj vision maximum allowed resolution. Allowed values are between 512 to 2048 px (default {default_visionmaxres}).")
+    makefileentry(model_tab, "Draft Model:", "Select Speculative Text Model File", draftmodel_var, 11,width=280,singlerow=True,tooltiptxt="Select a draft text model file to use for speculative decoding.\nLeave blank to skip.")
+    makelabelentry(model_tab, "Draft Amount: ", draftamount_var, 13, 50,padx=100,singleline=True,tooltip="How many tokens to draft per chunk before verifying results")
+    makelabelentry(model_tab, "Splits: ", draftgpusplit_str_vars, 13, 50,padx=210,singleline=True,tooltip="Distribution of draft model layers. Leave blank to follow main model's gpu split. Only works if multi-gpu (All) selected in main model.", labelpadx=160)
+    makelabelentry(model_tab, "Layers: ", draftgpulayers_var, 13, 50,padx=320,singleline=True,tooltip="How many layers to GPU offload for the draft model", labelpadx=270)
     makefileentry(model_tab, "Preload Story:", "Select Preloaded Story File", preloadstory_var, 15,width=280,singlerow=True,tooltiptxt="Select an optional KoboldAI JSON savefile \nto be served on launch to any client.")
     makefileentry(model_tab, "ChatCompletions Adapter:", "Select ChatCompletions Adapter File", chatcompletionsadapter_var, 24, width=250, filetypes=[("JSON Adapter", "*.json")], tooltiptxt="Select an optional ChatCompletions Adapter JSON file to force custom instruct tags.")
     def pickpremadetemplate():
@@ -4020,7 +4053,7 @@ def show_gui():
     network_tab = tabcontent["Network"]
 
     # interfaces
-    makelabelentry(network_tab, "Port: ", port_var, 1, 150,tooltip="Select the port to host the KoboldCPP webserver.\n(Defaults to 5001)")
+    makelabelentry(network_tab, "Port: ", port_var, 1, 150,tooltip=f"Select the port to host the KoboldCPP webserver.\n(Defaults to {defaultport})")
     makelabelentry(network_tab, "Host: ", host_var, 2, 150,tooltip="Select a specific host interface to bind to.\n(Defaults to all)")
 
     makecheckbox(network_tab, "Multiuser Mode", multiuser_var, 3,tooltiptxt="Allows requests by multiple different clients to be queued and handled in sequence.")
@@ -4118,7 +4151,13 @@ def show_gui():
     makefileentry(audio_tab, "WavTokenizer Model (Text-To-Speech):", "Select WavTokenizer GGUF Model File", wavtokenizer_var, 7, width=280, filetypes=[("*.gguf","*.gguf")], tooltiptxt="Select a WavTokenizer GGUF model file on disk to be loaded for Narration.")
     wavtokenizer_var.trace("w", gui_changed_modelfile)
     makecheckbox(audio_tab, "TTS Use GPU", ttsgpu_var, 9, 0,tooltiptxt="Uses the GPU for TTS.")
+    makelabelentry(audio_tab, "OuteTTS Max Tokens:" , ttsmaxlen_var, 11, 50,padx=290,singleline=True,tooltip="Max allowed audiotokens to generate per TTS request.")
     ttsgpu_var.trace("w", gui_changed_modelfile)
+
+    admin_tab = tabcontent["Admin"]
+    makecheckbox(admin_tab, "Enable Model Administration", admin_var, 1, 0,tooltiptxt="Enable a admin server, allowing you to remotely relaunch and swap models and configs.")
+    makelabelentry(admin_tab, "Admin Password:" , admin_password_var, 3, 150,padx=120,singleline=True,tooltip="Require a password to access admin functions. You are strongly advised to use one for publically accessible instances!")
+    makefileentry(admin_tab, "Config Directory:", "Select directory containing .kcpps files to relaunch from", admin_dir_var, 5, width=280, is_dir=True, tooltiptxt="Specify a directory to look for .kcpps configs in, which can be used to swap models.")
 
     def kcpp_export_template():
         nonlocal kcpp_exporting_template
@@ -4214,10 +4253,13 @@ def show_gui():
         #             gpuchoiceidx = CUdevices.index((gpu_choice_var.get()))
         # if runopts_var.get() == "Use CLBlast":
             gpuchoiceidx = int(gpu_choice_var.get())-1
-        if runopts_var.get() == "Use CLBlast" or runopts_var.get() == "Use CLBlast (Older CPU)":
+        if runopts_var.get() == "Use CLBlast" or runopts_var.get() == "Use CLBlast (Old CPU)" or runopts_var.get() == "Use CLBlast (Older CPU)":
             args.useclblast = [[0,0], [1,0], [0,1], [1,1]][gpuchoiceidx]
-            if runopts_var.get() == "Use CLBlast (Older CPU)":
+            if runopts_var.get() == "Use CLBlast (Old CPU)":
                 args.noavx2 = True
+            elif runopts_var.get() == "Use CLBlast (Older CPU)":
+                args.noavx2 = True
+                args.failsafe = True
         if runopts_var.get() == "Use CuBLAS" or runopts_var.get() == "Use hipBLAS (ROCm)":
             if gpu_choice_var.get()=="All":
                 args.usecublas = ["lowvram"] if lowvram_var.get() == 1 else ["normal"]
@@ -4288,6 +4330,7 @@ def show_gui():
         except Exception:
             pass
         args.mmproj = None if mmproj_var.get() == "" else mmproj_var.get()
+        args.visionmaxres = int(visionmaxres_var.get()) if visionmaxres_var.get()!="" else default_visionmaxres
         args.draftmodel = None if draftmodel_var.get() == "" else draftmodel_var.get()
         args.draftamount = int(draftamount_var.get()) if draftamount_var.get()!="" else default_draft_amount
         args.draftgpulayers = int(draftgpulayers_var.get()) if draftgpulayers_var.get()!="" else 999
@@ -4347,6 +4390,11 @@ def show_gui():
             args.ttsmodel = tts_model_var.get()
             args.ttswavtokenizer = wavtokenizer_var.get()
             args.ttsgpu = (ttsgpu_var.get()==1)
+            args.ttsmaxlen = int(ttsmaxlen_var.get())
+
+        args.admin = (admin_var.get()==1)
+        args.admindir = admin_dir_var.get()
+        args.adminpassword = admin_password_var.get()
 
     def import_vars(dict):
         global importvars_in_progress
@@ -4465,6 +4513,8 @@ def show_gui():
                 lora_var.set(dict["lora"][0])
 
         mmproj_var.set(dict["mmproj"] if ("mmproj" in dict and dict["mmproj"]) else "")
+        if "visionmaxres" in dict and dict["visionmaxres"]:
+            visionmaxres_var.set(dict["visionmaxres"])
         draftmodel_var.set(dict["draftmodel"] if ("draftmodel" in dict and dict["draftmodel"]) else "")
         if "draftamount" in dict:
             draftamount_var.set(dict["draftamount"])
@@ -4513,6 +4563,11 @@ def show_gui():
         tts_model_var.set(dict["ttsmodel"] if ("ttsmodel" in dict and dict["ttsmodel"]) else "")
         wavtokenizer_var.set(dict["ttswavtokenizer"] if ("ttswavtokenizer" in dict and dict["ttswavtokenizer"]) else "")
         ttsgpu_var.set(dict["ttsgpu"] if ("ttsgpu" in dict) else 0)
+        ttsmaxlen_var.set(str(dict["ttsmaxlen"]) if ("ttsmaxlen" in dict and dict["ttsmaxlen"]) else str(default_ttsmaxlen))
+
+        admin_var.set(dict["admin"] if ("admin" in dict) else 0)
+        admin_dir_var.set(dict["admindir"] if ("admindir" in dict and dict["admindir"]) else "")
+        admin_password_var.set(dict["adminpassword"] if ("adminpassword" in dict and dict["adminpassword"]) else "")
 
         importvars_in_progress = False
         gui_changed_modelfile()
@@ -4594,7 +4649,7 @@ def show_gui():
             exitcounter = 999
             print("")
             time.sleep(0.5)
-            if guimode:
+            if using_gui_launcher:
                 givehelp = show_gui_yesnobox("No Model Loaded","No text or image model file was selected. Cannot continue.\n\nDo you want help finding a GGUF model?")
                 if givehelp == 'yes':
                     display_help_models()
@@ -4772,7 +4827,7 @@ def show_gui_yesnobox(title,message):
 def print_with_time(txt):
     print(f"{datetime.now().strftime('[%H:%M:%S]')} " + txt, flush=True)
 
-def make_url_request(url, data, method='POST', headers={}):
+def make_url_request(url, data, method='POST', headers={}, timeout=300):
     import urllib.request
     global nocertify
     try:
@@ -4787,7 +4842,7 @@ def make_url_request(url, data, method='POST', headers={}):
         else:
             request = urllib.request.Request(url, headers=headers, method=method)
         response_data = ""
-        with urllib.request.urlopen(request,timeout=300) as response:
+        with urllib.request.urlopen(request,timeout=timeout) as response:
             response_data = response.read().decode('utf-8',"ignore")
             json_response = json.loads(response_data)
             return json_response
@@ -4964,11 +5019,7 @@ def convert_outdated_args(args):
     dict = args
     if isinstance(args, argparse.Namespace):
         dict = vars(args)
-
-    global using_outdated_flags
-    using_outdated_flags = False
     if "sdconfig" in dict and dict["sdconfig"] and len(dict["sdconfig"])>0:
-        using_outdated_flags = True
         dict["sdmodel"] = dict["sdconfig"][0]
         if dict["sdconfig"] and len(dict["sdconfig"]) > 1:
             dict["sdclamped"] = 512
@@ -4977,7 +5028,6 @@ def convert_outdated_args(args):
         if dict["sdconfig"] and len(dict["sdconfig"]) > 3:
             dict["sdquant"] = (True if dict["sdconfig"][3]=="quant" else False)
     if "hordeconfig" in dict and dict["hordeconfig"] and dict["hordeconfig"][0]!="":
-        using_outdated_flags = True
         dict["hordemodelname"] = dict["hordeconfig"][0]
         if len(dict["hordeconfig"]) > 1:
             dict["hordegenlen"] = int(dict["hordeconfig"][1])
@@ -4988,28 +5038,13 @@ def convert_outdated_args(args):
             dict["hordeworkername"] = dict["hordeconfig"][4]
     if "noblas" in dict and dict["noblas"]:
         dict["usecpu"] = True
-
-    check_deprecation_warning()
+    if "failsafe" in dict and dict["failsafe"]: #failsafe implies noavx2
+        dict["noavx2"] = True
+    if ("model_param" not in dict or not dict["model_param"]) and ("model" in dict and dict["model"]):
+        dict["model_param"] = dict["model"]
     return args
 
-def check_deprecation_warning():
-    # slightly naggy warning to encourage people to switch to new flags
-    # if you want you can remove this at your own risk,
-    # but i am not going to troubleshoot or provide support for deprecated flags.
-    global using_outdated_flags
-    if using_outdated_flags:
-        print("\n=== !!! IMPORTANT WARNING !!! ===")
-        print("You are using one or more OUTDATED config files or launch flags!")
-        print("The flags --hordeconfig and --sdconfig have been DEPRECATED, and MAY be REMOVED in future!")
-        print("They will still work for now, but you SHOULD switch to the updated flags instead, to avoid future issues!")
-        print("New flags are: --hordemodelname --hordeworkername --hordekey --hordemaxctx --hordegenlen --sdmodel --sdthreads --sdquant --sdclamped")
-        print("For more information on these flags, please check --help")
-        print(">>> If you are using the GUI launcher, simply re-saving your config again will get rid of this warning.")
-        print("=== !!! IMPORTANT WARNING !!! ===\n")
-
-
-
-def setuptunnel(has_sd):
+def setuptunnel(global_memory, has_sd):
     # This script will help setup a cloudflared tunnel for accessing KoboldCpp over the internet
     # It should work out of the box on both linux and windows
     try:
@@ -5017,6 +5052,7 @@ def setuptunnel(has_sd):
         import re
         global sslvalid
         httpsaffix = ("https" if sslvalid else "http")
+        ssladd = (" --no-tls-verify" if sslvalid else "")
         def run_tunnel():
             tunnelproc = None
             tunneloutput = ""
@@ -5024,13 +5060,16 @@ def setuptunnel(has_sd):
             time.sleep(0.2)
             if os.name == 'nt':
                 print("Starting Cloudflare Tunnel for Windows, please wait...", flush=True)
-                tunnelproc = subprocess.Popen(f"cloudflared.exe tunnel --url {httpsaffix}://localhost:{args.port}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                tunnelproc = subprocess.Popen(f"cloudflared.exe tunnel --url {httpsaffix}://localhost:{args.port}{ssladd}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             elif sys.platform=="darwin":
                 print("Starting Cloudflare Tunnel for MacOS, please wait...", flush=True)
-                tunnelproc = subprocess.Popen(f"./cloudflared tunnel --url {httpsaffix}://localhost:{args.port}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                tunnelproc = subprocess.Popen(f"./cloudflared tunnel --url {httpsaffix}://localhost:{args.port}{ssladd}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            elif sys.platform == "linux" and platform.machine().lower() == "aarch64":
+                print("Starting Cloudflare Tunnel for ARM64 Linux, please wait...", flush=True)
+                tunnelproc = subprocess.Popen(f"./cloudflared-linux-arm64 tunnel --url {httpsaffix}://localhost:{args.port}{ssladd}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             else:
                 print("Starting Cloudflare Tunnel for Linux, please wait...", flush=True)
-                tunnelproc = subprocess.Popen(f"./cloudflared-linux-amd64 tunnel --url {httpsaffix}://localhost:{args.port}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                tunnelproc = subprocess.Popen(f"./cloudflared-linux-amd64 tunnel --url {httpsaffix}://localhost:{args.port}{ssladd}", text=True, encoding='utf-8', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             time.sleep(10)
             def tunnel_reader():
                 nonlocal tunnelproc,tunneloutput,tunnelrawlog
@@ -5043,12 +5082,15 @@ def setuptunnel(has_sd):
                     found = re.findall(pattern, line)
                     for x in found:
                         tunneloutput = x
-                        print(f"Your remote Kobold API can be found at {tunneloutput}/api")
-                        print(f"Your remote OpenAI Compatible API can be found at {tunneloutput}/v1")
-                        if has_sd:
-                            print(f"StableUI is available at {tunneloutput}/sdui/")
-                        print("======\n")
-                        print(f"Your remote tunnel is ready, please connect to {tunneloutput}", flush=True)
+                        if global_memory and global_memory["load_complete"]:
+                            print(f"Your remote Kobold API can be found at {tunneloutput}/api")
+                            print(f"Your remote OpenAI Compatible API can be found at {tunneloutput}/v1")
+                            if has_sd:
+                                print(f"StableUI is available at {tunneloutput}/sdui/")
+                            print("======\n")
+                            print(f"Your remote tunnel is ready, please connect to {tunneloutput}", flush=True)
+                        if global_memory:
+                            global_memory["tunnel_url"] = tunneloutput
                         return
 
             tunnel_reader_thread = threading.Thread(target=tunnel_reader)
@@ -5073,6 +5115,13 @@ def setuptunnel(has_sd):
                 subprocess.run("curl -fL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz -o cloudflared-darwin-amd64.tgz", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
                 subprocess.run("tar -xzf cloudflared-darwin-amd64.tgz", shell=True)
                 subprocess.run("chmod +x 'cloudflared'", shell=True)
+        elif sys.platform == "linux" and platform.machine().lower() == "aarch64":
+            if os.path.exists("cloudflared-linux-arm64") and os.path.getsize("cloudflared-linux-arm64") > 1000000:
+                print("Cloudflared file exists, reusing it...")
+            else:
+                print("Downloading Cloudflare Tunnel for ARM64 Linux...")
+                subprocess.run("curl -fL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 -o cloudflared-linux-arm64", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
+                subprocess.run("chmod +x 'cloudflared-linux-arm64'", shell=True)
         else:
             if os.path.exists("cloudflared-linux-amd64") and os.path.getsize("cloudflared-linux-amd64") > 1000000:
                 print("Cloudflared file exists, reusing it...")
@@ -5155,6 +5204,19 @@ def unload_libs():
         del handle.get_pending_output
         del handle
         handle = None
+
+def reload_new_config(filename): #for changing config after launch
+    with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
+        config = json.load(f)
+        args.istemplate = False
+        for key, value in config.items(): #do not overwrite certain values
+            if key not in ["remotetunnel","showgui","port","host","port_param","admin","adminpassword","admindir","ssl","nocertify","benchmark","prompt","config"]:
+                setattr(args, key, value)
+        setattr(args,"showgui",False)
+        setattr(args,"benchmark",False)
+        setattr(args,"prompt","")
+        setattr(args,"config",None)
+        setattr(args,"launch",None)
 
 def load_config_cli(filename):
     print("Loading .kcpps configuration file...")
@@ -5301,10 +5363,11 @@ def analyze_gguf_model_wrapper(filename=""):
     dumpthread = threading.Thread(target=analyze_gguf_model, args=(args,filename))
     dumpthread.start()
 
-def main(launch_args,start_server=True):
+def main(launch_args):
     import platform
-    global embedded_kailite, embedded_kcpp_docs, embedded_kcpp_sdui
-    global libname, args, friendlymodelname, friendlysdmodelname, fullsdmodelpath, mmprojpath, password, fullwhispermodelpath, ttsmodelpath
+    global args, showdebug, kcpp_instance, exitcounter, using_gui_launcher, sslvalid, global_memory
+    args = launch_args #note: these are NOT shared with the child processes!
+    
     OS = platform.system()
     if OS == "Linux":
         try:
@@ -5314,23 +5377,26 @@ def main(launch_args,start_server=True):
                 print(f"Set AMD HSA_OVERRIDE_GFX_VERSION to 10.3.0")
         except Exception as e:
             return
-    args = launch_args
-    embedded_kailite = None
-    embedded_kcpp_docs = None
-
-    args = launch_args
+        
     if (args.version) and len(sys.argv) <= 2:
         print(f"{KcppVersion}") # just print version and exit
         return
-    if (args.model_param or args.model) and args.prompt and not args.benchmark and not (args.debugmode >= 1):
-        suppress_stdout()
 
-    print(f"***\nWelcome to KoboldCpp - Version {KcppVersion}") # just update version manually
-    # print("Python version: " + sys.version)
+    #prevent quantkv from being used without flash attn
+    if args.quantkv and args.quantkv>0 and not args.flashattention:
+        exit_with_error(1, "Error: Using --quantkv requires --flashattention")
 
-    #perform some basic cleanup of old temporary directories
+    args = convert_outdated_args(args)
+
+    temp_hide_print = ((args.model_param or args.model) and args.prompt and not args.benchmark and not (args.debugmode >= 1))
+
+    if not temp_hide_print:
+        print(f"***\nWelcome to KoboldCpp - Version {KcppVersion}")
+    if args.debugmode != 1:
+        showdebug = False #not shared with child process!
+
     try:
-        delete_old_pyinstaller()
+        delete_old_pyinstaller()  #perform some basic cleanup of old temporary directories
     except Exception as e:
         print(f"Error cleaning up orphaned pyinstaller dirs: {e}")
 
@@ -5342,7 +5408,7 @@ def main(launch_args,start_server=True):
         analyze_gguf_model_wrapper(args.analyze)
         return
 
-    if args.config and len(args.config)==1:
+    if args.config and len(args.config)==1: #handle initial config loading for launch
         cfgname = args.config[0]
         if isinstance(cfgname, str):
             dlfile = download_model_from_url(cfgname,[".kcpps",".kcppt"])
@@ -5353,7 +5419,6 @@ def main(launch_args,start_server=True):
         elif args.ignoremissing:
             print("Ignoring missing kcpp config file...")
         else:
-            global exitcounter
             exitcounter = 999
             exit_with_error(2,"Specified kcpp config file invalid or not found.")
     args = convert_outdated_args(args)
@@ -5365,13 +5430,7 @@ def main(launch_args,start_server=True):
             args.model_param = dlfile
         load_config_cli(args.model_param)
 
-    #prevent quantkv from being used without flash attn
-    if args.quantkv and args.quantkv>0 and not args.flashattention:
-        exit_with_error(1, "Error: Using --quantkv requires --flashattention")
-
-    if not args.model_param:
-        args.model_param = args.model
-
+    # show the GUI launcher if a model was not provided
     if args.showgui or (not args.model_param and not args.sdmodel and not args.whispermodel and not args.ttsmodel and not args.nomodel):
         #give them a chance to pick a file
         print("For command line arguments, please refer to --help")
@@ -5386,6 +5445,86 @@ def main(launch_args,start_server=True):
                 print("Note: In order to use --skiplauncher, you need to specify a model with --model")
             time.sleep(3)
             sys.exit(2)
+
+    if args.ssl: #need to duplicate here for the tunnel
+        if len(args.ssl)==2 and isinstance(args.ssl[0], str) and os.path.exists(args.ssl[0]) and isinstance(args.ssl[1], str) and os.path.exists(args.ssl[1]):
+            sslvalid = True
+
+    if args.admin and not args.admindir:
+        args.admin = False
+        print("\nWARNING: Admin was set without selecting an admin directory. Admin cannot be used.\n")
+
+    if not args.admin: #run in single process mode
+        if args.remotetunnel and not args.prompt and not args.benchmark:
+            setuptunnel(global_memory, True if args.sdmodel else False)
+        kcpp_main_process(args,global_memory,using_gui_launcher)
+        if global_memory["input_to_exit"]:
+            print("===")
+            print("Press ENTER key to exit.", flush=True)
+            input()
+    else:  # manager command queue for admin mode
+        with multiprocessing.Manager() as mp_manager:
+            global_memory = mp_manager.dict({"tunnel_url": "", "restart_target":"", "input_to_exit":False, "load_complete":False})
+
+            if args.remotetunnel and not args.prompt and not args.benchmark:
+                setuptunnel(global_memory, True if args.sdmodel else False)
+
+            # invoke the main koboldcpp process
+            kcpp_instance = multiprocessing.Process(target=kcpp_main_process,kwargs={"launch_args": args, "g_memory": global_memory, "gui_launcher": using_gui_launcher})
+            kcpp_instance.daemon = True
+            kcpp_instance.start()
+
+            while True: # keep the manager alive
+                try:
+                    restart_target = ""
+                    if not kcpp_instance or not kcpp_instance.is_alive():
+                        break
+                    restart_target = global_memory["restart_target"]
+                    if restart_target!="":
+                        print(f"Reloading new config: {restart_target}")
+                        global_memory["restart_target"] = ""
+                        time.sleep(0.5) #sleep for 0.5s then restart
+                        if args.admin and args.admindir:
+                            dirpath = os.path.abspath(args.admindir)
+                            targetfilepath = os.path.join(dirpath, restart_target)
+                            if os.path.exists(targetfilepath):
+                                print("Terminating old process...")
+                                global_memory["load_complete"] = False
+                                kcpp_instance.terminate()
+                                kcpp_instance.join(timeout=10)  # Ensure process is stopped
+                                kcpp_instance = None
+                                print("Restarting KoboldCpp...")
+                                reload_new_config(targetfilepath)
+                                kcpp_instance = multiprocessing.Process(target=kcpp_main_process,kwargs={"launch_args": args, "g_memory": global_memory, "gui_launcher": using_gui_launcher})
+                                kcpp_instance.daemon = True
+                                kcpp_instance.start()
+                                global_memory["restart_target"] = ""
+                                time.sleep(1)
+                    else:
+                        time.sleep(0.2)
+                except (KeyboardInterrupt,SystemExit):
+                    break
+            if global_memory["input_to_exit"]:
+                print("===")
+                print("Press ENTER key to exit.", flush=True)
+                input()
+
+def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
+    global embedded_kailite, embedded_kcpp_docs, embedded_kcpp_sdui, start_time, exitcounter, global_memory, using_gui_launcher
+    global libname, args, friendlymodelname, friendlysdmodelname, fullsdmodelpath, mmprojpath, password, fullwhispermodelpath, ttsmodelpath
+
+    start_server = True
+
+    args = launch_args
+    global_memory = g_memory
+    using_gui_launcher = gui_launcher
+    start_time = time.time()
+
+    if (args.model_param or args.model) and args.prompt and not args.benchmark and not (args.debugmode >= 1):
+        suppress_stdout()
+
+    if args.model_param and (args.benchmark or args.prompt):
+        start_server = False
 
     #try to read story if provided
     if args.preloadstory:
@@ -5662,7 +5801,7 @@ def main(launch_args,start_server=True):
             exitcounter = 999
             exit_with_error(3,"Could not load text model: " + modelname)
 
-    if (chatcompl_adapter is not None and isinstance(chatcompl_adapter, list)):
+    if (chatcompl_adapter is not None and isinstance(chatcompl_adapter, list) and not args.nomodel and args.model_param):
         # The chat completions adapter is a list that needs derivation from chat templates
         # Try to derive chat completions adapter from chat template, now that we have the model loaded
         ctbytes = handle.get_chat_template()
@@ -5828,6 +5967,7 @@ def main(launch_args,start_server=True):
     enabledmlist.append("ApiKeyPassword") if "protected" in caps and caps["protected"] else disabledmlist.append("ApiKeyPassword")
     enabledmlist.append("WebSearchProxy") if "websearch" in caps and caps["websearch"] else disabledmlist.append("WebSearchProxy")
     enabledmlist.append("TextToSpeech") if "tts" in caps and caps["tts"] else disabledmlist.append("TextToSpeech")
+    enabledmlist.append("AdminControl") if "admin" in caps and caps["admin"]!=0 else disabledmlist.append("AdminControl")
 
     print(f"======\nActive Modules: {' '.join(enabledmlist)}")
     print(f"Inactive Modules: {' '.join(disabledmlist)}")
@@ -5843,20 +5983,30 @@ def main(launch_args,start_server=True):
             print("SSL configuration is valid and will be used.")
         else:
             print("Your SSL configuration is INVALID. SSL will not be used.")
-    epurl = ""
+    endpoint_url = ""
+    remote_url = ""
     httpsaffix = ("https" if sslvalid else "http")
     if args.host=="":
-        epurl = f"{httpsaffix}://localhost:{args.port}"
+        endpoint_url = f"{httpsaffix}://localhost:{args.port}"
     else:
-        epurl = f"{httpsaffix}://{args.host}:{args.port}"
+        endpoint_url = f"{httpsaffix}://{args.host}:{args.port}"
     if not args.remotetunnel:
-        print(f"Starting Kobold API on port {args.port} at {epurl}/api/")
-        print(f"Starting OpenAI Compatible API on port {args.port} at {epurl}/v1/")
+        print(f"Starting Kobold API on port {args.port} at {endpoint_url}/api/")
+        print(f"Starting OpenAI Compatible API on port {args.port} at {endpoint_url}/v1/")
         if args.sdmodel:
-            print(f"StableUI is available at {epurl}/sdui/")
-
+            print(f"StableUI is available at {endpoint_url}/sdui/")
+    elif global_memory:
+        val = global_memory["tunnel_url"]
+        if val:
+            endpoint_url = val
+            remote_url = val
+            print(f"Your remote Kobold API can be found at {endpoint_url}/api")
+            print(f"Your remote OpenAI Compatible API can be found at {endpoint_url}/v1")
+            if args.sdmodel:
+                print(f"StableUI is available at {endpoint_url}/sdui/")
+        global_memory["load_complete"] = True
     if args.launch:
-        LaunchWebbrowser(epurl,"--launch was set, but could not launch web browser automatically.")
+        LaunchWebbrowser(endpoint_url,"--launch was set, but could not launch web browser automatically.")
 
     if args.hordekey and args.hordekey!="":
         if args.hordeworkername and args.hordeworkername!="":
@@ -5875,8 +6025,7 @@ def main(launch_args,start_server=True):
         timer_thread = threading.Timer(1, onready_subprocess) #1 second delay
         timer_thread.start()
 
-    if args.model_param and (args.benchmark or args.prompt):
-        start_server = False
+    if not start_server:
         save_to_file = (args.benchmark and args.benchmark!="stdout" and args.benchmark!="")
         benchmaxctx = maxctx
         benchlen = args.promptlimit
@@ -5950,50 +6099,28 @@ def main(launch_args,start_server=True):
                         file.write(f"\n{datetimestamp},{libname},{args.gpulayers},{benchmodel},{benchmaxctx},{benchlen},{t_pp:.2f},{s_pp:.2f},{t_gen:.2f},{s_gen:.2f},{(t_pp+t_gen):.2f},{result},{benchflagstr}")
                 except Exception as e:
                     print(f"Error writing benchmark to file: {e}")
-            global using_gui_launcher
-            if using_gui_launcher and not save_to_file:
-                print("===")
-                print("Press ENTER key to exit.", flush=True)
-                input()
+            if global_memory and using_gui_launcher and not save_to_file:
+                global_memory["input_to_exit"] = True
+                time.sleep(1)
 
-    check_deprecation_warning()
     if start_server:
         if args.checkforupdates:
             check_latest_version()
         if args.remotetunnel:
-            setuptunnel(True if args.sdmodel else False)
+            if remote_url:
+                print(f"======\nYour remote tunnel is ready, please connect to {remote_url}", flush=True)
         else:
             # Flush stdout for previous win32 issue so the client can see output.
-            print(f"======\nPlease connect to custom endpoint at {epurl}", flush=True)
-        asyncio.run(RunServerMultiThreaded(args.host, args.port))
+            print(f"======\nPlease connect to custom endpoint at {endpoint_url}", flush=True)
+        asyncio.run(RunServerMultiThreaded(args.host, args.port, KcppServerRequestHandler))
     else:
         # Flush stdout for previous win32 issue so the client can see output.
         if not args.prompt or args.benchmark:
             print("Server was not started, main function complete. Idling.", flush=True)
 
-def run_in_queue(launch_args, input_queue, output_queue):
-    main(launch_args, start_server=False)
-    output_queue.put({'command': 'complete'})
-    while True:
-        if not input_queue.empty():
-            while not input_queue.empty():
-                data = input_queue.get()
-                if data['command'] == 'generate':
-                    pl = data['data']
-                    genout = generate(genparams=pl)
-                    result = genout['text']
-                    output_queue.put({'command': 'generated text', 'data': result})
-        time.sleep(0.2)
-
-def start_in_seperate_process(launch_args):
-    import multiprocessing
-    input_queue = multiprocessing.Queue()
-    output_queue = multiprocessing.Queue()
-    p = multiprocessing.Process(target=run_in_queue, args=(launch_args, input_queue, output_queue))
-    p.start()
-    return (output_queue, input_queue, p)
-
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
 
     def check_range(value_type, min_value, max_value):
         def range_checker(arg: str):
@@ -6011,7 +6138,7 @@ if __name__ == '__main__':
     modelgroup.add_argument("--model", metavar=('[filename]'), help="Model file to load", type=str, default="")
     modelgroup.add_argument("model_param", help="Model file to load (positional)", nargs="?")
     portgroup = parser.add_mutually_exclusive_group() #we want to be backwards compatible with the unnamed positional args
-    portgroup.add_argument("--port", metavar=('[portnumber]'), help="Port to listen on", default=defaultport, type=int, action='store')
+    portgroup.add_argument("--port", metavar=('[portnumber]'), help=f"Port to listen on. (Defaults to {defaultport})", default=defaultport, type=int, action='store')
     portgroup.add_argument("port_param", help="Port to listen on (positional)", default=defaultport, nargs="?", type=int, action='store')
     parser.add_argument("--host", metavar=('[ipaddr]'), help="Host IP to listen on. If this flag is not set, all routable interfaces are accepted.", default="")
     parser.add_argument("--launch", help="Launches a web browser when load is completed.", action='store_true')
@@ -6042,7 +6169,7 @@ if __name__ == '__main__':
     compatgroup3.add_argument("--usemmap", help="If set, uses mmap to load model. This model will not be unloadable.", action='store_true')
     advparser.add_argument("--usemlock", help="Enables mlock, preventing the RAM used to load the model from being paged out. Not usually recommended.", action='store_true')
     advparser.add_argument("--noavx2", help="Do not use AVX2 instructions, a slower compatibility mode for older devices.", action='store_true')
-    advparser.add_argument("--failsafe", help="Use failsafe mode, extremely slow CPU only compatibility mode that should work on all devices.", action='store_true')
+    advparser.add_argument("--failsafe", help="Use failsafe mode, extremely slow CPU only compatibility mode that should work on all devices. Can be combined with useclblast if your device supports OpenCL.", action='store_true')
     advparser.add_argument("--debugmode", help="Shows additional debug info in the terminal.", nargs='?', const=1, type=int, default=0)
     advparser.add_argument("--onready", help="An optional shell command to execute after the model has been loaded.", metavar=('[shell command]'), type=str, default="",nargs=1)
     advparser.add_argument("--benchmark", help="Do not start server, instead run benchmarks. If filename is provided, appends results to provided file.", metavar=('[filename]'), nargs='?', const="stdout", type=str, default=None)
@@ -6059,13 +6186,14 @@ if __name__ == '__main__':
     advparser.add_argument("--ssl", help="Allows all content to be served over SSL instead. A valid UNENCRYPTED SSL cert and key .pem files must be provided", metavar=('[cert_pem]', '[key_pem]'), nargs='+')
     advparser.add_argument("--nocertify", help="Allows insecure SSL connections. Use this if you have cert errors and need to bypass certificate restrictions.", action='store_true')
     advparser.add_argument("--mmproj", metavar=('[filename]'), help="Select a multimodal projector file for vision models like LLaVA.", default="")
+    advparser.add_argument("--visionmaxres", metavar=('[max px]'), help="Clamp MMProj vision maximum allowed resolution. Allowed values are between 512 to 2048 px (default 1024).", type=int, default=default_visionmaxres)
     advparser.add_argument("--draftmodel", metavar=('[filename]'), help="Load a small draft model for speculative decoding. It will be fully offloaded. Vocab must match the main model.", default="")
     advparser.add_argument("--draftamount", metavar=('[tokens]'), help="How many tokens to draft per chunk before verifying results", type=int, default=default_draft_amount)
     advparser.add_argument("--draftgpulayers", metavar=('[layers]'), help="How many layers to offload to GPU for the draft model (default=full offload)", type=int, default=999)
     advparser.add_argument("--draftgpusplit", help="GPU layer distribution ratio for draft model (default=same as main). Only works if multi-GPUs selected for MAIN model and tensor_split is set!", metavar=('[Ratios]'), type=float, nargs='+')
     advparser.add_argument("--password", metavar=('[API key]'), help="Enter a password required to use this instance. This key will be required for all text endpoints. Image endpoints are not secured.", default=None)
     advparser.add_argument("--ignoremissing", help="Ignores all missing non-essential files, just skipping them instead.", action='store_true')
-    advparser.add_argument("--chatcompletionsadapter", metavar=('[filename]'), help="Select an optional ChatCompletions Adapter JSON file to force custom instruct tags.", default="")
+    advparser.add_argument("--chatcompletionsadapter", metavar=('[filename]'), help="Select an optional ChatCompletions Adapter JSON file to force custom instruct tags.", default="AutoGuess")
     advparser.add_argument("--flashattention", help="Enables flash attention.", action='store_true')
     advparser.add_argument("--quantkv", help="Sets the KV cache data type quantization, 0=f16, 1=q8, 2=q4. Requires Flash Attention, and disables context shifting.",metavar=('[quantization level 0/1/2]'), type=int, choices=[0,1,2], default=0)
     advparser.add_argument("--forceversion", help="If the model file format detection fails (e.g. rogue modified model) you can set this to override the detected format (enter desired version, e.g. 401 for GPTNeoX-Type2).",metavar=('[version]'), type=int, default=0)
@@ -6107,7 +6235,13 @@ if __name__ == '__main__':
     ttsparsergroup.add_argument("--ttsmodel", metavar=('[filename]'), help="Specify the OuteTTS Text-To-Speech GGUF model.", default="")
     ttsparsergroup.add_argument("--ttswavtokenizer", metavar=('[filename]'), help="Specify the WavTokenizer GGUF model.", default="")
     ttsparsergroup.add_argument("--ttsgpu", help="Use the GPU for TTS.", action='store_true')
+    ttsparsergroup.add_argument("--ttsmaxlen", help="Limit number of audio tokens generated with TTS.",  type=int, default=default_ttsmaxlen)
     ttsparsergroup.add_argument("--ttsthreads", metavar=('[threads]'), help="Use a different number of threads for TTS if specified. Otherwise, has the same value as --threads.", type=int, default=0)
+
+    admingroup = parser.add_argument_group('Administration Commands')
+    admingroup.add_argument("--admin", help="Enables admin mode, allowing you to unload and reload different configurations or models.", action='store_true')
+    admingroup.add_argument("--adminpassword", metavar=('[password]'), help="Require a password to access admin functions. You are strongly advised to use one for publically accessible instances!", default=None)
+    admingroup.add_argument("--admindir", metavar=('[directory]'), help="Specify a directory to look for .kcpps configs in, which can be used to swap models.", default="")
 
     deprecatedgroup = parser.add_argument_group('Deprecated Commands, DO NOT USE!')
     deprecatedgroup.add_argument("--hordeconfig", help=argparse.SUPPRESS, nargs='+')
@@ -6115,4 +6249,4 @@ if __name__ == '__main__':
     compatgroup.add_argument("--noblas", help=argparse.SUPPRESS, action='store_true')
     compatgroup3.add_argument("--nommap", help=argparse.SUPPRESS, action='store_true')
 
-    main(parser.parse_args(),start_server=True)
+    main(parser.parse_args())

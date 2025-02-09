@@ -466,6 +466,7 @@ static llama_context * cts_ctx = nullptr; //codes to speech
 
 static TTS_VER ttsver = TTS_VER_2;
 static int ttsdebugmode = 0;
+static bool tts_is_quiet = false;
 static std::string ttsplatformenv, ttsdeviceenv, ttsvulkandeviceenv;
 static std::string last_generated_audio = "";
 static std::string last_generation_settings_prompt = ""; //for caching purposes to fix ST bug
@@ -477,9 +478,12 @@ static int cts_offset = 151672;
 static int space_id = 151670;
 static int code_terminate_id = 151670;
 static int nthreads = 4;
+static int tts_max_len = 4096;
 
 bool ttstype_load_model(const tts_load_model_inputs inputs)
 {
+    tts_is_quiet = inputs.quiet;
+
     //duplicated from expose.cpp
     int cl_parseinfo = inputs.clblast_info; //first digit is whether configured, second is platform, third is devices
     std::string usingclblast = "GGML_OPENCL_CONFIGURED="+std::to_string(cl_parseinfo>0?1:0);
@@ -518,6 +522,8 @@ bool ttstype_load_model(const tts_load_model_inputs inputs)
     llama_context_params tts_ctx_params = llama_context_default_params();
 
     nthreads = inputs.threads;
+
+    tts_max_len = inputs.ttsmaxlen;
 
     tts_model_params.use_mmap = false;
     tts_model_params.use_mlock = false;
@@ -623,7 +629,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
     {
         audio_seed = (((uint32_t)time(NULL)) % 1000000u);
     }
-    if(ttsdebugmode==1 && !inputs.quiet)
+    if(ttsdebugmode==1 && !tts_is_quiet)
     {
         printf("\nUsing Speaker Seed: %d", speaker_seed);
         printf("\nUsing Audio Seed: %d", audio_seed);
@@ -639,7 +645,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
     && last_generated_audio!=""
     && last_generation_settings_prompt == std::string(inputs.prompt))
     {
-        if (ttsdebugmode == 1 && !inputs.quiet) {
+        if (ttsdebugmode == 1 && !tts_is_quiet) {
             printf("\nReusing Cached Audio.\n");
         }
         output.data = last_generated_audio.c_str();
@@ -662,7 +668,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
     if(empty_check)
     {
         //no input
-         if(!inputs.quiet)
+         if(!tts_is_quiet)
         {
             printf("\nTTS sent empty input.\n");
             last_generated_audio = "";
@@ -676,7 +682,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
     timer_start();
 
 
-    if(!inputs.quiet && ttsdebugmode==1)
+    if(!tts_is_quiet && ttsdebugmode==1)
     {
         printf("\nInput: %s\n", prompt_clean.c_str());
     }
@@ -691,7 +697,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
         if(last_speaker_seed==speaker_seed && !last_speaker_codes.empty())
         {
             //able to proceed, do nothing
-            if(!inputs.quiet && ttsdebugmode==1)
+            if(!tts_is_quiet && ttsdebugmode==1)
             {
                 printf("\nReuse speaker ID=%d (%d tokens)...", last_speaker_seed, last_speaker_codes.size());
             }
@@ -717,7 +723,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
             }
             last_speaker_codes = common_tokenize(ttcvocab, speaker, false, true);
             last_speaker_seed = speaker_seed;
-            if(!inputs.quiet && ttsdebugmode==1)
+            if(!tts_is_quiet && ttsdebugmode==1)
             {
                 printf("\nSpecial ID=%d (%d tokens)...", last_speaker_seed, last_speaker_codes.size());
             }
@@ -725,7 +731,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
             //generate the voice texture of our new speaker
             last_speaker_codes.clear();
             guide_tokens = prepare_guide_tokens(ttcvocab,sampletext,ttsver);
-            if(!inputs.quiet && ttsdebugmode==1)
+            if(!tts_is_quiet && ttsdebugmode==1)
             {
                 printf("\nGuide Tokens (%d tokens):\n", guide_tokens.size());
                 const std::string inp_txt = common_detokenize(ttc_ctx, guide_tokens, true);
@@ -734,7 +740,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
             }
             prompt_add(prompt_inp, ttcvocab, sampletext, false, true);
             prompt_add(prompt_inp, ttcvocab, "<|text_end|>\n<|audio_start|>\n", false, true);
-            if(!inputs.quiet && ttsdebugmode==1)
+            if(!tts_is_quiet && ttsdebugmode==1)
             {
                 printf("\nPrepare new speaker (%d input tokens)...\n", prompt_inp.size());
                 print_tok_vec(prompt_inp);
@@ -754,8 +760,9 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
 
                 //use creative settings to generate speakers
                 const int topk = 20;
+                const float top_p = 1.0f;
                 const float temp = 1.2f;
-                llama_token new_token_id = kcpp_quick_sample(logits,ttc_n_vocab,topk,temp,speaker_rng);
+                llama_token new_token_id = kcpp_quick_sample(logits,ttc_n_vocab,std::vector<int32_t>(),1.0,top_p,topk,temp,speaker_rng);
 
                 //guide tokens help prevent hallucinations by forcing the TTS to use the correct word
                 if(next_token_uses_guide_token && !llama_vocab_is_control(ttcvocab, new_token_id) && !llama_vocab_is_eog(ttcvocab, new_token_id))
@@ -805,7 +812,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
                 }
             }
             last_speaker_seed = speaker_seed;
-            if(!inputs.quiet && ttsdebugmode==1)
+            if(!tts_is_quiet && ttsdebugmode==1)
             {
                 printf("\nNew speaker ID=%d created (%d tokens)...", last_speaker_seed, last_speaker_codes.size());
                 const std::string inp_txt = common_detokenize(ttc_ctx, last_speaker_codes, true);
@@ -820,7 +827,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
 
     //second pass: add the speaker before the actual prompt
     guide_tokens = prepare_guide_tokens(ttcvocab,prompt_clean,ttsver);
-    if(!inputs.quiet && ttsdebugmode==1)
+    if(!tts_is_quiet && ttsdebugmode==1)
     {
         printf("\nGuide Tokens (%d tokens):\n", guide_tokens.size());
         const std::string inp_txt = common_detokenize(ttc_ctx, guide_tokens, true);
@@ -833,7 +840,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
     }
     prompt_add(prompt_inp, ttcvocab, prompt_clean, false, true);
 
-    if(!inputs.quiet)
+    if(!tts_is_quiet)
     {
         printf("\nTTS Processing (%d input tokens)...\n", prompt_inp.size());
     }
@@ -846,7 +853,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
         prompt_add(prompt_inp, ttcvocab, "\n", false, true);
     }
 
-    if(!inputs.quiet && ttsdebugmode==1)
+    if(!tts_is_quiet && ttsdebugmode==1)
     {
         printf("\nDUMP TTS PROMPT (%d tokens):\n", prompt_inp.size());
         print_tok_vec(prompt_inp);
@@ -867,7 +874,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
 
     // main loop
     n_decode = 0;
-    n_predict = 4096; //max 4096 tokens
+    n_predict = tts_max_len; //max 4096 tokens
 
     while (n_decode <= n_predict)
     {
@@ -876,7 +883,8 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
         //use predictable settings to generate voice
         const int topk = 4;
         const float temp = 0.75f;
-        llama_token new_token_id = kcpp_quick_sample(logits,ttc_n_vocab,topk,temp,tts_rng);
+        const float top_p = 1.0f;
+        llama_token new_token_id = kcpp_quick_sample(logits,ttc_n_vocab,std::vector<int32_t>(),1.0,top_p,topk,temp,speaker_rng);
 
         //guide tokens help prevent hallucinations by forcing the TTS to use the correct word
         if(next_token_uses_guide_token && !llama_vocab_is_control(ttcvocab, new_token_id) && !llama_vocab_is_eog(ttcvocab, new_token_id))
@@ -911,13 +919,13 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
             output.status = 0;
             return output;
         }
-        if(!inputs.quiet)
+        if(!tts_is_quiet)
         {
             printf("\rTTS Generating (%d outputs)", n_decode);
         }
     }
 
-    if(!inputs.quiet && ttsdebugmode==1)
+    if(!tts_is_quiet && ttsdebugmode==1)
     {
         const std::string inp_txt = common_detokenize(ttc_ctx, codes, true);
         printf("\nGenerated %d Codes: '%s'\n",codes.size(), inp_txt.c_str());
@@ -933,7 +941,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
     const int n_codes = codes.size();
     if(n_codes<=1)
     {
-        printf("\nWarning: TTS vocoder generated nothing!\n");
+        printf("\nWarning: No Audio Tokens Produced!\n");
         last_generated_audio = "";
         output.data = last_generated_audio.c_str();
         output.status = 1;
@@ -963,12 +971,23 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
 
         //audio = resample_wav(audio,n_sr,t_sr); //resample to 16k
 
-        for (int i = 0; i < cutout; ++i) {
-            audio[i] = 0.0f;
+        if(audio.size()>cutout+16)
+        {
+            for (int i = 0; i < cutout; ++i) {
+                audio[i] = 0.0f;
+            }
+            //add some silence at the end
+            for (int i = 0; i < cutout; ++i) {
+                audio.push_back(0.0f);
+            }
         }
-        //add some silence at the end
-        for (int i = 0; i < cutout; ++i) {
-            audio.push_back(0.0f);
+        else
+        {
+            printf("\nWarning: TTS vocoder generated nothing!\n");
+            last_generated_audio = "";
+            output.data = last_generated_audio.c_str();
+            output.status = 1;
+            return output;
         }
 
         last_generated_audio = save_wav16_base64(audio, t_sr);

@@ -11,7 +11,7 @@ python ./koboldcpp.py
 ```
 When the KoboldCPP GUI appears, make sure to select "Use hipBLAS (ROCm)" and set GPU layers
 
-KoboldCpp-ROCm is an easy-to-use AI text-generation software for GGML and GGUF models. It's an AI inference software from Concedo, maintained for AMD GPUs using ROCm by YellowRose, that builds off llama.cpp, and adds a versatile Kobold API endpoint, additional format support, Stable Diffusion image generation, backward compatibility, as well as a fancy UI with persistent stories, editing tools, save formats, memory, world info, author's note, characters, scenarios and everything KoboldAI and KoboldAI Lite have to offer.
+KoboldCpp-ROCm is an easy-to-use AI text-generation software for GGML and GGUF models, inspired by the original **KoboldAI**. It's an AI inference software from Concedo, maintained for AMD GPUs using ROCm by YellowRose, that builds off llama.cpp and adds many additional powerful features.
 
 ![Preview](media/preview.png)
 ![Preview](media/preview2.png)
