@@ -206,7 +206,7 @@ if (LLAMA_HIPBLAS)
         add_library(ggml-rocm OBJECT ${GGML_SOURCES_CUDA})
 
         set_property(TARGET ggml-rocm PROPERTY C_STANDARD 11)
-        set_property(TARGET ggml-rocm PROPERTY CXX_STANDARD 11)
+        set_property(TARGET ggml-rocm PROPERTY CXX_STANDARD 17)
         set_property(TARGET ggml-rocm PROPERTY C_COMPILER ${ROCM_CC})
         set_property(TARGET ggml-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
 
@@ -225,7 +225,7 @@ if (LLAMA_HIPBLAS)
         add_library(ggml-v2-rocm OBJECT ${GGML_V2_CUDA_SOURCES})
 
         set_property(TARGET ggml-v2-rocm PROPERTY C_STANDARD 11)
-        set_property(TARGET ggml-v2-rocm PROPERTY CXX_STANDARD 11)
+        set_property(TARGET ggml-v2-rocm PROPERTY CXX_STANDARD 17)
         set_property(TARGET ggml-v2-rocm PROPERTY C_COMPILER ${ROCM_CC})
         set_property(TARGET ggml-v2-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
 
@@ -242,7 +242,7 @@ if (LLAMA_HIPBLAS)
         add_library(ggml-v3-rocm OBJECT ${GGML_V3_CUDA_SOURCES})
 
         set_property(TARGET ggml-v3-rocm PROPERTY C_STANDARD 11)
-        set_property(TARGET ggml-v3-rocm PROPERTY CXX_STANDARD 11)
+        set_property(TARGET ggml-v3-rocm PROPERTY CXX_STANDARD 17)
         set_property(TARGET ggml-v3-rocm PROPERTY C_COMPILER ${ROCM_CC})
         set_property(TARGET ggml-v3-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
 
@@ -259,7 +259,7 @@ if (LLAMA_HIPBLAS)
         add_library(ggml-v2-legacy-rocm OBJECT ${GGML_V2_LEGACY_CUDA_SOURCES})
 
         set_property(TARGET ggml-v2-legacy-rocm PROPERTY C_STANDARD 11)
-        set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_STANDARD 11)
+        set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_STANDARD 17)
         set_property(TARGET ggml-v2-legacy-rocm PROPERTY C_COMPILER ${ROCM_CC})
         set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
 
