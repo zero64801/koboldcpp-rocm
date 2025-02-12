@@ -56,7 +56,7 @@ set(LLAMA_CUDA_PEER_MAX_BATCH_SIZE "128" CACHE STRING
                                              "llama: max. batch size for using peer access")
 
 option(LLAMA_HIPBLAS                         "llama: use hipBLAS"                               ON)
-
+option(GGML_HIP_NO_VMM                      "ggml: do not try to use HIP VMM"                 ON)
 # Other
 option(LLAMA_OPENMP                          "llama: use OpenMP"                                OFF)
 
@@ -199,10 +199,11 @@ if (LLAMA_HIPBLAS)
         file(GLOB SRCS "ggml/src/ggml-cuda/template-instances/mmq*.cu")
         list(APPEND GGML_SOURCES_CUDA ${SRCS})
 
-        # only build minimal quants required for fattn quant kv
-
+        if (GGML_HIP_NO_VMM)
+            add_compile_definitions(GGML_HIP_NO_VMM)
+        endif()
+                
         add_compile_definitions(GGML_USE_HIPBLAS GGML_USE_HIP GGML_USE_CUDA SD_USE_CUBLAS)
-
         add_library(ggml-rocm OBJECT ${GGML_SOURCES_CUDA})
 
         set_property(TARGET ggml-rocm PROPERTY C_STANDARD 11)
@@ -242,7 +243,7 @@ if (LLAMA_HIPBLAS)
         add_library(ggml-v3-rocm OBJECT ${GGML_V3_CUDA_SOURCES})
 
         set_property(TARGET ggml-v3-rocm PROPERTY C_STANDARD 11)
-        set_property(TARGET ggml-v3-rocm PROPERTY CXX_STANDARD 17)
+        set_property(TARGET ggml-v3-rocm PROPERTY CXX_STANDARD 11)
         set_property(TARGET ggml-v3-rocm PROPERTY C_COMPILER ${ROCM_CC})
         set_property(TARGET ggml-v3-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
 
@@ -259,7 +260,7 @@ if (LLAMA_HIPBLAS)
         add_library(ggml-v2-legacy-rocm OBJECT ${GGML_V2_LEGACY_CUDA_SOURCES})
 
         set_property(TARGET ggml-v2-legacy-rocm PROPERTY C_STANDARD 11)
-        set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_STANDARD 17)
+        set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_STANDARD 11)
         set_property(TARGET ggml-v2-legacy-rocm PROPERTY C_COMPILER ${ROCM_CC})
         set_property(TARGET ggml-v2-legacy-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
 
