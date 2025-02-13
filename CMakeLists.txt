@@ -243,7 +243,7 @@ if (LLAMA_HIPBLAS)
         add_library(ggml-v3-rocm OBJECT ${GGML_V3_CUDA_SOURCES})
 
         set_property(TARGET ggml-v3-rocm PROPERTY C_STANDARD 11)
-        set_property(TARGET ggml-v3-rocm PROPERTY CXX_STANDARD 11)
+        set_property(TARGET ggml-v3-rocm PROPERTY CXX_STANDARD 17)
         set_property(TARGET ggml-v3-rocm PROPERTY C_COMPILER ${ROCM_CC})
         set_property(TARGET ggml-v3-rocm PROPERTY CXX_COMPILER ${ROCM_CXX})
 
@@ -603,7 +603,7 @@ if (LLAMA_HIPBLAS)
 
     # Set ROCm compilers for koboldcpp_hipblas
     set_property(TARGET ${TARGET} PROPERTY C_STANDARD 11)
-    set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 11)
+    set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 17)
     set_property(TARGET ${TARGET} PROPERTY C_COMPILER ${LLVM_CC})
     set_property(TARGET ${TARGET} PROPERTY CXX_COMPILER ${LLVM_CXX})
 
