@@ -11,6 +11,7 @@
 #include <time.h>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include "model_adapter.h"
 #include "otherarch.h"
 #include "llama.h"
@@ -1188,34 +1189,22 @@ void sample_rep_pen(int n_ctx, int rep_pen_range, float rep_pen, float rep_pen_s
     const int64_t t_start_sample_us = ggml_time_us();
 
     // Create a frequency map to count occurrences of each token in last_tokens
-    std::unordered_map<llama_token, int> token_count_near;
-    std::unordered_map<llama_token, int> token_count_far;
-    for (size_t i = 0; i < last_n_repeat; ++i) {
-        if((i*2) >= last_n_repeat)
-        {
-            token_count_near[last_tokens[i]]++;
-        }
-        else
-        {
-            token_count_far[last_tokens[i]]++;
-        }
-    }
-
+    std::unordered_set<llama_token> tokens_near(last_tokens + last_n_repeat / 2, last_tokens + last_n_repeat);
+    std::unordered_set<llama_token> tokens_far(last_tokens, last_tokens + last_n_repeat / 2);
+    
     float rep_pen_reduced = rep_pen;
     if(rep_pen_reduced>1.0f)
     {
        rep_pen_reduced = 1.0f + ((rep_pen-1.0f)*rep_pen_slope);
     }
     for (size_t i = 0; i < candidates->size; ++i) {
-        const auto token_in_near = token_count_near.find(candidates->data[i].id);
-        const auto token_in_far = token_count_far.find(candidates->data[i].id);
-        bool in_near = (token_in_near != token_count_near.end());
-        bool in_far = (token_in_far != token_count_far.end());
-        if (!in_near && !in_far) {
+        const bool token_in_near = tokens_near.find(candidates->data[i].id) != tokens_near.end();
+        const bool token_in_far = tokens_far.find(candidates->data[i].id) != tokens_far.end();
+        if (!token_in_near && !token_in_far) {
             continue;
         }
 
-        float penalty = (in_near?rep_pen:rep_pen_reduced);
+        float penalty = (token_in_near?rep_pen:rep_pen_reduced);
 
         // The academic publication that described this technique actually just only divided, but that would cause tokens with negative logits to become more likely, which is obviously wrong.
         // This is common fix for this problem, which is to multiply by the penalty instead of dividing.
@@ -1229,7 +1218,6 @@ void sample_rep_pen(int n_ctx, int rep_pen_range, float rep_pen, float rep_pen_s
     }
 
     candidates->sorted = false;
-
 }
 
 void sample_top_p(llama_token_data_array * cur_p, float p, size_t min_keep) {
@@ -1321,33 +1309,24 @@ void sample_tail_free(llama_token_data_array * cur_p, float z, size_t min_keep) 
     sample_softmax(cur_p);
 
     // Compute the first and second derivatives
-    std::vector<float> first_derivatives(cur_p->size - 1);
     std::vector<float> second_derivatives(cur_p->size - 2);
+    float second_derivatives_sum = 0.0f;
 
-    for (size_t i = 0; i < first_derivatives.size(); ++i) {
-        first_derivatives[i] = cur_p->data[i].p - cur_p->data[i + 1].p;
-    }
     for (size_t i = 0; i < second_derivatives.size(); ++i) {
-        second_derivatives[i] = first_derivatives[i] - first_derivatives[i + 1];
-    }
-
-    // Calculate absolute value of second derivatives
-    for (size_t i = 0; i < second_derivatives.size(); ++i) {
-        second_derivatives[i] = std::abs(second_derivatives[i]);
+        float first_derivatives_1 = cur_p->data[i].p - cur_p->data[i + 1].p;
+        float first_derivatives_2 = cur_p->data[i + 1].p - cur_p->data[i + 2].p;
+        second_derivatives[i] = std::abs(first_derivatives_1 - first_derivatives_2);
+        second_derivatives_sum += second_derivatives[i];
     }
 
     // Normalize the second derivatives
-    {
-        const float second_derivatives_sum = std::accumulate(second_derivatives.begin(), second_derivatives.end(), 0.0f);
-
-        if (second_derivatives_sum > 1e-6f) {
-            for (float & value : second_derivatives) {
-                value /= second_derivatives_sum;
-            }
-        } else {
-            for (float & value : second_derivatives) {
-                value = 1.0f / second_derivatives.size();
-            }
+    if (second_derivatives_sum > 1e-6f) {
+        for (float & value : second_derivatives) {
+            value /= second_derivatives_sum;
+        }
+    } else {
+        for (float & value : second_derivatives) {
+            value = 1.0f / second_derivatives.size();
         }
     }
 
@@ -1426,6 +1405,38 @@ void sampler_typical(llama_token_data_array * cur_p, float p, size_t min_keep) {
     std::copy(cur_p_new.begin(), cur_p_new.end(), cur_p->data);
     cur_p->size = cur_p_new.size();
     cur_p->sorted = false;
+}
+
+void sample_top_n_sigma(llama_token_data_array * cur_p, float nsigma) {
+
+    if (nsigma <= 0.0f || cur_p->size <= 1) {
+        return;
+    }
+    // find max logit and calculate mean
+    float nsigmax = cur_p->data[0].logit;
+    float logits_sum = 0;
+    for (size_t i = 0; i < cur_p->size; ++i) {
+        if (cur_p->data[i].logit > nsigmax) {
+            nsigmax = cur_p->data[i].logit;
+        }
+        logits_sum += cur_p->data[i].logit;
+    }
+    float nsigmean = logits_sum / cur_p->size;
+
+    // calculate standard deviation
+    float nsigacc = 0;
+    for (size_t i = 0; i < cur_p->size; ++i) {
+        nsigacc += pow(cur_p->data[i].logit - nsigmean, 2);
+    }
+    float nsigstd = sqrt(nsigacc / cur_p->size);
+
+    //apply mask
+    for (size_t i = 0; i < cur_p->size; ++i) {
+        if (cur_p->data[i].logit < nsigmax - (nsigma * nsigstd)) {
+            cur_p->data[i].logit -= 999.0f;
+        }
+    }
+    sample_softmax(cur_p);
 }
 
 void sample_entropy(llama_token_data_array * cur_p, float min_temp, float max_temp, float exponent_val, float smoothing_factor) {
@@ -1561,7 +1572,7 @@ void sample_grammar(FileFormat file_format, int32_t n_vocab, llama_token_data_ar
 
 }
 
-int SampleLogits(const float * logits, int n_ctx, int n_vocab, int rep_pen_range, float rep_pen, float rep_pen_slope, float presence_penalty, float top_k, float top_a, float top_p, float min_p, float typical_p, float tfs, float temp, std::mt19937 & rng,
+int SampleLogits(const float * logits, int n_ctx, int n_vocab, int rep_pen_range, float rep_pen, float rep_pen_slope, float presence_penalty, float top_k, float top_a, float top_p, float min_p, float typical_p, float tfs, float nsigma, float temp, std::mt19937 & rng,
 int mirostat, float mirostat_tau, float mirostat_eta, float dry_multiplier, float dry_base, int dry_allowed_length, int dry_penalty_last_n, float xtc_threshold, float xtc_probability,
 const std::vector<samplers> & sampler_order, llama_grammar * grammar, float dynatemp_range, float dynatemp_exponent, float smoothing_factor)
 {
@@ -1605,6 +1616,24 @@ const std::vector<samplers> & sampler_order, llama_grammar * grammar, float dyna
             id = sample_token_mirostat_v2(&candidates_p, rng, mirostat_tau, mirostat_eta, &mirostat_mu);
         }
     }
+    else if (nsigma > 0.0f)
+    {
+        sample_top_k(&candidates_p, top_k);
+        if (dynatemp_range != 0) {
+            float dynatemp_min = temp - dynatemp_range;
+            float dynatemp_max = temp + dynatemp_range;
+            //do not allow negative values
+            dynatemp_min       = dynatemp_min < 0 ? 0 : dynatemp_min;
+            dynatemp_max       = dynatemp_max < 0 ? 0 : dynatemp_max;
+            dynatemp_exponent  = dynatemp_exponent < 0 ? 0 : dynatemp_exponent;
+            sample_entropy(&candidates_p, dynatemp_min, dynatemp_max, dynatemp_exponent, smoothing_factor);
+        } else {
+            sample_temperature(&candidates_p, temp, smoothing_factor);
+        }
+        sample_top_n_sigma(&candidates_p, nsigma);
+        sample_xtc(&candidates_p, xtc_threshold, xtc_probability, rng);
+        id = sample_token(&candidates_p, rng);
+    }
     else
     {
         for (int i = 0; i < sampler_order.size(); i++)
@@ -1628,7 +1657,7 @@ const std::vector<samplers> & sampler_order, llama_grammar * grammar, float dyna
                     sampler_typical(&candidates_p, typical_p, 1);
                     break;
                 case KCPP_SAMPLER_TEMP:
-                    if (dynatemp_range>0)
+                    if (dynatemp_range!=0)
                     {
                         float dynatemp_min = temp - dynatemp_range;
                         float dynatemp_max = temp + dynatemp_range;
@@ -2152,7 +2181,14 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         {
             printf("\nOverriding number of experts to %d\n",inputs.moe_experts);
             llama_model_kv_override kvo;
-            const char * moekey = "llama.expert_used_count";
+            std::string moekeystr = "llama";
+            if(file_format_meta.model_architecture_str!="")
+            {
+                moekeystr = file_format_meta.model_architecture_str;
+            }
+            moekeystr += ".expert_used_count";
+
+            const char * moekey = moekeystr.c_str();
             std::strncpy(kvo.key, moekey, sizeof(kvo.key) - 1);
             kvo.key[sizeof(kvo.key) - 1] = '\0'; // Ensure null termination
             kvo.tag = LLAMA_KV_OVERRIDE_TYPE_INT;
@@ -2224,7 +2260,7 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         if(mmproj_filename != "" && file_format==FileFormat::GGUF_GENERIC)
         {
             printf("\nAttempting to apply Multimodal Projector: %s\n", mmproj_filename.c_str());
-            #if defined(GGML_USE_VULKAN) || defined(GGML_USE_METAL)
+            #if defined(GGML_USE_METAL)
             if(file_format_meta.model_architecture == GGUFArch::ARCH_QWEN2VL)
             {
                 set_clip_uses_gpu(false);
@@ -2992,6 +3028,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
     kcpp_data->min_p = inputs.min_p;
     kcpp_data->typical_p = inputs.typical_p;
     kcpp_data->tfs_z = inputs.tfs;
+    kcpp_data->nsigma = inputs.nsigma;
     kcpp_data->temp = inputs.temperature;
     kcpp_data->repeat_last_n = inputs.rep_pen_range;
     kcpp_data->rep_pen_slope = inputs.rep_pen_slope;
@@ -3522,6 +3559,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
             const float presence_penalty = kcpp_data->presence_penalty;
             const float typical_p = kcpp_data->typical_p;
             const float tfs_z = kcpp_data->tfs_z;
+            const float nsigma = kcpp_data->nsigma;
             const float dynatemp_range = kcpp_data->dynatemp_range;
             const float dynatemp_exponent = kcpp_data->dynatemp_exponent;
             const float smoothing_factor = kcpp_data->smoothing_factor;
@@ -3617,7 +3655,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
                 }
 
                 id = SampleLogits(logitsPtr, nctx, n_vocab, last_n_size, repeat_penalty, kcpp_data->rep_pen_slope, presence_penalty,
-                top_k, top_a, top_p, min_p, typical_p, tfs_z, temp, rng,
+                top_k, top_a, top_p, min_p, typical_p, tfs_z, nsigma, temp, rng,
                 kcpp_data->mirostat, kcpp_data->mirostat_tau, kcpp_data->mirostat_eta,
                 kcpp_data->dry_multiplier, kcpp_data->dry_base,
                 kcpp_data->dry_allowed_length, kcpp_data->dry_penalty_last_n, kcpp_data->xtc_threshold, kcpp_data->xtc_probability,

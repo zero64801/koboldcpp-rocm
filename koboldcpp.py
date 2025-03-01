@@ -8,6 +8,7 @@
 # editing tools, save formats, memory, world info, author's note, characters,
 # scenarios and everything Kobold and KoboldAI Lite have to offer.
 
+import copy
 import ctypes
 import multiprocessing
 import os
@@ -39,6 +40,7 @@ logprobs_max = 5
 default_draft_amount = 8
 default_ttsmaxlen = 4096
 default_visionmaxres = 1024
+net_save_slots = 8
 
 # abuse prevention
 stop_token_max = 256
@@ -47,7 +49,7 @@ logit_bias_max = 512
 dry_seq_break_max = 128
 
 # global vars
-KcppVersion = "1.83.1.yr1-ROCm"
+KcppVersion = "1.85.yr0-ROCm"
 showdebug = True
 kcpp_instance = None #global running instance
 global_memory = {"tunnel_url": "", "restart_target":"", "input_to_exit":False, "load_complete":False}
@@ -85,6 +87,7 @@ runmode_untouched = True
 modelfile_extracted_meta = None
 importvars_in_progress = False
 has_multiplayer = False
+savedata_obj = None
 multiplayer_story_data_compressed = None #stores the full compressed story of the current multiplayer session
 multiplayer_turn_major = 1 # to keep track of when a client needs to sync their stories
 multiplayer_turn_minor = 1
@@ -94,6 +97,7 @@ websearch_lastquery = ""
 websearch_lastresponse = []
 preloaded_story = None
 chatcompl_adapter = None
+chatcompl_adapter_list = None #if using autoguess, will populate this will potential adapters
 embedded_kailite = None
 embedded_kcpp_docs = None
 embedded_kcpp_sdui = None
@@ -192,6 +196,7 @@ class generation_inputs(ctypes.Structure):
                 ("min_p", ctypes.c_float),
                 ("typical_p", ctypes.c_float),
                 ("tfs", ctypes.c_float),
+                ("nsigma", ctypes.c_float),
                 ("rep_pen", ctypes.c_float),
                 ("rep_pen_range", ctypes.c_int),
                 ("rep_pen_slope", ctypes.c_float),
@@ -304,8 +309,7 @@ class tts_load_model_inputs(ctypes.Structure):
 class tts_generation_inputs(ctypes.Structure):
     _fields_ = [("prompt", ctypes.c_char_p),
                 ("speaker_seed", ctypes.c_int),
-                ("audio_seed", ctypes.c_int),
-                ("nocache", ctypes.c_bool)]
+                ("audio_seed", ctypes.c_int)]
 
 class tts_generation_outputs(ctypes.Structure):
     _fields_ = [("status", ctypes.c_int),
@@ -699,7 +703,7 @@ def string_contains_or_overlaps_sequence_substring(inputstr, sequences):
     return False
 
 def get_capabilities():
-    global has_multiplayer, KcppVersion, friendlymodelname, friendlysdmodelname, fullsdmodelpath, mmprojpath, password, fullwhispermodelpath, ttsmodelpath
+    global savedata_obj, has_multiplayer, KcppVersion, friendlymodelname, friendlysdmodelname, fullsdmodelpath, mmprojpath, password, fullwhispermodelpath, ttsmodelpath
     has_llm = not (friendlymodelname=="inactive")
     has_txt2img = not (friendlysdmodelname=="inactive" or fullsdmodelpath=="")
     has_vision = (mmprojpath!="")
@@ -708,7 +712,7 @@ def get_capabilities():
     has_search = True if args.websearch else False
     has_tts = (ttsmodelpath!="")
     admin_type = (2 if args.admin and args.admindir and args.adminpassword else (1 if args.admin and args.admindir else 0))
-    return {"result":"KoboldCpp", "version":KcppVersion, "protected":has_password, "llm":has_llm, "txt2img":has_txt2img,"vision":has_vision,"transcribe":has_whisper,"multiplayer":has_multiplayer,"websearch":has_search,"tts":has_tts, "admin": admin_type}
+    return {"result":"KoboldCpp", "version":KcppVersion, "protected":has_password, "llm":has_llm, "txt2img":has_txt2img,"vision":has_vision,"transcribe":has_whisper,"multiplayer":has_multiplayer,"websearch":has_search,"tts":has_tts, "savedata":(savedata_obj is not None), "admin": admin_type}
 
 def dump_gguf_metadata(file_path): #if you're gonna copy this into your own project at least credit concedo
     chunk_size = 1024*1024*12  # read first 12mb of file
@@ -1141,6 +1145,7 @@ def generate(genparams, stream_flag=False):
     min_p = float(genparams.get('min_p', 0.0))
     typical_p = float(genparams.get('typical', 1.0))
     tfs = float(genparams.get('tfs', 1.0))
+    nsigma = float(genparams.get('nsigma', 0.0))
     rep_pen = float(genparams.get('rep_pen', 1.0))
     rep_pen_range = int(genparams.get('rep_pen_range', 320))
     rep_pen_slope = float(genparams.get('rep_pen_slope', 1.0))
@@ -1207,6 +1212,7 @@ def generate(genparams, stream_flag=False):
     inputs.min_p = min_p
     inputs.typical_p = typical_p
     inputs.tfs = tfs
+    inputs.nsigma = nsigma
     inputs.rep_pen = rep_pen
     inputs.rep_pen_range = rep_pen_range
     inputs.rep_pen_slope = rep_pen_slope
@@ -1517,7 +1523,6 @@ def tts_generate(genparams):
     except Exception:
         aseed = -1
     inputs.audio_seed = aseed
-    inputs.nocache = genparams.get("nocache", False)
     ret = handle.tts_generate(inputs)
     outstr = ""
     if ret.status==1:
@@ -2385,7 +2390,7 @@ Enter Prompt:<br>
     def do_GET(self):
         global embedded_kailite, embedded_kcpp_docs, embedded_kcpp_sdui
         global last_req_time, start_time
-        global has_multiplayer, multiplayer_turn_major, multiplayer_turn_minor, multiplayer_story_data_compressed, multiplayer_dataformat, multiplayer_lastactive, maxctx, maxhordelen, friendlymodelname, lastgeneratedcomfyimg, KcppVersion, totalgens, preloaded_story, exitcounter, currentusergenkey, friendlysdmodelname, fullsdmodelpath, mmprojpath, password
+        global savedata_obj, has_multiplayer, multiplayer_turn_major, multiplayer_turn_minor, multiplayer_story_data_compressed, multiplayer_dataformat, multiplayer_lastactive, maxctx, maxhordelen, friendlymodelname, lastgeneratedcomfyimg, KcppVersion, totalgens, preloaded_story, exitcounter, currentusergenkey, friendlysdmodelname, fullsdmodelpath, mmprojpath, password
         self.path = self.path.rstrip('/')
         response_body = None
         content_type = 'application/json'
@@ -2434,7 +2439,7 @@ Enter Prompt:<br>
             opts = []
             if args.admin and args.admindir and os.path.exists(args.admindir) and self.check_header_password(args.adminpassword):
                 dirpath = os.path.abspath(args.admindir)
-                opts = [f for f in sorted(os.listdir(dirpath)) if f.endswith(".kcpps") and os.path.isfile(os.path.join(dirpath, f))]
+                opts = [f for f in sorted(os.listdir(dirpath)) if (f.endswith(".kcpps") or f.endswith(".kcppt")) and os.path.isfile(os.path.join(dirpath, f))]
             response_body = (json.dumps(opts).encode())
 
         elif self.path.endswith(('/api/extra/perf')):
@@ -2572,7 +2577,7 @@ Enter Prompt:<br>
         return
 
     def do_POST(self):
-        global modelbusy, requestsinqueue, currentusergenkey, totalgens, pendingabortkey, lastgeneratedcomfyimg, multiplayer_turn_major, multiplayer_turn_minor, multiplayer_story_data_compressed, multiplayer_dataformat, multiplayer_lastactive
+        global modelbusy, requestsinqueue, currentusergenkey, totalgens, pendingabortkey, lastgeneratedcomfyimg, multiplayer_turn_major, multiplayer_turn_minor, multiplayer_story_data_compressed, multiplayer_dataformat, multiplayer_lastactive, net_save_slots
         contlenstr = self.headers['content-length']
         content_length = 0
         body = None
@@ -2730,6 +2735,84 @@ Enter Prompt:<br>
                     multiplayer_lastactive[sender] = int(time.time())
                 response_body = (json.dumps({"turn_major":multiplayer_turn_major,"turn_minor":multiplayer_turn_minor,"idle":self.get_multiplayer_idle_state(sender),"data_format":multiplayer_dataformat}).encode())
 
+        elif self.path.endswith('/api/extra/data/list'):
+            if not self.secure_endpoint():
+                return
+            if savedata_obj is None:
+                response_body = (json.dumps([]).encode())
+                return
+            output = []
+            for i in range (net_save_slots):
+                if str(i) in savedata_obj:
+                    output.append(savedata_obj[str(i)]["title"])
+                else:
+                    output.append("")
+            response_body = (json.dumps(output).encode())
+
+        elif self.path.endswith('/api/extra/data/load'):
+            if not self.secure_endpoint():
+                return
+            if savedata_obj is None:
+                response_body = (json.dumps({"success":False,"data":None}).encode())
+            loadid = -1
+            try:
+                tempbody = json.loads(body)
+                loadid = tryparseint(tempbody.get('slot', 0))
+            except Exception:
+                loadid = -1
+            if loadid < 0 or str(loadid) not in savedata_obj:
+                response_body = (json.dumps({"success":False,"data":None}).encode())
+            else:
+                response_body = (json.dumps({"success":True,"data":savedata_obj[str(loadid)]}).encode())
+
+        elif self.path.endswith('/api/extra/data/save'):
+            if not self.secure_endpoint():
+                return
+            if savedata_obj is None:
+                response_code = 400
+                response_body = (json.dumps({"success":False, "error":"SaveDataFile not enabled!"}).encode())
+            else:
+                try:
+                    incoming_story = json.loads(body) # ensure submitted data is valid json
+                    slotid = tryparseint(incoming_story.get('slot', -1))
+                    dataformat = incoming_story.get('format', "")
+                    title = incoming_story.get('title', "")
+                    if not title or title=="":
+                        title = "Untitled Save"
+                    storybody = incoming_story.get('data', None) #should be a compressed string
+                    if slotid >= 0 and slotid < net_save_slots:  # we shall provide 4 network save slots
+                        saveneeded = False
+                        if storybody and storybody!="":
+                            storybody = str(storybody)
+                            if len(storybody) > (1024*1024*8): #limit story to 8mb
+                                response_code = 400
+                                response_body = (json.dumps({"success":False, "error":"Story is too long!"}).encode())
+                            else:
+                                savedata_obj[str(slotid)] = {"title":title, "format":dataformat, "data":storybody}
+                                saveneeded = True
+                        else: #erasing existing story
+                            if str(slotid) in savedata_obj:
+                                savedata_obj.pop(str(slotid))
+                                saveneeded = True
+                        if saveneeded:
+                            if args.savedatafile and os.path.exists(args.savedatafile):
+                                with open(args.savedatafile, 'w+', encoding='utf-8', errors='ignore') as f:
+                                    json.dump(savedata_obj, f)
+                                    print(f"Data was saved to slot {slotid}")
+                                response_body = (json.dumps({"success":True, "error":""}).encode())
+                            else:
+                                response_code = 400
+                                response_body = (json.dumps({"success":False, "error":"SaveDataFile is missing!"}).encode())
+                        else:
+                            response_body = (json.dumps({"success":True, "error":""}).encode())
+                    else:
+                        response_code = 400
+                        response_body = (json.dumps({"success":False, "error":"No story submitted or invalid slot!"}).encode())
+                except Exception as e:
+                    utfprint("Remote Save Story - Body Error: " + str(e))
+                    response_code = 400
+                    response_body = (json.dumps({"success": False, "error":"Submitted story invalid!"}).encode())
+
         elif self.path.endswith('/api/extra/multiplayer/getstory'):
             if not self.secure_endpoint():
                 return
@@ -2806,7 +2889,7 @@ Enter Prompt:<br>
                 if targetfile and targetfile!="":
                     dirpath = os.path.abspath(args.admindir)
                     targetfilepath = os.path.join(dirpath, targetfile)
-                    opts = [f for f in os.listdir(dirpath) if f.endswith(".kcpps") and os.path.isfile(os.path.join(dirpath, f))]
+                    opts = [f for f in os.listdir(dirpath) if (f.endswith(".kcpps") or f.endswith(".kcppt")) and os.path.isfile(os.path.join(dirpath, f))]
                     if targetfile in opts and os.path.exists(targetfilepath):
                         print(f"Admin: Received request to reload config to {targetfile}")
                         global_memory["restart_target"] = targetfile
@@ -3061,8 +3144,11 @@ def RunServerMultiThreaded(addr, port, server_handler):
             ipv6_sock = context.wrap_socket(ipv6_sock, server_side=True)
 
     numThreads = 24
-    ipv4_sock.bind((addr, port))
-    ipv4_sock.listen(numThreads)
+    try:
+        ipv4_sock.bind((addr, port))
+        ipv4_sock.listen(numThreads)
+    except Exception:
+         print("IPv4 Socket Failed to Bind.")
 
     if ipv6_sock:
         try:
@@ -3122,7 +3208,7 @@ def show_gui():
     global using_gui_launcher
     using_gui_launcher = True
     from tkinter.filedialog import askopenfilename, askdirectory
-    from tkinter.filedialog import asksaveasfile
+    from tkinter.filedialog import asksaveasfilename
 
     # if args received, launch
     if len(sys.argv) != 1 and not args.showgui:
@@ -3132,7 +3218,7 @@ def show_gui():
         args.model_param = askopenfilename(title="Select ggml model .bin or .gguf file or .kcpps config")
         root.withdraw()
         root.quit()
-        if args.model_param and args.model_param!="" and (args.model_param.lower().endswith('.kcpps') or args.model_param.lower().endswith('.kcppt')):
+        if args.model_param and args.model_param!="" and (args.model_param.lower().endswith('.kcpps') or args.model_param.lower().endswith('.kcppt') or args.model_param.lower().endswith('.kcpps?download=true') or args.model_param.lower().endswith('.kcppt?download=true')):
             dlfile = download_model_from_url(args.model_param,[".kcpps",".kcppt"]) # maybe download from url
             if dlfile:
                 args.model_param = dlfile
@@ -3239,7 +3325,7 @@ def show_gui():
 
     tabs = ctk.CTkFrame(root, corner_radius = 0, width=windowwidth, height=windowheight-50)
     tabs.grid(row=0, stick="nsew")
-    tabnames= ["Quick Launch", "Hardware", "Tokens", "Model Files", "Network", "Horde Worker","Image Gen","Audio","Admin","Extra"]
+    tabnames= ["Quick Launch", "Hardware", "Tokens", "Loaded Files", "Network", "Horde Worker","Image Gen","Audio","Admin","Extra"]
     navbuttons = {}
     navbuttonframe = ctk.CTkFrame(tabs, width=100, height=int(tabs.cget("height")))
     navbuttonframe.grid(row=0, column=0, padx=2,pady=2)
@@ -3314,6 +3400,7 @@ def show_gui():
     lora_var = ctk.StringVar()
     lora_base_var = ctk.StringVar()
     preloadstory_var = ctk.StringVar()
+    savedatafile_var = ctk.StringVar()
     mmproj_var = ctk.StringVar()
     visionmaxres_var = ctk.StringVar(value=str(default_visionmaxres))
     draftmodel_var = ctk.StringVar()
@@ -3423,14 +3510,22 @@ def show_gui():
         entry.grid(row=row, column=(0 if singleline else 1), padx=padx, sticky="nw")
         return entry, label
 
-    def makefileentry(parent, text, searchtext, var, row=0, width=200, filetypes=[], onchoosefile=None, singlerow=False, singlecol=True, is_dir=False, tooltiptxt=""):
+    #file dialog types: 0=openfile,1=savefile,2=opendir
+    def makefileentry(parent, text, searchtext, var, row=0, width=200, filetypes=[], onchoosefile=None, singlerow=False, singlecol=True, dialog_type=0, tooltiptxt=""):
         label = makelabel(parent, text, row,0,tooltiptxt,columnspan=3)
         def getfilename(var, text):
             initialDir = os.path.dirname(var.get())
             initialDir = initialDir if os.path.isdir(initialDir) else None
             fnam = None
-            if is_dir:
+            if dialog_type==2:
                 fnam = askdirectory(title=text, mustexist=True, initialdir=initialDir)
+            elif dialog_type==1:
+                fnam = asksaveasfilename(title=text, filetypes=filetypes, defaultextension=filetypes, initialdir=initialDir)
+                if not fnam:
+                    fnam = ""
+                else:
+                    fnam = str(fnam).strip()
+                    fnam = f"{fnam}.jsondb" if ".jsondb" not in fnam.lower() else fnam
             else:
                 fnam = askopenfilename(title=text,filetypes=filetypes, initialdir=initialDir)
             if fnam:
@@ -4024,7 +4119,7 @@ def show_gui():
     togglectxshift(1,1,1)
 
     # Model Tab
-    model_tab = tabcontent["Model Files"]
+    model_tab = tabcontent["Loaded Files"]
 
     makefileentry(model_tab, "Text Model:", "Select GGUF or GGML Model File", model_var, 1,width=280,singlerow=True, onchoosefile=on_picked_model_file,tooltiptxt="Select a GGUF or GGML model file on disk to be loaded.")
     makefileentry(model_tab, "Text Lora:", "Select Lora File",lora_var, 3,width=280,singlerow=True,tooltiptxt="Select an optional GGML Text LoRA adapter to use.\nLeave blank to skip.")
@@ -4036,6 +4131,7 @@ def show_gui():
     makelabelentry(model_tab, "Splits: ", draftgpusplit_str_vars, 13, 50,padx=210,singleline=True,tooltip="Distribution of draft model layers. Leave blank to follow main model's gpu split. Only works if multi-gpu (All) selected in main model.", labelpadx=160)
     makelabelentry(model_tab, "Layers: ", draftgpulayers_var, 13, 50,padx=320,singleline=True,tooltip="How many layers to GPU offload for the draft model", labelpadx=270)
     makefileentry(model_tab, "Preload Story:", "Select Preloaded Story File", preloadstory_var, 15,width=280,singlerow=True,tooltiptxt="Select an optional KoboldAI JSON savefile \nto be served on launch to any client.")
+    makefileentry(model_tab, "SaveData File:", "Select or Create New SaveData Database File", savedatafile_var, 17,width=280,filetypes=[("KoboldCpp SaveDB", "*.jsondb")],singlerow=True,dialog_type=1,tooltiptxt="Selecting a file will allow data to be loaded and saved persistently to this KoboldCpp server remotely. File is created if it does not exist.")
     makefileentry(model_tab, "ChatCompletions Adapter:", "Select ChatCompletions Adapter File", chatcompletionsadapter_var, 24, width=250, filetypes=[("JSON Adapter", "*.json")], tooltiptxt="Select an optional ChatCompletions Adapter JSON file to force custom instruct tags.")
     def pickpremadetemplate():
         initialDir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'kcpp_adapters')
@@ -4157,7 +4253,7 @@ def show_gui():
     admin_tab = tabcontent["Admin"]
     makecheckbox(admin_tab, "Enable Model Administration", admin_var, 1, 0,tooltiptxt="Enable a admin server, allowing you to remotely relaunch and swap models and configs.")
     makelabelentry(admin_tab, "Admin Password:" , admin_password_var, 3, 150,padx=120,singleline=True,tooltip="Require a password to access admin functions. You are strongly advised to use one for publically accessible instances!")
-    makefileentry(admin_tab, "Config Directory:", "Select directory containing .kcpps files to relaunch from", admin_dir_var, 5, width=280, is_dir=True, tooltiptxt="Specify a directory to look for .kcpps configs in, which can be used to swap models.")
+    makefileentry(admin_tab, "Config Directory:", "Select directory containing .kcpps files to relaunch from", admin_dir_var, 5, width=280, dialog_type=2, tooltiptxt="Specify a directory to look for .kcpps configs in, which can be used to swap models.")
 
     def kcpp_export_template():
         nonlocal kcpp_exporting_template
@@ -4185,12 +4281,12 @@ def show_gui():
         savdict["draftgpusplit"] = None
         savdict["config"] = None
         savdict["ttsthreads"] = 0
-        filename = asksaveasfile(filetypes=file_type, defaultextension=file_type)
-        if filename is None:
+        filename = asksaveasfilename(filetypes=file_type, defaultextension=file_type)
+        if not filename:
             return
-        filenamestr = str(filename.name).strip()
+        filenamestr = str(filename).strip()
         filenamestr = f"{filenamestr}.kcppt" if ".kcppt" not in filenamestr.lower() else filenamestr
-        file = open(filenamestr, 'a')
+        file = open(filenamestr, 'w')
         file.write(json.dumps(savdict))
         file.close()
         pass
@@ -4322,6 +4418,7 @@ def show_gui():
         args.model_param = None if model_var.get() == "" else model_var.get()
         args.lora = None if lora_var.get() == "" else ([lora_var.get()] if lora_base_var.get()=="" else [lora_var.get(), lora_base_var.get()])
         args.preloadstory = None if preloadstory_var.get() == "" else preloadstory_var.get()
+        args.savedatafile = None if savedatafile_var.get() == "" else savedatafile_var.get()
         try:
             if kcpp_exporting_template and isinstance(args.preloadstory, str) and args.preloadstory!="" and os.path.exists(args.preloadstory):
                 print("Embedding preload story...")   # parse and save embedded preload story
@@ -4530,6 +4627,7 @@ def show_gui():
 
         password_var.set(dict["password"] if ("password" in dict and dict["password"]) else "")
         preloadstory_var.set(dict["preloadstory"] if ("preloadstory" in dict and dict["preloadstory"]) else "")
+        savedatafile_var.set(dict["savedatafile"] if ("savedatafile" in dict and dict["savedatafile"]) else "")
         chatcompletionsadapter_var.set(dict["chatcompletionsadapter"] if ("chatcompletionsadapter" in dict and dict["chatcompletionsadapter"]) else "")
         port_var.set(dict["port_param"] if ("port_param" in dict and dict["port_param"]) else defaultport)
         host_var.set(dict["host"] if ("host" in dict and dict["host"]) else "")
@@ -4580,12 +4678,12 @@ def show_gui():
         export_vars()
         savdict = json.loads(json.dumps(args.__dict__))
         file_type = [("KoboldCpp Settings", "*.kcpps")]
-        filename = asksaveasfile(filetypes=file_type, defaultextension=file_type)
-        if filename is None:
+        filename = asksaveasfilename(filetypes=file_type, defaultextension=file_type)
+        if not filename:
             return
-        filenamestr = str(filename.name).strip()
+        filenamestr = str(filename).strip()
         filenamestr = f"{filenamestr}.kcpps" if ".kcpps" not in filenamestr.lower() else filenamestr
-        file = open(filenamestr, 'a')
+        file = open(filenamestr, 'w')
         file.write(json.dumps(savdict))
         file.close()
         pass
@@ -4949,7 +5047,7 @@ def run_horde_worker(args, api_key, worker_name):
             "name": worker_name,
             "models": [friendlymodelname],
             "max_length": maxhordelen,
-            "max_context_length": maxhordectx,
+            "max_context_length": min(maxctx,maxhordectx),
             "priority_usernames": [],
             "softprompts": [],
             "bridge_agent": BRIDGE_AGENT,
@@ -5040,8 +5138,12 @@ def convert_outdated_args(args):
         dict["usecpu"] = True
     if "failsafe" in dict and dict["failsafe"]: #failsafe implies noavx2
         dict["noavx2"] = True
-    if ("model_param" not in dict or not dict["model_param"]) and ("model" in dict and dict["model"]):
-        dict["model_param"] = dict["model"]
+    if ("model_param" not in dict or not dict["model_param"]) and ("model" in dict):
+        model_value = dict["model"] #may be null, empty/non-empty string, empty/non empty array
+        if isinstance(model_value, str) and model_value:  # Non-empty string
+            dict["model_param"] = model_value
+        elif isinstance(model_value, list) and model_value:  # Non-empty list
+            dict["model_param"] = model_value[0]  # Take the first file in the list
     return args
 
 def setuptunnel(global_memory, has_sd):
@@ -5102,33 +5204,17 @@ def setuptunnel(global_memory, has_sd):
             tunnelproc.wait()
 
         if os.name == 'nt':
-            if os.path.exists("cloudflared.exe") and os.path.getsize("cloudflared.exe") > 1000000:
-                print("Cloudflared file exists, reusing it...")
-            else:
-                print("Downloading Cloudflare Tunnel for Windows...")
-                subprocess.run("curl -fL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -o cloudflared.exe", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
+            downloader_internal("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe", "cloudflared.exe", True, 500000)
         elif sys.platform=="darwin":
-            if os.path.exists("cloudflared") and os.path.getsize("cloudflared") > 1000000:
-                print("Cloudflared file exists, reusing it...")
-            else:
-                print("Downloading Cloudflare Tunnel for MacOS...")
-                subprocess.run("curl -fL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz -o cloudflared-darwin-amd64.tgz", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
-                subprocess.run("tar -xzf cloudflared-darwin-amd64.tgz", shell=True)
-                subprocess.run("chmod +x 'cloudflared'", shell=True)
+            downloader_internal("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz", "cloudflared-darwin-amd64.tgz", True, 500000)
+            subprocess.run("tar -xzf cloudflared-darwin-amd64.tgz", shell=True)
+            subprocess.run("chmod +x 'cloudflared'", shell=True)
         elif sys.platform == "linux" and platform.machine().lower() == "aarch64":
-            if os.path.exists("cloudflared-linux-arm64") and os.path.getsize("cloudflared-linux-arm64") > 1000000:
-                print("Cloudflared file exists, reusing it...")
-            else:
-                print("Downloading Cloudflare Tunnel for ARM64 Linux...")
-                subprocess.run("curl -fL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 -o cloudflared-linux-arm64", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
-                subprocess.run("chmod +x 'cloudflared-linux-arm64'", shell=True)
+            downloader_internal("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64", "cloudflared-linux-arm64", True, 500000)
+            subprocess.run("chmod +x 'cloudflared-linux-arm64'", shell=True)
         else:
-            if os.path.exists("cloudflared-linux-amd64") and os.path.getsize("cloudflared-linux-amd64") > 1000000:
-                print("Cloudflared file exists, reusing it...")
-            else:
-                print("Downloading Cloudflare Tunnel for Linux...")
-                subprocess.run("curl -fL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared-linux-amd64", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
-                subprocess.run("chmod +x 'cloudflared-linux-amd64'", shell=True)
+            downloader_internal("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "cloudflared-linux-amd64", True, 500000)
+            subprocess.run("chmod +x 'cloudflared-linux-amd64'", shell=True)
         print("Attempting to start tunnel thread...", flush=True)
         tunnel_thread = threading.Thread(target=run_tunnel)
         tunnel_thread.start()
@@ -5207,16 +5293,19 @@ def unload_libs():
 
 def reload_new_config(filename): #for changing config after launch
     with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
-        config = json.load(f)
-        args.istemplate = False
-        for key, value in config.items(): #do not overwrite certain values
-            if key not in ["remotetunnel","showgui","port","host","port_param","admin","adminpassword","admindir","ssl","nocertify","benchmark","prompt","config"]:
-                setattr(args, key, value)
-        setattr(args,"showgui",False)
-        setattr(args,"benchmark",False)
-        setattr(args,"prompt","")
-        setattr(args,"config",None)
-        setattr(args,"launch",None)
+        try:
+            config = json.load(f)
+            args.istemplate = False
+            for key, value in config.items(): #do not overwrite certain values
+                if key not in ["remotetunnel","showgui","port","host","port_param","admin","adminpassword","admindir","ssl","nocertify","benchmark","prompt","config"]:
+                    setattr(args, key, value)
+            setattr(args,"showgui",False)
+            setattr(args,"benchmark",False)
+            setattr(args,"prompt","")
+            setattr(args,"config",None)
+            setattr(args,"launch",None)
+        except Exception as e:
+            print(f"Reload New Config Failed: {e}")
 
 def load_config_cli(filename):
     print("Loading .kcpps configuration file...")
@@ -5231,9 +5320,22 @@ def load_config_cli(filename):
             else:
                 setattr(args, key, value)
         if args.istemplate:
-            print("\nA .kcppt template was selected from CLI - automatically selecting your backend...")
-            auto_set_backend_cli()
+            print("\nA .kcppt template was selected from CLI...")
+            if (args.usecublas is None) and (args.usevulkan is None) and (args.useclblast is None):
+                print("Automatically selecting your backend...")
+                auto_set_backend_cli()
 
+def save_config_cli(filename):
+    savdict = json.loads(json.dumps(args.__dict__))
+    if filename is None:
+        return
+    filenamestr = str(filename).strip()
+    filenamestr = f"{filenamestr}.kcpps" if ".kcpps" not in filenamestr.lower() else filenamestr
+    file = open(filenamestr, 'w')
+    file.write(json.dumps(savdict))
+    file.close()
+    print(f"\nSaved .kcpps configuration file as {filename}\nIt can be loaded with --config [filename] in future.")
+    pass
 
 def delete_old_pyinstaller():
     try:
@@ -5307,24 +5409,59 @@ def check_latest_version():
         print(f"{Fore.CYAN}You are using the latest version.{Style.RESET_ALL}")
     if os.name == "nt":
         deinit()
-def download_model_from_url_internal(url): #returns path to downloaded model when done
+def downloader_internal(input_url, output_filename, capture_output, min_file_size=64): # 64 bytes required by default
+    import shutil
     import subprocess
-    mdlfilename = os.path.basename(url)
-    #check if file already exists
-    if mdlfilename:
-        if os.path.exists(mdlfilename) and os.path.getsize(mdlfilename) > 10000000: #10MB trigger
-            print(f"File {mdlfilename} already exists, not redownloading.")
-            return mdlfilename
-        else:
-            dl_url = url
-            if "https://huggingface.co/" in dl_url and "/blob/main/" in dl_url:
-                dl_url = dl_url.replace("/blob/main/", "/resolve/main/")
-            print(f"Downloading file from external URL at {dl_url} now...")
-            subprocess.run(f"curl -fL {dl_url} -o {mdlfilename}", shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
-            print(f"Download {mdlfilename} completed.", flush=True)
-            return mdlfilename
-    return None
-def download_model_from_url(url,permitted_types=[".gguf",".safetensors"]):
+    import os
+
+    if "https://huggingface.co/" in input_url and "/blob/main/" in input_url:
+        input_url = input_url.replace("/blob/main/", "/resolve/main/")
+    if output_filename == "auto":
+        output_filename = os.path.basename(input_url).split('?')[0].split('#')[0]
+    if os.path.exists(output_filename) and os.path.getsize(output_filename) > min_file_size:
+        print(f"{output_filename} already exists, using existing file.")
+        return output_filename
+    print(f"Downloading {input_url}", flush=True)
+    dl_success = False
+
+    try:
+        if shutil.which("aria2c") is not None:
+            rc = subprocess.run(
+                f"aria2c -x 16 -s 16 --summary-interval=30 --console-log-level=error --log-level=error --download-result=default --allow-overwrite=true --file-allocation=none -o {output_filename} {input_url}",
+                shell=True, capture_output=capture_output, text=True, check=True, encoding='utf-8'
+            )
+            dl_success = (rc.returncode == 0 and os.path.exists(output_filename) and os.path.getsize(output_filename) > min_file_size)
+    except subprocess.CalledProcessError as e:
+        print(f"aria2c failed: {e}")
+
+    try:
+        if not dl_success and shutil.which("curl") is not None:
+            rc = subprocess.run(
+                f"curl -fLo {output_filename} {input_url}",
+                shell=True, capture_output=capture_output, text=True, check=True, encoding='utf-8'
+            )
+            dl_success = (rc.returncode == 0 and os.path.exists(output_filename) and os.path.getsize(output_filename) > min_file_size)
+    except subprocess.CalledProcessError as e:
+        print(f"curl failed: {e}")
+
+    try:
+        if not dl_success and shutil.which("wget") is not None:
+            rc = subprocess.run(
+                f"wget -O {output_filename} {input_url}",
+                shell=True, capture_output=capture_output, text=True, check=True, encoding='utf-8'
+            )
+            dl_success = (rc.returncode == 0 and os.path.exists(output_filename) and os.path.getsize(output_filename) > min_file_size)
+    except subprocess.CalledProcessError as e:
+        print(f"wget failed: {e}")
+
+    if not dl_success:
+        print("Could not find suitable download software, or all download methods failed. Please install aria2, curl, or wget.")
+        return None
+
+    return output_filename
+
+
+def download_model_from_url(url, permitted_types=[".gguf",".safetensors", ".ggml", ".bin"], min_file_size=64):
     if url and url!="":
         if url.endswith("?download=true"):
             url = url.replace("?download=true","")
@@ -5334,7 +5471,7 @@ def download_model_from_url(url,permitted_types=[".gguf",".safetensors"]):
                 end_ext_ok = True
                 break
         if ((url.startswith("http://") or url.startswith("https://")) and end_ext_ok):
-            dlfile = download_model_from_url_internal(url)
+            dlfile = downloader_internal(url, "auto", False, min_file_size)
             return dlfile
     return None
 
@@ -5388,12 +5525,15 @@ def main(launch_args):
 
     args = convert_outdated_args(args)
 
-    temp_hide_print = ((args.model_param or args.model) and args.prompt and not args.benchmark and not (args.debugmode >= 1))
+    temp_hide_print = (args.model_param and args.prompt and not args.benchmark and not (args.debugmode >= 1))
 
     if not temp_hide_print:
         print(f"***\nWelcome to KoboldCpp - Version {KcppVersion}")
     if args.debugmode != 1:
         showdebug = False #not shared with child process!
+    if args.debugmode >= 1:
+        print("Debug Mode is Enabled!")
+        args.quiet = False # verbose outputs
 
     try:
         delete_old_pyinstaller()  #perform some basic cleanup of old temporary directories
@@ -5406,6 +5546,10 @@ def main(launch_args):
 
     if args.analyze:
         analyze_gguf_model_wrapper(args.analyze)
+        return
+
+    if args.exportconfig and args.exportconfig!="":
+        save_config_cli(args.exportconfig)
         return
 
     if args.config and len(args.config)==1: #handle initial config loading for launch
@@ -5424,7 +5568,7 @@ def main(launch_args):
     args = convert_outdated_args(args)
 
     #positional handling for kcpps files (drag and drop)
-    if args.model_param and args.model_param!="" and (args.model_param.lower().endswith('.kcpps') or args.model_param.lower().endswith('.kcppt')):
+    if args.model_param and args.model_param!="" and (args.model_param.lower().endswith('.kcpps') or args.model_param.lower().endswith('.kcppt') or args.model_param.lower().endswith('.kcpps?download=true') or args.model_param.lower().endswith('.kcppt?download=true')):
         dlfile = download_model_from_url(args.model_param,[".kcpps",".kcppt"]) # maybe download from url
         if dlfile:
             args.model_param = dlfile
@@ -5470,15 +5614,36 @@ def main(launch_args):
                 setuptunnel(global_memory, True if args.sdmodel else False)
 
             # invoke the main koboldcpp process
+            original_args = copy.deepcopy(args)
+
             kcpp_instance = multiprocessing.Process(target=kcpp_main_process,kwargs={"launch_args": args, "g_memory": global_memory, "gui_launcher": using_gui_launcher})
             kcpp_instance.daemon = True
             kcpp_instance.start()
+
+            fault_recovery_mode = False #if a config reload fails, recover back to old settings
 
             while True: # keep the manager alive
                 try:
                     restart_target = ""
                     if not kcpp_instance or not kcpp_instance.is_alive():
-                        break
+                        if fault_recovery_mode:
+                            #attempt to recover
+                            print("Attempting to recover to safe mode, launching known-good config...")
+                            fault_recovery_mode = False
+                            args = copy.deepcopy(original_args) #restore known good original launcher args
+                            if kcpp_instance:
+                                kcpp_instance.terminate()
+                                kcpp_instance.join(timeout=10)  # Ensure process is stopped
+                                kcpp_instance = None
+                            kcpp_instance = multiprocessing.Process(target=kcpp_main_process,kwargs={"launch_args": args, "g_memory": global_memory, "gui_launcher": False})
+                            kcpp_instance.daemon = True
+                            kcpp_instance.start()
+                            global_memory["restart_target"] = ""
+                            time.sleep(3)
+                        else:
+                            break # kill the program
+                    if fault_recovery_mode and global_memory["load_complete"]:
+                        fault_recovery_mode = False
                     restart_target = global_memory["restart_target"]
                     if restart_target!="":
                         print(f"Reloading new config: {restart_target}")
@@ -5494,12 +5659,13 @@ def main(launch_args):
                                 kcpp_instance.join(timeout=10)  # Ensure process is stopped
                                 kcpp_instance = None
                                 print("Restarting KoboldCpp...")
+                                fault_recovery_mode = True
                                 reload_new_config(targetfilepath)
-                                kcpp_instance = multiprocessing.Process(target=kcpp_main_process,kwargs={"launch_args": args, "g_memory": global_memory, "gui_launcher": using_gui_launcher})
+                                kcpp_instance = multiprocessing.Process(target=kcpp_main_process,kwargs={"launch_args": args, "g_memory": global_memory, "gui_launcher": False})
                                 kcpp_instance.daemon = True
                                 kcpp_instance.start()
                                 global_memory["restart_target"] = ""
-                                time.sleep(1)
+                                time.sleep(3)
                     else:
                         time.sleep(0.2)
                 except (KeyboardInterrupt,SystemExit):
@@ -5520,7 +5686,7 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
     using_gui_launcher = gui_launcher
     start_time = time.time()
 
-    if (args.model_param or args.model) and args.prompt and not args.benchmark and not (args.debugmode >= 1):
+    if args.model_param and args.prompt and not args.benchmark and not (args.debugmode >= 1):
         suppress_stdout()
 
     if args.model_param and (args.benchmark or args.prompt):
@@ -5557,7 +5723,7 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
 
     # try to read chat completions adapter
     if args.chatcompletionsadapter:
-        global chatcompl_adapter
+        global chatcompl_adapter, chatcompl_adapter_list
         ccadapter_path = None
         canload = False
         adapt_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'kcpp_adapters')
@@ -5597,50 +5763,56 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
             print("Chat Completions Adapter Loaded")
         else:
             print("Warning: Chat Completions Adapter invalid or not found.")
+        if (chatcompl_adapter is not None and isinstance(chatcompl_adapter, list)):
+            chatcompl_adapter_list = chatcompl_adapter
+            chatcompl_adapter = None
 
     # handle model downloads if needed
     if args.model_param and args.model_param!="":
-        dlfile = download_model_from_url(args.model_param,[".gguf",".bin"])
+        dlfile = download_model_from_url(args.model_param,[".gguf",".bin", ".ggml"],min_file_size=500000)
         if dlfile:
             args.model_param = dlfile
+        if args.model and isinstance(args.model, list) and len(args.model)>1: #handle multi file downloading
+            for extramodel in args.model[1:]:
+                download_model_from_url(extramodel,[".gguf",".bin", ".ggml"],min_file_size=500000)
     if args.sdmodel and args.sdmodel!="":
-        dlfile = download_model_from_url(args.sdmodel,[".gguf",".safetensors"])
+        dlfile = download_model_from_url(args.sdmodel,[".gguf",".safetensors"],min_file_size=500000)
         if dlfile:
             args.sdmodel = dlfile
     if args.sdt5xxl and args.sdt5xxl!="":
-        dlfile = download_model_from_url(args.sdt5xxl,[".gguf",".safetensors"])
+        dlfile = download_model_from_url(args.sdt5xxl,[".gguf",".safetensors"],min_file_size=500000)
         if dlfile:
             args.sdt5xxl = dlfile
     if args.sdclipl and args.sdclipl!="":
-        dlfile = download_model_from_url(args.sdclipl,[".gguf",".safetensors"])
+        dlfile = download_model_from_url(args.sdclipl,[".gguf",".safetensors"],min_file_size=500000)
         if dlfile:
             args.sdclipl = dlfile
     if args.sdclipg and args.sdclipg!="":
-        dlfile = download_model_from_url(args.sdclipg,[".gguf",".safetensors"])
+        dlfile = download_model_from_url(args.sdclipg,[".gguf",".safetensors"],min_file_size=500000)
         if dlfile:
             args.sdclipg = dlfile
     if args.sdvae and args.sdvae!="":
-        dlfile = download_model_from_url(args.sdvae,[".gguf",".safetensors"])
+        dlfile = download_model_from_url(args.sdvae,[".gguf",".safetensors"],min_file_size=500000)
         if dlfile:
             args.sdvae = dlfile
     if args.mmproj and args.mmproj!="":
-        dlfile = download_model_from_url(args.mmproj,[".gguf"])
+        dlfile = download_model_from_url(args.mmproj,[".gguf"],min_file_size=500000)
         if dlfile:
             args.mmproj = dlfile
     if args.whispermodel and args.whispermodel!="":
-        dlfile = download_model_from_url(args.whispermodel,[".gguf",".bin"])
+        dlfile = download_model_from_url(args.whispermodel,[".gguf",".bin"],min_file_size=500000)
         if dlfile:
             args.whispermodel = dlfile
     if args.draftmodel and args.draftmodel!="":
-        dlfile = download_model_from_url(args.draftmodel,[".gguf"])
+        dlfile = download_model_from_url(args.draftmodel,[".gguf"],min_file_size=500000)
         if dlfile:
             args.draftmodel = dlfile
     if args.ttsmodel and args.ttsmodel!="":
-        dlfile = download_model_from_url(args.ttsmodel,[".gguf"])
+        dlfile = download_model_from_url(args.ttsmodel,[".gguf"],min_file_size=500000)
         if dlfile:
             args.ttsmodel = dlfile
     if args.ttswavtokenizer and args.ttswavtokenizer!="":
-        dlfile = download_model_from_url(args.ttswavtokenizer,[".gguf"])
+        dlfile = download_model_from_url(args.ttswavtokenizer,[".gguf"],min_file_size=500000)
         if dlfile:
             args.ttswavtokenizer = dlfile
 
@@ -5651,7 +5823,7 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
         friendlymodelname = "koboldcpp/" + sanitize_string(newmdldisplayname)
 
     # horde worker settings
-    global maxhordelen, maxhordectx, showdebug, has_multiplayer
+    global maxhordelen, maxhordectx, showdebug, has_multiplayer, savedata_obj
     if args.hordemodelname and args.hordemodelname!="":
         friendlymodelname = args.hordemodelname
         if args.debugmode == 1:
@@ -5671,6 +5843,25 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
 
     if args.multiplayer:
         has_multiplayer = True
+
+    if args.savedatafile and isinstance(args.savedatafile, str):
+        filepath = args.savedatafile
+        try:
+            with open(filepath, 'r+', encoding='utf-8', errors='ignore') as f:
+                loaded = json.load(f)
+                savedata_obj = loaded
+                print(f"Loaded existing savedatafile at '{filepath}'.")
+        except FileNotFoundError:
+            try:
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                with open(filepath, 'w+', encoding='utf-8', errors='ignore') as f:
+                    savedata_obj = {}
+                    print(f"File '{filepath}' did not exist. Created new savedatafile.")
+                    json.dump(savedata_obj, f)
+            except Exception as e:
+                print(f"Failed to create savedatafile '{filepath}': {e}")
+        except Exception as e:
+            print(f"Failed to access savedatafile '{filepath}': {e}")
 
     if args.highpriority:
         print("Setting process to Higher Priority - Use Caution")
@@ -5801,21 +5992,20 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
             exitcounter = 999
             exit_with_error(3,"Could not load text model: " + modelname)
 
-    if (chatcompl_adapter is not None and isinstance(chatcompl_adapter, list) and not args.nomodel and args.model_param):
+    if (chatcompl_adapter_list is not None and isinstance(chatcompl_adapter_list, list)):
         # The chat completions adapter is a list that needs derivation from chat templates
         # Try to derive chat completions adapter from chat template, now that we have the model loaded
-        ctbytes = handle.get_chat_template()
-        chat_template = ctypes.string_at(ctbytes).decode("UTF-8","ignore")
-        candidates = chatcompl_adapter
-        chatcompl_adapter = None
-        if chat_template != "":
-            for entry in candidates:
-                if all(s in chat_template for s in entry['search']):
-                    print(f"Chat completion heuristic: {entry['name']}")
-                    chatcompl_adapter = entry['adapter']
-                    break
-        if chatcompl_adapter is None:
-            print("Chat template heuristics failed to identify chat completions format. Alpaca will be used.")
+        if not args.nomodel and args.model_param:
+            ctbytes = handle.get_chat_template()
+            chat_template = ctypes.string_at(ctbytes).decode("UTF-8","ignore")
+            if chat_template != "":
+                for entry in chatcompl_adapter_list:
+                    if all(s in chat_template for s in entry['search']):
+                        print(f"Chat completion heuristic: {entry['name']}")
+                        chatcompl_adapter = entry['adapter']
+                        break
+            if chatcompl_adapter is None:
+                print("Chat template heuristics failed to identify chat completions format. Alpaca will be used.")
 
     #handle loading image model
     if args.sdmodel and args.sdmodel!="":
@@ -6006,7 +6196,10 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
                 print(f"StableUI is available at {endpoint_url}/sdui/")
         global_memory["load_complete"] = True
     if args.launch:
-        LaunchWebbrowser(endpoint_url,"--launch was set, but could not launch web browser automatically.")
+        def launch_browser_thread():
+            LaunchWebbrowser(endpoint_url,"--launch was set, but could not launch web browser automatically.")
+        browser_thread = threading.Timer(2, launch_browser_thread) #2 second delay
+        browser_thread.start()
 
     if args.hordekey and args.hordekey!="":
         if args.hordeworkername and args.hordeworkername!="":
@@ -6135,7 +6328,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description=f'KoboldCpp Server - Version {KcppVersion}')
     modelgroup = parser.add_mutually_exclusive_group() #we want to be backwards compatible with the unnamed positional args
-    modelgroup.add_argument("--model", metavar=('[filename]'), help="Model file to load", type=str, default="")
+    modelgroup.add_argument("--model", metavar=('[filenames]'), help="Model file to load. Accepts multiple values if they are URLs.", type=str, nargs='+', default=[])
     modelgroup.add_argument("model_param", help="Model file to load (positional)", nargs="?")
     portgroup = parser.add_mutually_exclusive_group() #we want to be backwards compatible with the unnamed positional args
     portgroup.add_argument("--port", metavar=('[portnumber]'), help=f"Port to listen on. (Defaults to {defaultport})", default=defaultport, type=int, action='store')
@@ -6166,7 +6359,7 @@ if __name__ == '__main__':
     advparser.add_argument("--noshift", help="If set, do not attempt to Trim and Shift the GGUF context.", action='store_true')
     advparser.add_argument("--nofastforward", help="If set, do not attempt to fast forward GGUF context (always reprocess). Will also enable noshift", action='store_true')
     compatgroup3 = advparser.add_mutually_exclusive_group()
-    compatgroup3.add_argument("--usemmap", help="If set, uses mmap to load model. This model will not be unloadable.", action='store_true')
+    compatgroup3.add_argument("--usemmap", help="If set, uses mmap to load model.", action='store_true')
     advparser.add_argument("--usemlock", help="Enables mlock, preventing the RAM used to load the model from being paged out. Not usually recommended.", action='store_true')
     advparser.add_argument("--noavx2", help="Do not use AVX2 instructions, a slower compatibility mode for older devices.", action='store_true')
     advparser.add_argument("--failsafe", help="Use failsafe mode, extremely slow CPU only compatibility mode that should work on all devices. Can be combined with useclblast if your device supports OpenCL.", action='store_true')
@@ -6182,6 +6375,7 @@ if __name__ == '__main__':
     advparser.add_argument("--highpriority", help="Experimental flag. If set, increases the process CPU priority, potentially speeding up generation. Use caution.", action='store_true')
     advparser.add_argument("--foreground", help="Windows only. Sends the terminal to the foreground every time a new prompt is generated. This helps avoid some idle slowdown issues.", action='store_true')
     advparser.add_argument("--preloadstory", metavar=('[savefile]'), help="Configures a prepared story json save file to be hosted on the server, which frontends (such as KoboldAI Lite) can access over the API.", default="")
+    advparser.add_argument("--savedatafile", metavar=('[savefile]'), help="If enabled, creates or opens a persistent database file on the server, that allows users to save and load their data remotely. A new file is created if it does not exist.", default="")
     advparser.add_argument("--quiet", help="Enable quiet mode, which hides generation inputs and outputs in the terminal. Quiet mode is automatically enabled when running a horde worker.", action='store_true')
     advparser.add_argument("--ssl", help="Allows all content to be served over SSL instead. A valid UNENCRYPTED SSL cert and key .pem files must be provided", metavar=('[cert_pem]', '[key_pem]'), nargs='+')
     advparser.add_argument("--nocertify", help="Allows insecure SSL connections. Use this if you have cert errors and need to bypass certificate restrictions.", action='store_true')
@@ -6199,6 +6393,7 @@ if __name__ == '__main__':
     advparser.add_argument("--forceversion", help="If the model file format detection fails (e.g. rogue modified model) you can set this to override the detected format (enter desired version, e.g. 401 for GPTNeoX-Type2).",metavar=('[version]'), type=int, default=0)
     advparser.add_argument("--smartcontext", help="Reserving a portion of context to try processing less frequently. Outdated. Not recommended.", action='store_true')
     advparser.add_argument("--unpack", help="Extracts the file contents of the KoboldCpp binary into a target directory.", metavar=('destination'), type=str, default="")
+    advparser.add_argument("--exportconfig", help="Exports the current selected arguments as a .kcpps settings file", metavar=('[filename]'), type=str, default="")
     advparser.add_argument("--nomodel", help="Allows you to launch the GUI alone, without selecting any model.", action='store_true')
     advparser.add_argument("--moeexperts", metavar=('[num of experts]'), help="How many experts to use for MoE models (default=follow gguf)", type=int, default=-1)
     compatgroup2 = parser.add_mutually_exclusive_group()
