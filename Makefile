@@ -257,8 +257,8 @@ ifdef LLAMA_HIPBLAS
 	LLAMA_CUDA_DMMV_X       ?= 32
 	LLAMA_CUDA_MMV_Y        ?= 2
 	LLAMA_CUDA_KQUANTS_ITER ?= 2
-	
-	HIPFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_HIP -DGGML_HIP_NO_VMM -DGGML_HIP_ROCWMMA_FATTN -DGGML_USE_CUDA -DSD_USE_CUBLAS -I$(ROCM_PATH)/include/rocwmma -I$(ROCM_PATH)/include $(shell $(ROCM_PATH)/bin/hipconfig -C)
+#For RDNA3+  -->  -DGGML_HIP_ROCWMMA_FATTN -I$(ROCM_PATH)/include/rocwmma -I$(ROCM_PATH)/include
+	HIPFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_HIP -DGGML_HIP_NO_VMM -DGGML_USE_CUDA -DSD_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C) 
 	HIPLDFLAGS    += -L$(ROCM_PATH)/lib -Wl,-rpath=$(ROCM_PATH)/lib
 	HIPLDFLAGS    += -L$(ROCM_PATH)/lib64 -Wl,-rpath=$(ROCM_PATH)/lib64
 	HIPLDFLAGS    += -lhipblas -lamdhip64 -lrocblas
