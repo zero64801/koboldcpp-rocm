@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <cinttypes>
 #include <algorithm>
+#include <filesystem>
 
 #include "model_adapter.h"
 
@@ -111,10 +112,12 @@ static SDParams * sd_params = nullptr;
 static sd_ctx_t * sd_ctx = nullptr;
 static int sddebugmode = 0;
 static std::string recent_data = "";
+static uint8_t * input_image_buffer = NULL;
 
 static std::string sdplatformenv, sddeviceenv, sdvulkandeviceenv;
 static bool notiling = false;
 static bool sd_is_quiet = false;
+static std::string sdmodelfilename = "";
 
 bool sdtype_load_model(const sd_load_model_inputs inputs) {
     sd_is_quiet = inputs.quiet;
@@ -128,6 +131,7 @@ bool sdtype_load_model(const sd_load_model_inputs inputs) {
     std::string clipg_filename = inputs.clipg_filename;
     notiling = inputs.notile;
     printf("\nImageGen Init - Load Model: %s\n",inputs.model_filename);
+
     if(lorafilename!="")
     {
         printf("With LoRA: %s at %f power\n",lorafilename.c_str(),inputs.lora_multiplier);
@@ -252,6 +256,9 @@ bool sdtype_load_model(const sd_load_model_inputs inputs) {
         return false;
     }
 
+    std::filesystem::path mpath(inputs.model_filename);
+    sdmodelfilename = mpath.filename().string();
+
     if(lorafilename!="" && inputs.lora_multiplier>0)
     {
         printf("\nApply LoRA...\n");
@@ -277,6 +284,20 @@ std::string clean_input_prompt(const std::string& input) {
     return result;
 }
 
+static std::string get_image_params(const SDParams& params) {
+    std::string parameter_string = "";
+    parameter_string += "Prompt: " + params.prompt + " | ";
+    parameter_string += "NegativePrompt: " + params.negative_prompt + " | ";
+    parameter_string += "Steps: " + std::to_string(params.sample_steps) + " | ";
+    parameter_string += "CFGScale: " + std::to_string(params.cfg_scale) + " | ";
+    parameter_string += "Guidance: " + std::to_string(params.guidance) + " | ";
+    parameter_string += "Seed: " + std::to_string(params.seed) + " | ";
+    parameter_string += "Size: " + std::to_string(params.width) + "x" + std::to_string(params.height) + " | ";
+    parameter_string += "Sampler: " + std::to_string((int)sd_params->sample_method) + " | ";
+    parameter_string += "Model: " + sdmodelfilename + " | ";
+    parameter_string += "Version: KoboldCpp";
+    return parameter_string;
+}
 
 sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
 {
@@ -289,7 +310,6 @@ sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
         output.status = 0;
         return output;
     }
-    uint8_t * input_image_buffer = NULL;
     sd_image_t * results;
     sd_image_t* control_image = NULL;
 
@@ -528,7 +548,7 @@ sd_generation_outputs sdtype_generate(const sd_generation_inputs inputs)
         }
 
         int out_data_len;
-        unsigned char * png = stbi_write_png_to_mem(results[i].data, 0, results[i].width, results[i].height, results[i].channel, &out_data_len, "");
+        unsigned char * png = stbi_write_png_to_mem(results[i].data, 0, results[i].width, results[i].height, results[i].channel, &out_data_len, get_image_params(*sd_params).c_str());
         if (png != NULL)
         {
             recent_data = kcpp_base64_encode(png,out_data_len);

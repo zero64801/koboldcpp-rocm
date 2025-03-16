@@ -12,7 +12,7 @@ Current version indicated by LITEVER below.
 -->
 
 <script>
-	const LITEVER = 220;
+	const LITEVER = 223;
 	const urlParams = new URLSearchParams(window.location.search);
 	var localflag = true;
 	const STORAGE_PREFIX = (localflag?"e_":"")+"kaihordewebui_";
@@ -174,6 +174,15 @@ Current version indicated by LITEVER below.
 	.bigclampedcontainer {
 		width: 1770px;
 	}}
+	.centeredcontainer {
+		width: calc(100% - 662px)!important;
+	}
+	@media (max-width: 960px) {
+		.centeredcontainer {
+			width: 33%!important;
+		}
+	}
+
 
 	/* Viewports */
 	.normal_viewport_height
@@ -343,11 +352,7 @@ Current version indicated by LITEVER below.
 	.settingsmenu {
 		display: flex;
 		flex-wrap: wrap;
-		background-color: #4d4d4d;
 		padding: 6px;
-	}
-	body.connected .settingsmenu{
-		background-color: #295071;
 	}
 	.settingsbody
 	{
@@ -363,7 +368,7 @@ Current version indicated by LITEVER below.
 		padding-bottom: 5px;
 		padding-top: 5px;
 		display: inline-block;
-		border-bottom: 1px solid #12324f;
+		border-bottom: 1px solid #465d73;
 	}
 	.settingitem.wide{
 		width: 100%;
@@ -461,13 +466,13 @@ Current version indicated by LITEVER below.
 	/* Save menu */
 	.saveloadpopup {
 		width: 660px;
-		background-color: #262626;
+		background-color: #263040;
 		margin-top: 120px;
 	}
 	@media (max-width: 768px) {
 		.saveloadpopup {
 			width: 100%;
-			background-color: #262626;
+			background-color: #263040;
 			margin-top: 120px;
 		}
 	}
@@ -734,18 +739,18 @@ Current version indicated by LITEVER below.
 
 	/* Popup dialogs */
 	.workerpopup {
-		background-color: #262626;
+		background-color: #263040;
 		margin-top: 100px;
 	}
 	@media (max-width: 768px) {
 		.workerpopup {
 			width: 100%;
-			background-color: #262626;
+			background-color: #263040;
 			margin-top: 100px;
 		}
 	}
 	.nspopup {
-		background-color: #262626;
+		background-color: #263040;
 		margin-top: 200px;
 	}
 	.nspopup.moderate {
@@ -762,6 +767,16 @@ Current version indicated by LITEVER below.
 	}
 	.nspopup.fixsize {
 		width: 330px;
+	}
+	.nspopup.sidepanelsize {
+		width: 330px!important;
+		margin-top: 0px!important;
+	}
+	@media (max-width: 960px) {
+		.nspopup.sidepanelsize {
+			width: 33vw!important;
+			margin-top: 0px!important;
+		}
 	}
 	.nspopup.flexsize {
 		width: 600px;
@@ -815,6 +830,14 @@ Current version indicated by LITEVER below.
 		height: 100%;
 		flex-direction: column;
 		align-items: center;
+	}
+	.popupcontainer.side{
+		width: unset;
+	}
+	.popupcontainer.sideright{
+		width: unset;
+		left:unset;
+		right:0px;
 	}
 	.popupbg {
 		position: fixed;
@@ -953,14 +976,14 @@ Current version indicated by LITEVER below.
 	/* Scenario menu */
 	.scenariopopup {
 		width: 600px;
-		background-color: #262626;
+		background-color: #263040;
 		margin-top: 60px;
 	}
 
 	@media (max-width: 768px) {
 		.scenariopopup {
 			width: 100%;
-			background-color: #262626;
+			background-color: #263040;
 			margin-top: 70px;
 		}
 	}
@@ -2349,8 +2372,8 @@ Current version indicated by LITEVER below.
 	const compressed_scenario_db = ["XQAAAQCkKgAAAAAAAAA9iIqG1FTp3Td41VnWyuXTp3Lb95KmIEizGvJcmkqrV2FY5cKEeSxCwbqBRjHVjL7PUH9wCoW89dPxjDNZvgp6okMOelpy7_1P6GV-mfJV4jz42_DXqYfET4aYlAT13M95gkcA14f0NLvI_p6B9CyG8EbkhRxsk3uyf_KgTV5kwqzAcr5C4JQ_pJr77GnYCHQI8h6F765-lcqrvw1Xu1GHhcN3lj7s9PhMvLnmGPZbQMrTo5sqPJDzYO6lytxmNSHSXMICpN2kFJB6kqyL5lBxNAH3Au_F_JIC85GqwLXWEy8wZms5KmAdp1s3EA1yabPGqqF0G5RxBp3aXzm7h6QUJPy1qSr6JJAo4fi2gCPaLkdn2pKqNDR1Ww8FA6AVHOyMgCTmmrQxWVYgXY9TdhHKcRcrIsoHNXEeWSqMGJNQ8lzVfc26teZdBdPLhqcClG8wUThPtyobTMz8Fgom88nTv7VT-mZhwH9Nc4ghoCL8dMR0Skf-EYDZ0Uvz03_GTn5OB8yuX6FmsD1XQJv_CKBAUHeDKd7n_bC7WOnlAINHPX9Bh5TnwjeLYO-UAL2ClMJTFzR-k2cjVHGQnLB7hZ48L1nToRG1gSVN7dP3Zysw7riwIxnfG4MMNXtEbHyxrCvz2zRTUEqbHLrwIzdJRpJ5s5XfTlY1CPZkQCwxbA6rrUt27D6a-YDKavbg0hubpViPRYbnEDXr9gL-7in4f_K2cOZdQ26Q--hk0xzEtgBNFI6inHA2nA4LofUpWjl835qg6CUyz9EzQkw0cDgPVjYXehC9oC_3H0U2O9YC-Ah8VpdPdCHUFuaQr7oXgePUub_Be1XQyCA5TaqrJxVxUG2hZA4rOVJHZ_AahfiJN7z6QcVEp-8xf-wHcv1lpWjjNdXFWDqVQZkdOaKf63dtjP35SmC5eCw2_BNX_t-db_FCCAhm2Vn2WI3q4k00p4l_ocCrJIdRID6muBVZQXCzxcRf5m8kcGwrTB-XVS-XSSPZInaBxZjgimOl5bLwJvdMC-HNYtU-yUDjXvDjPraZ_7ZV_-knU1GbHf1BpI9-rNbl_3bbA7KbmL7Q_goV1Clvi6gLYgjbXGQMTFjQEoodZX3fK_bDhVsrA1fWMJMWwfY3ua-j8HNuyRDfhPBpbTK0Gvz5-GWbIRF3v4zwR9HzIjz2frY7luy3ApQ6QJw7K6ITvD80u5VLfpHYReVCLpgs-lvPStklgnGXj3j5vuaH9f-wFohB19vwzRnthvgdplXPQ9jMy3ieb80sELS0WiGD-E2L_HhNXUcpTdeBp3HQFK4QubJOiIeKuZDVR7PxvtwBj26m-pLXLzKc6WqQlt07TsRo_72SlAaZodyyFRXf8636HCAyEHcVEhR6uZ1lDu00BHvsyVe6BdG7zvjNdmLluA0qBJQ9FO3ipHezadlwCPnEBDQAAZRgHKUvRCJNOQH_jcqFLLtmDADXoLvcK8_lN0LEeisA4B1LH0X2x0Q6NqLgngh9M1y_cBEBaazMa_UIZwoL6eZGU0QhlpvysBi1wKDybNcF_uKrIxdQwn8L_QRFHtDn39-hw-GDs_6zbnRlwrBEwrMtAQfc62FLSzGUMAzww-aTGvUuQvP-D9m0r-eDbSATlSsrIYobVUDUdDWsMDUsjKfYOW_Rp0GMjk40BQxcdzjNjLCYaTEN5cMhsWyfTbhIHDP7-wfbvJG7Al7Z-nH2Pa-QXPte687xVanKT0d3Er07vOV9HoI09mtuhxE4g0VaLm4TMqxSMRBX3EB60W1U2sX9sHjAgmwfpUNXRNj03QeJe4cg0pndf-hhKkTsfNQMU_N6-Zt8IrM2xtzFfvKB4BpFyWmaYu_X7bGwgSZjzrBNE10fx001fMr2fmrVy_sj7mW7WhlWXa3N5eMe4pqkA4EawmGzhuIwAqZNmtvnL_N2nt4T4ZyqkAAyXMMKb60UJAXkqLjUisD1bnNt1qD9otg8mGNzQxlaY5Bfm7286vNmjyxGY4UVrn0RV0DSFFb5_NYEW5y5YYxiabWABr8k0ezTM8R_qQ7NxdUOj0qhBKOqGyzyuVgKNnB6-ZzpKVGbB7RYJXwfEtkKNuUc3UWmbwxcsCTuW4TOScqJUh4dA5vlgLjB3-Q79yEMRYB8n6jetkR4z25RkYRXvTxkHIVQd2qr8BchdUcmHsZvG_tXI0-bxx_f_TGyfgi8ol7L5SRfWfOtYHCXSVHOCwnDj7GN4rIrwt3qWRcPkdTMw1RguDZW0eTpCpZyCJH_z3xVfpVh5lgf7Nu4tH-CpFRrOaJc79K1lSuIZs8yvjh5dbYAH4rKQ28OOFRu2MmU7Ko8Of4CECcJMhohFtVW6nTCB48-Pl8owiGM5_2uBJOJRAsyu3fHHbKqKvZ-0kYmN9ypyTAxQjgDiCOE3J1txPiqRRRRSaFZgLPNacdyjGO2y2SpWwzYudx8tEq3tBDAPBCXwWqwefcG__iN5OMRgCIAvr-9qfl2iSaVR5LZ-kBluVoW27o0hIUtgdry03bmUN50ob4hwCz8xVoupcHjI3Cy0nLpgiGixjo4afafQPE_TXJf-NixlWN-cH2a4ZzU6Qc5KKzIciwnt6Hx-iRQzB_uK-pBDjC8boVXolOsFyaqWsoLgkghTo2qCFZuxP2GKzS9wQ5sBWxTMEPGryHxaylpXXmUjlBJ-j9p4vJN9YxjQEbyuTVYy0PxmtDbyh6g_n3Lr09ttCg40hqfWBhCT9P4-uFoAjozUciHQFBfI8t04dKZnobLbVq-f_HJGzUZu5zHRHsPI939tJxODDJxiflfHLwxXjQS2cq9Vj-kvn1pgXAN5unYh8Y7-nqepxc0KkO2v8mU-r8fYFmUFJdZu6HR23P2y7ndsozZEKdUAVay36pmW_gvVQuSA_jzLwXn3Ee2y-A7G-w96bTe82gJG95PsSOt2L6AcuF8mqWL_EVBjIZJMN63T__0UHh9VPDCRTUITwn35t7Z0aGYHnssPVAxXLh7y2LhCaIN0u6lnbiDlKAdKc1-4qYbr1sHORC8tjSG8cjWLkgBcNkFo7rqhKQSNtU1H44aT8ceG08a8cSpze8aC6dMVaz6DxEaFIZ-aRqfqO0QV6ty2-6hrcRVedypt1Twd7UEkXZM5Erjb-_8jq4RzshqXVzKEqPfIYpmtHqkmeJq8BLfc1GT9UGrmPpYO4-K8LM-u7aOpcxcagPn2S3McsWI3a8CWkU9t4g9WEPNH-5s8VqF-3rSmgi5kk40Y7HjEyA-6clhNhl9lbP6hIbf9TKHO9fWwzTz8NieUPNZZPgrBrULggzHXPrfJIxl8eLSrKuD8n2Pbumu2k4ljMV_WIq9qCJ1wPofdIoWHWiz7oV2snLve1CFPUCdAhLkHQ8KpO6xvSi6mKY9WsOhOLxKm92vsWLv-rfM2CW4XUja5arRpGynr7cF9CDuEGWIxkPjOF_5x8ZXg2x1TJcrgvLDO_S4u2zKl2tQGRW4NHU1zF9h_3SQkpbwWH5KOPisP6c8vb5rg_rZ5laFedxQQSpguSq5el9-ddzvlr4C8Q22eDQvwUEO_P6c6VZN5A2QWBGZsJoaZ4gZ8UArmGLxSihBj_5oOdDdUcbUOhGUIWrtYrs4PJKxpnHDFUZaYwIbtnLyAoORKYvq8LgAH0SP57KeeYkZzUGP1f0jkDzAmwV4ZHE0pnZhEo3XkXVuIHc6MXZ-RniZaS_vaoY3Bq6XHrKoWZdLiCoU6aqPc-ZpPnvXmnKHyLLs4e96M1wGKIyT28_VCR6EDRJPxbZ9Ig1kN8TIHCF3tE8y2It5hkz1-zNYT6uw3SDkFSdrV_DRiAVqUhxrQdUPhpD92zVgsWdJR0TZLU7CBLlOuBVwyfmtHMUBL6dIvYie47Kr47nOJ5i2ka8EZGZf-Y8aD6xv6hpBbybU_5oGfYLRG4MiNRhML4u90tQ3hBxBbGYK8sWOzui2UEx0ynB_a8jz8eEs7u_9ylTD1v1f-gC8JYQMNAZIm46pvl2s1X07B8Gf7Laj4aozcWqg8DgC_8aLypoTffyxjWw4Fpd8LWn1fRPsFOdeV0UrS7FNtUakvYq_qxphGu5mNuINIJIMJzgI3giGnyCbr2IrsJ1ITmEGnggLQYes1t3j44v1quvVwQXqHX6HhSnoJlN2IlT5DuZ2kx6-pb68nK62xVJaOS-wDeeJnQ8zzhqJACstuF7g-jidRoJmGc8yChHfCN8ZFOhT0poNQB-Jf5IUZ7aSCXmceYN4VUhmB_w-Db1XZUNHOJqGiTgcT1KzejzNpN49b0QUjcRJiOpEhJp_LzBUiRQSnweOSFrWlTs5Jf9p3wqN9zFYZ_3Xz6IR2klwyLQXc-LbBd1QFwkB17HTYMspUXjrSpJULdQ90OxzbSEafF4RKvgIL4sAU1pCMTa2bVrcUmY2MiECVIbwPNN0CjZeoEAd1dP5FFjlwGG7xUNRO1E20CqHZJ1oqeEur06ZXvPK1zy3SlF-_lKF6eRfNClzR2ERGYqf-zEQwwkPNiMNnURPcdt64pw4kcjTKBIkorum3ruuqJZMitcZx0YiANx7ssy8dMuVteEFFCQnmglgTCsEZTK_xzigPie_f8Q5p1vsJPje5Z2cugsaW-vOXbuOE471n6LuIyoII2dWq0m8H3_8pxlErkZ5E7OY--w3InCuSCv2ubxaZ9AbaNuuyGw49fI3zvRurTYespYO-Aj1FcjDrxqRB3bihJm_u3a56fwnoyOeE0071TY_AlVlq1RYauV4-7L-RAFJZo0wKnPZM9Hs7VB_cCwJ_oPe1y0XBF95agtAQdicj42KdstIlpjWtdGb4LpHgVQI_56G3As0H81-uj47VuBourA2hUay0BpHAvcwbNLyu8OcZB31I6dfy2797wGlrWwAN-Xt3M3CVW9SvIN_GMlg0RB75rUEtgPkR-VPRdPH_Jb19wVoFPPpwjP6cYzVW1U_iRymFKaNpMo4CWFN6t54wshlCVwkfZKbhSP14z74oMKxy-qqt-WKNhkOr1uh_sevNa57iHBnFlHzt_eaZoPNTsCmzqnC4boOlK9o5_hFn8hiw33R3NQC-RD-w1XEl8-hpdZYdCcnexwRYd9sH2LMHySL59Kp_09yIwAE_ukVMDa6Yd9OHrbSCycQNZSI_0fMnF5s9oWTXnsxecDpRKgSWJQIQPUb6dlOdGOT0-MnebivpKgbDxzx52Zr0EMS7aU5eJxEdO9rdiFda8kQk5IeBgr1QcqIFs_1UIp6oQneXgwTlpXXxLHs16ShDG1qkLmDZjb4vrb_Ha2YCBIqid6wVKjec-UwEwWyvfV4UAPFgiNRJN7TdQNRxbSZJ8XWeA2gor9PN5JkMS0l_qGKoke3sbWDsp-G_B0KUjwUBTtPsKRhdnc0JyV_akuZ8jxAmXDDydxOy_EqNMgrDGN_4FuSY7XNLy2OXXJG3bB9a_lxEzdVNPWzM0cijTQFLzIiAKAyWTfwPNagcvgLUAeHxlQ22E0V37-sFwkstvpJ-s8C2yqxQKcv4GfMZOfSYEaZAhiO_y8EXgFknGGwjLB7K3CgvGwBRWWcgx-eqXYs9rAygf_X2_7-rBG_7Rxj3GW957PwwzwZjZDkdRHik8sj0htIkDRAyHo2EsPwObKXK-W32JKUX3VSgiY8AzCUhUUIWwFVVLXEvB1jtU7G7wRaj5_z9QywvgoIqnOTmpm4TTRA0cCJkiYoJcl8BOIHoWuYznL89zWjWy_ZQDKaYAsHugQYXaKI_UaaLV4gVFjDNqZCgqjAFyMjG4qZR64jkaI71mefUaDLLwsqIiLpOWZi8BlvP0YcOVeTyo2mJbq3EXfjXyDvPuZuZ9SAjqwCdLr902yzLm4DdzYRyfPbpt8rGUu-Uw27Ix2oZRe_zj0G_3FdCw0"];
 
 	// whitelisted auto selected horde model names
-	const defaultmodels = ["gpt4all","supercot","pygmalion-6","pygmalion-v8","pygmalion-2","hermes","airoboros","chrono","wizard","mantis","vicuna","manticore","alpaca","myth","xwin","spicyboros","mlewd","mxlewd","llama","mistral","maid","mixtral","estopia","fighter","fimbul","euryale","nemo","gemma","lunaris","stheno","magnum","cydonia","qwen2.5-32b","behemoth","exaone"];
-	const ignoredmodels = ["tinyllama","debug-"]; //blacklisted model names
+	const defaultmodels = ["gpt4all","supercot","pygmalion-6","pygmalion-v8","pygmalion-2","hermes","airoboros","chrono","wizard","mantis","vicuna","manticore","alpaca","myth","xwin","spicyboros","mlewd","mxlewd","westlake","anubis","skyfall","llama2","llama3","llama-2","llama-3-","llama-3.","mistral","maid","mixtral","estopia","fighter","fimbul","euryale","nemo","gemma","lunaris","stheno","magnum","cydonia","qwen2.5-32b","behemoth","exaone"];
+	const ignoredmodels = ["tinyllama","debug-","llama-3.2-1b-"]; //blacklisted model names
 
 	const instructstartplaceholder = "\n{{[INPUT]}}\n";
 	const instructendplaceholder = "\n{{[OUTPUT]}}\n";
@@ -2859,7 +2882,7 @@ Current version indicated by LITEVER below.
 
 	const oai_models_endpoint = "/models";
 	const oai_submit_endpoint = "/completions";
-	const oai_submit_endpoint_turbo = "/chat/completions";
+	const oai_submit_endpoint_chat = "/chat/completions";
 
 	const default_oai_image_endpoint = "/images/generations";
 	const default_oai_tts_endpoint = "/audio/speech";
@@ -3080,7 +3103,7 @@ Current version indicated by LITEVER below.
 		saved_cohere_preamble: "", //cohere preamble
 		saved_palm_jailbreak:"", //gemini system prompt
 		saved_oai_custommodel: "", //customized oai custom model
-		saved_oai_role: 0, //0=user,1=assistant,2=system
+		saved_oai_role: 0, //0=user,1=assistant,2=system, 3=auto
 		saved_a1111_url: default_a1111_base,
 		saved_comfy_url: default_comfy_base,
 		saved_xtts_url: default_xtts_base,
@@ -3090,7 +3113,7 @@ Current version indicated by LITEVER below.
 
 		autoscroll: true, //automatically scroll to bottom on render
 		printer_view: false, //automatically scroll to bottom on render
-		viewport_width_mode: 0, //0=adapt, 1=clamp, 2=unlock
+		viewport_width_mode: 0, //0=adapt, 1=clamp, 2=hdclamp, 3=unlock
 		trimsentences: true, //trim to last punctuation
 		trimwhitespace: false, //trim trailing whitespace
 		compressnewlines: false, //compress multiple newlines
@@ -3136,6 +3159,7 @@ Current version indicated by LITEVER below.
 		img_cfgscale: 7,
 		img_allowhd: true,
 		img_crop: false,
+		img_newturn: false,
 		img_img2imgstr: 0.6,
 		img_clipskip: -1,
 		img_steps: 20,
@@ -3164,6 +3188,7 @@ Current version indicated by LITEVER below.
 		show_advanced_load: false, //if true, every load opens the selector window
 		import_tavern_prompt: true, //when opening character cards, prompt for chat or instruct mode
 		invert_colors: false,
+		sidepanel_mode: false,
 		passed_ai_warning: false, //used to store AI safety panel acknowledgement state
 		entersubmit: true, //enter sends the prompt
 		darkmode: true,
@@ -3224,7 +3249,7 @@ Current version indicated by LITEVER below.
 			rep_pen_slope: defaultsettings.rep_pen_slope,
 			sampler_order: defaultsettings.sampler_order
 		},
-		{"preset":"Simple Logical","description":"A very predictable preset with low randomness.","temp":0.3,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":100,"top_p":0.6,"min_p":0.0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.02,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"Simple Balanced","description":"A good balanced preset with medium randomness.","temp":0.75,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":100,"top_p":0.92,"min_p":0.0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.07,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"Simple Creative","description":"A wild and unpredictable preset with higher randomness.","temp":1.0,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":100,"top_p":0.98,"min_p":0.0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.15,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"Basic Min-P","description":"A good default for Min-P, only works on backends with min-p.","temp":1.25,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":0,"top_p":1,"min_p":0.1,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.03,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,5,0,1,3,4,2]},{"preset":"Basic DynaTemp","description":"A good default for DynaTemp, only works on backends with it.","temp":1.25,"dynatemp_range":0.75,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":0,"top_p":1,"min_p":0.05,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.03,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,5,0,1,3,4,2]},{"preset":"Basic SmoothSample","description":"A good default for Smooth Sampling, only works on backends with it.","temp":1.0,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.25,"top_k":0,"top_p":1,"min_p":0.05,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.03,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,5,0,1,3,4,2]},{"preset":"Basic SillyTavern","description":"Similar to default preset used in SillyTavern.","temp":0.75,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":40,"top_p":0.6,"min_p":0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1.0,"rep_pen":1.18,"rep_pen_range":1024,"rep_pen_slope":0.8,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"Neutral (Disabled)","description":"Sets all samplers neutralized, allowing you to customize your own.","temp":1.0,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":200,"top_p":1.0,"min_p":0.0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.0,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"CoherentCreativity (Legacy)","description":"Legacy preset. A good balance between coherence, creativity, and quality of prose.","rep_pen":1.2,"rep_pen_range":360,"rep_pen_slope":0,"sampler_order":[6,5,0,2,3,1,4],"temp":0.5,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"tfs":0.99,"top_a":0,"top_k":0,"top_p":1,"min_p":0.0,"presence_penalty":0.0,"typical":1},{"preset":"Godlike (Legacy)","description":"Legacy preset. Makes AI give a descriptive and sensual output.","temp":0.7,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":0,"top_p":0.5,"min_p":0.0,"presence_penalty":0.0,"top_a":0.75,"typical":0.19,"tfs":0.97,"rep_pen":1.1,"rep_pen_range":1024,"rep_pen_slope":0.7,"sampler_order":[6,5,4,3,2,1,0]},{"preset":"LiminalDrift (Legacy)","description":"Legacy preset. Sometimes surreal situations arise based on information already present in the story.","temp":0.66,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":0,"top_p":1,"min_p":0.0,"presence_penalty":0.0,"top_a":0.96,"typical":0.6,"tfs":1,"rep_pen":1.1,"rep_pen_range":1024,"rep_pen_slope":0.7,"sampler_order":[6,4,5,1,0,2,3]}
+		{"preset":"Simple Logical","description":"A very predictable preset with low randomness.","temp":0.3,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":100,"top_p":0.6,"min_p":0.0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.02,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"Simple Balanced","description":"A good balanced preset with medium randomness.","temp":0.75,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":100,"top_p":0.92,"min_p":0.0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.07,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"Simple Creative","description":"A wild and unpredictable preset with higher randomness.","temp":1.0,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":100,"top_p":0.98,"min_p":0.0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.15,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"Basic Min-P","description":"A good default for Min-P, only works on backends with min-p.","temp":1.25,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":0,"top_p":1,"min_p":0.1,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.03,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,5,0,1,3,4,2]},{"preset":"Basic Top-nsigma","description":"A good default for Top-nsigma, only works on backends with Top-nsigma.","temp":1,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":1.0,"top_k":0,"top_p":1,"min_p":0.01,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,5,0,1,3,4,2]},{"preset":"Basic DynaTemp","description":"A good default for DynaTemp, only works on backends with it.","temp":1.25,"dynatemp_range":0.75,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":0,"top_p":1,"min_p":0.05,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.03,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,5,0,1,3,4,2]},{"preset":"Basic SmoothSample","description":"A good default for Smooth Sampling, only works on backends with it.","temp":1.0,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.25,"top_k":0,"top_p":1,"min_p":0.05,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.03,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,5,0,1,3,4,2]},{"preset":"Basic SillyTavern","description":"Similar to default preset used in SillyTavern.","temp":0.75,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":40,"top_p":0.6,"min_p":0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1.0,"rep_pen":1.18,"rep_pen_range":1024,"rep_pen_slope":0.8,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"Neutral (Disabled)","description":"Sets all samplers neutralized, allowing you to customize your own.","temp":1.0,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":200,"top_p":1.0,"min_p":0.0,"presence_penalty":0.0,"top_a":0,"typical":1,"tfs":1,"rep_pen":1.0,"rep_pen_range":360,"rep_pen_slope":0.7,"sampler_order":[6,0,1,3,4,2,5]},{"preset":"CoherentCreativity (Legacy)","description":"Legacy preset. A good balance between coherence, creativity, and quality of prose.","rep_pen":1.2,"rep_pen_range":360,"rep_pen_slope":0,"sampler_order":[6,5,0,2,3,1,4],"temp":0.5,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"tfs":0.99,"top_a":0,"top_k":0,"top_p":1,"min_p":0.0,"presence_penalty":0.0,"typical":1},{"preset":"Godlike (Legacy)","description":"Legacy preset. Makes AI give a descriptive and sensual output.","temp":0.7,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":0,"top_p":0.5,"min_p":0.0,"presence_penalty":0.0,"top_a":0.75,"typical":0.19,"tfs":0.97,"rep_pen":1.1,"rep_pen_range":1024,"rep_pen_slope":0.7,"sampler_order":[6,5,4,3,2,1,0]},{"preset":"LiminalDrift (Legacy)","description":"Legacy preset. Sometimes surreal situations arise based on information already present in the story.","temp":0.66,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"smoothing_factor":0.0,"nsigma":0.0,"top_k":0,"top_p":1,"min_p":0.0,"presence_penalty":0.0,"top_a":0.96,"typical":0.6,"tfs":1,"rep_pen":1.1,"rep_pen_range":1024,"rep_pen_slope":0.7,"sampler_order":[6,4,5,1,0,2,3]}
 	];
 
 	const instructpresets = [
@@ -3260,7 +3285,7 @@ Current version indicated by LITEVER below.
 	},
 	{
 		"id":4,
-		"name":"Gemma 2",
+		"name":"Gemma 2 & 3",
 		"user":"<start_of_turn>user\\n",
 		"user_end":"<end_of_turn>\\n",
 		"assistant":"<start_of_turn>model\\n",
@@ -3356,6 +3381,16 @@ Current version indicated by LITEVER below.
 		"assistant":"<｜Assistant｜>",
 		"assistant_end":"<｜end▁of▁sentence｜>",
 		"system":"",
+		"system_end":"",
+	},
+	{
+		"id":14,
+		"name":"KoboldCppAutomatic",
+		"user":"{{[INPUT]}}",
+		"user_end":"",
+		"assistant":"{{[OUTPUT]}}",
+		"assistant_end":"",
+		"system":"{{[SYSTEM]}}",
 		"system_end":"",
 	}
 	];
@@ -3988,6 +4023,7 @@ Current version indicated by LITEVER below.
 
 	//invert colors
 	toggle_invert_colors();
+	toggle_sidepanel_mode();
 
 	//start the polling script for async generation status checking every Xs
 	setInterval(poll_pending_response, poll_interval_base_text);
@@ -5759,6 +5795,16 @@ Current version indicated by LITEVER below.
 			{
 				let imgid = resp.prompt_id.toString();
 				let nimgtag = "[<|p|" + imgid + "|p|>]";
+				if (localsettings.img_newturn) {
+					if(localsettings.opmode == 4)
+					{
+						nimgtag = wrap_newgen_instruct_format(nimgtag,false);
+					}
+					else if(localsettings.opmode == 3)
+					{
+						nimgtag = wrap_newgen_chat_format(nimgtag);
+					}
+				}
 				gametext_arr.push(nimgtag);
 				image_db[imgid] = { done: false, queue: "Generating", result: "", prompt:prompt, poll_category:2 };
 				image_db[imgid].aspect = (req_payload.params.width>=req_payload.params.height*2?5:(req_payload.params.height>=req_payload.params.width*2?4:(req_payload.params.width>req_payload.params.height?2:(req_payload.params.width<req_payload.params.height?1:0))));
@@ -6547,6 +6593,7 @@ Current version indicated by LITEVER below.
 											gametext_arr.push(text);
 											render_gametext(true);
 											sync_multiplayer(true);
+											update_for_sidepanel();
 										}, null, true)
 								} else {
 									msgbox("Could not load selected file. Is it valid?");
@@ -6728,7 +6775,7 @@ Current version indicated by LITEVER below.
 				{
 					force_thinking_tag = storyobj.force_thinking_tag;
 				}
-				if(storyobj.strip_past_thinking)
+				if(storyobj.strip_past_thinking===false || storyobj.strip_past_thinking===true)
 				{
 					strip_past_thinking = storyobj.strip_past_thinking;
 				}
@@ -6900,6 +6947,9 @@ Current version indicated by LITEVER below.
 				//force load everything
 				import_settings(true, true, true, true, true, true);
 			}
+			toggle_invert_colors();
+			toggle_sidepanel_mode();
+			update_for_sidepanel();
 			render_gametext(true);
 			if(!ignore_multiplayer_sync) //we don't want an infinite loop
 			{
@@ -7085,6 +7135,7 @@ Current version indicated by LITEVER below.
 					current_wi = load_agnai_wi(obj,chatopponent,myname);
 				}
 			}
+			update_for_sidepanel();
 			render_gametext(true);
 			sync_multiplayer(true);
 		}
@@ -7127,6 +7178,7 @@ Current version indicated by LITEVER below.
 		current_memory = memory + scenario + examplemsg + "\n***";
 		localsettings.opmode = 3;
 		localsettings.gui_type_chat = 2;
+		update_for_sidepanel();
 		render_gametext(true);
 		sync_multiplayer(true);
 	}
@@ -7150,6 +7202,7 @@ Current version indicated by LITEVER below.
 		{
 			current_wi = load_nai_wi(obj.lorebook);
 		}
+		update_for_sidepanel();
 		render_gametext(true);
 		sync_multiplayer(true);
 	}
@@ -7414,6 +7467,7 @@ Current version indicated by LITEVER below.
 			localsettings.opmode = 3;
 			localsettings.gui_type_chat = 2;
 			localsettings.chatopponent = chatopponent;
+			update_for_sidepanel();
 			render_gametext();
 			sync_multiplayer(true);
 		}
@@ -7532,6 +7586,7 @@ Current version indicated by LITEVER below.
 			if (temp_scenario.instruct_endtag) { localsettings.instruct_endtag = temp_scenario.instruct_endtag; }
 		}
 
+		update_for_sidepanel();
 		render_gametext(true);
 		sync_multiplayer(true);
 	}
@@ -8377,14 +8432,18 @@ Current version indicated by LITEVER below.
 	}
 	function is_popup_open()
 	{
+		let context_and_settings_hidden = (
+			document.getElementById("memorycontainer").classList.contains("hidden") &&
+			document.getElementById("settingscontainer").classList.contains("hidden")
+		) || localsettings.sidepanel_mode;
+
 		return !(
+			context_and_settings_hidden &&
 			document.getElementById("inputboxcontainer").classList.contains("hidden") &&
 			document.getElementById("saveloadcontainer").classList.contains("hidden") &&
 			document.getElementById("newgamecontainer").classList.contains("hidden") &&
 			document.getElementById("yesnocontainer").classList.contains("hidden") &&
-			document.getElementById("settingscontainer").classList.contains("hidden") &&
 			document.getElementById("msgboxcontainer").classList.contains("hidden") &&
-			document.getElementById("memorycontainer").classList.contains("hidden") &&
 			document.getElementById("workercontainer").classList.contains("hidden") &&
 			document.getElementById("myownworkercontainer").classList.contains("hidden") &&
 			document.getElementById("sharecontainer").classList.contains("hidden") &&
@@ -8413,13 +8472,16 @@ Current version indicated by LITEVER below.
 		);
 	}
 	function hide_popups() {
+		if(!localsettings.sidepanel_mode)
+		{
+			document.getElementById("settingscontainer").classList.add("hidden");
+			document.getElementById("memorycontainer").classList.add("hidden");
+		}
 		document.getElementById("saveloadcontainer").classList.add("hidden");
 		document.getElementById("newgamecontainer").classList.add("hidden");
 		document.getElementById("yesnocontainer").classList.add("hidden");
-		document.getElementById("settingscontainer").classList.add("hidden");
 		document.getElementById("inputboxcontainer").classList.add("hidden");
 		document.getElementById("msgboxcontainer").classList.add("hidden");
-		document.getElementById("memorycontainer").classList.add("hidden");
 		document.getElementById("workercontainer").classList.add("hidden");
 		document.getElementById("myownworkercontainer").classList.add("hidden");
 		document.getElementById("sharecontainer").classList.add("hidden");
@@ -8558,6 +8620,10 @@ Current version indicated by LITEVER below.
 		if(key && val && key.trim()!="" && val.trim()!="")
 		{
 			let old = document.getElementById("logitbiastxtarea").value;
+			if(old.trim()=="")
+			{
+				old = "{}";
+			}
 			if(document.getElementById("newlogitbiasstringtoggle").checked)
 			{
 				kcpp_tokenize(key,(tokarr)=>{
@@ -9653,7 +9719,7 @@ Current version indicated by LITEVER below.
 										},()=>{
 										});
 									}
-									else if(localflag && no_txt_model && !has_txt2img && !koboldcpp_has_vision && !koboldcpp_has_whisper && !koboldcpp_has_tts)
+									else if(localflag && no_txt_model && !has_txt2img && !koboldcpp_has_vision && !koboldcpp_has_whisper && !koboldcpp_has_tts && !is_using_kcpp_with_admin())
 									{
 										msgboxYesNo("This KoboldCpp instance has no models loaded. You can still use the WebUI to edit or view existing stories.<br><br>Would you like to connect to an external API service?","No Models Loaded",
 										()=>{
@@ -10842,6 +10908,7 @@ Current version indicated by LITEVER below.
 		document.getElementById("show_advanced_load").checked = localsettings.show_advanced_load;
 		document.getElementById("import_tavern_prompt").checked = localsettings.import_tavern_prompt;
 		document.getElementById("invert_colors").checked = localsettings.invert_colors;
+		document.getElementById("sidepanel_mode").checked = localsettings.sidepanel_mode;
 		document.getElementById("trimsentences").checked = localsettings.trimsentences;
 		document.getElementById("trimwhitespace").checked = localsettings.trimwhitespace;
 		document.getElementById("compressnewlines").checked = localsettings.compressnewlines;
@@ -11022,6 +11089,7 @@ Current version indicated by LITEVER below.
 		document.getElementById("tokenstreammode").value = localsettings.tokenstreammode;
 		document.getElementById("img_allowhd").checked = localsettings.img_allowhd;
 		document.getElementById("img_crop").checked = localsettings.img_crop;
+		document.getElementById("img_newturn").checked = localsettings.img_newturn;
 		document.getElementById("img_autogen").checked = localsettings.img_autogen;
 		document.getElementById("img_gen_from_instruct").checked = localsettings.img_gen_from_instruct;
 		document.getElementById("save_images").checked = localsettings.save_images;
@@ -11160,6 +11228,61 @@ Current version indicated by LITEVER below.
 		}
 	}
 
+	function update_for_sidepanel()
+	{
+		if (localsettings.sidepanel_mode)
+		{
+			display_settings();
+			btn_memory();
+		}
+	}
+
+	function toggle_sidepanel_mode()
+	{
+		if(window.innerWidth <= 600) //sidepanel mode cannot be used on mobile
+		{
+			document.getElementById("sidepanel_mode").checked = localsettings.sidepanel_mode = false;
+		}
+		if (localsettings.sidepanel_mode)
+		{
+			document.getElementById("settingscontainerbg").classList.add("hidden");
+			document.getElementById("settingscontainerfg").classList.add("sidepanelsize");
+			document.getElementById("memorycontainerbg").classList.add("hidden");
+			document.getElementById("memorycontainerfg").classList.add("sidepanelsize");
+			document.getElementById("settingscontainer").classList.add("side");
+			document.getElementById("memorycontainer").classList.add("sideright");
+			document.getElementById("maincontainer").classList.add("centeredcontainer");
+			document.getElementById("settingscontainerfooter").classList.add("hidden");
+			document.getElementById("memorycontainerfooter").classList.add("hidden");
+			document.getElementById("settingscontainerfooter2").classList.remove("hidden");
+			document.getElementById("memorycontainerfooter2").classList.remove("hidden");
+			if(document.getElementById("settingscontainer").classList.contains("hidden"))
+			{
+				display_settings();
+			}
+			if(document.getElementById("memorycontainer").classList.contains("hidden"))
+			{
+				btn_memory();
+			}
+		}
+		else
+		{
+			document.getElementById("settingscontainerbg").classList.remove("hidden");
+			document.getElementById("settingscontainerfg").classList.remove("sidepanelsize");
+			document.getElementById("memorycontainerbg").classList.remove("hidden");
+			document.getElementById("memorycontainerfg").classList.remove("sidepanelsize");
+			document.getElementById("settingscontainer").classList.remove("side");
+			document.getElementById("memorycontainer").classList.remove("sideright");
+			document.getElementById("maincontainer").classList.remove("centeredcontainer");
+			document.getElementById("settingscontainerfooter").classList.remove("hidden");
+			document.getElementById("memorycontainerfooter").classList.remove("hidden");
+			document.getElementById("settingscontainerfooter2").classList.add("hidden");
+			document.getElementById("memorycontainerfooter2").classList.add("hidden");
+			document.getElementById("settingscontainer").classList.add("hidden");
+			document.getElementById("memorycontainer").classList.add("hidden");
+		}
+	}
+
 	function toggle_invert_colors()
 	{
 		if(localsettings.invert_colors)
@@ -11258,6 +11381,7 @@ Current version indicated by LITEVER below.
 		localsettings.show_advanced_load = (document.getElementById("show_advanced_load").checked ? true : false);
 		localsettings.import_tavern_prompt = (document.getElementById("import_tavern_prompt").checked ? true : false);
 		localsettings.invert_colors = (document.getElementById("invert_colors").checked ? true : false);
+		localsettings.sidepanel_mode = (document.getElementById("sidepanel_mode").checked ? true : false);
 		localsettings.trimsentences = (document.getElementById("trimsentences").checked ? true : false);
 		localsettings.trimwhitespace = (document.getElementById("trimwhitespace").checked ? true : false);
 		localsettings.compressnewlines = (document.getElementById("compressnewlines").checked ? true : false);
@@ -11343,6 +11467,7 @@ Current version indicated by LITEVER below.
 		localsettings.grammar = pendinggrammar;
 		localsettings.tokenstreammode = document.getElementById("tokenstreammode").value;
 		localsettings.img_crop = (document.getElementById("img_crop").checked ? true : false);
+		localsettings.img_newturn = (document.getElementById("img_newturn").checked ? true : false);
 		localsettings.img_allowhd = (document.getElementById("img_allowhd").checked ? true : false);
 		localsettings.img_autogen = (document.getElementById("img_autogen").checked ? true : false);
 		localsettings.img_gen_from_instruct = (document.getElementById("img_gen_from_instruct").checked ? true : false);
@@ -11438,6 +11563,7 @@ Current version indicated by LITEVER below.
 		localsettings.sampler_seed = cleannum(localsettings.sampler_seed, -1, 999999);
 		localsettings.token_count_multiplier = cleannum(localsettings.token_count_multiplier, 70, 130);
 		toggle_invert_colors();
+		toggle_sidepanel_mode();
 
 		voice_typing_mode = document.getElementById("voice_typing_mode").value;
 		if(voice_typing_mode>0 && is_using_kcpp_with_whisper())
@@ -11767,6 +11893,7 @@ Current version indicated by LITEVER below.
 		hide_popups();
 		restart_new_game(true, document.getElementById("keep_memory").checked);
 		sync_multiplayer(true);
+		update_for_sidepanel();
 		hide_popups();
 	}
 
@@ -12625,6 +12752,16 @@ Current version indicated by LITEVER below.
 	{
 		let imgid = "selfuploadimg"+(Math.floor(10000 + Math.random() * 90000)).toString();
 		let nimgtag = "[<|p|" + imgid + "|p|>]";
+		if (localsettings.img_newturn) {
+			if(localsettings.opmode == 4)
+			{
+				nimgtag = wrap_newgen_instruct_format(nimgtag,false);
+			}
+			else if(localsettings.opmode == 3)
+			{
+				nimgtag = wrap_newgen_chat_format(nimgtag);
+			}
+		}
 		gametext_arr.push(nimgtag);
 		image_db[imgid] = { done: false, queue: "Generating", result: "", prompt:"", poll_category:0 };
 		image_db[imgid].aspect = 0;
@@ -13366,6 +13503,80 @@ Current version indicated by LITEVER below.
 		return Math.max(1, Math.floor(((maxctxlen - maxgenamt)) * chars_per_token) - 12);
 	}
 
+	function wrap_newgen_instruct_format(newgen, addendtag)
+	{
+		let ist = instructstartplaceholder;
+		let iet = instructendplaceholder;
+		let iste = instructstartplaceholder_end;
+		if (!localsettings.placeholder_tags) {
+			ist = get_instruct_starttag(false);
+			iet = get_instruct_endtag(false);
+			iste = get_instruct_starttag_end(false);
+		}
+		let prev_et = get_instruct_latest_end(false);
+
+		if(newgen != "")
+		{
+			if(localsettings.inject_chatnames_instruct)
+			{
+				newgen = get_my_multiplayer_chatname() + ": " + newgen;
+			}
+			if(localsettings.inject_timestamps)
+			{
+				newgen = "["+(new Date().toLocaleTimeString([], {year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}))+"] " + newgen;
+			}
+
+			//append instruction for instruct mode
+			if(localsettings.separate_end_tags)
+			{
+				newgen = prev_et + ist + newgen + iste + (addendtag?iet:"");
+			}
+			else
+			{
+				newgen = ist + newgen + (addendtag?iet:"");
+			}
+
+			if(localsettings.inject_jailbreak_instruct)
+			{
+				newgen = newgen + localsettings.custom_jailbreak_text.replaceAll("\\n", "\n");
+			}
+			if(force_thinking_tag && start_thinking_tag!="")
+			{
+				newgen = newgen + start_thinking_tag.replaceAll("\\n", "\n");
+			}
+		}
+		else //may be continuting existing instruction OR starting a brand new session. check if first action
+		{
+			if (is_impersonate_user) {
+				is_impersonate_user = false;
+				if (localsettings.separate_end_tags) {
+					pending_context_preinjection = prev_et + ist; //bot response as first msg
+					pending_context_postinjection = iste + iet;
+				} else {
+					pending_context_preinjection = ist; //bot response as first msg
+					pending_context_postinjection = iet;
+				}
+			} else {
+				if (gametext_arr.length == 0) {
+					newgen = iet;
+				}
+			}
+		}
+		return newgen;
+	}
+
+	function wrap_newgen_chat_format(newgen)
+	{
+		//append chatname for chatmode
+		let injecttime = "";
+		if(localsettings.inject_timestamps)
+		{
+			injecttime = " ["+(new Date().toLocaleTimeString([], {year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}))+"]";
+		}
+		newgen = "\n" + get_my_multiplayer_chatname() + ":"+ injecttime +" "+ newgen + "";
+		return newgen;
+	}
+
 	function prepare_submit_generation() //wrap websearch into this
 	{
 		let senttext = document.getElementById("input_text").value;
@@ -13428,72 +13639,10 @@ Current version indicated by LITEVER below.
 
 			if (localsettings.opmode == 4)
 			{
-				let ist = instructstartplaceholder;
-				let iet = instructendplaceholder;
-				let iste = instructstartplaceholder_end;
-				if (!localsettings.placeholder_tags) {
-					ist = get_instruct_starttag(false);
-					iet = get_instruct_endtag(false);
-					iste = get_instruct_starttag_end(false);
-				}
-				let prev_et = get_instruct_latest_end(false);
-
-				if(newgen != "")
-				{
-					if(localsettings.inject_chatnames_instruct)
-					{
-						newgen = get_my_multiplayer_chatname() + ": " + newgen;
-					}
-					if(localsettings.inject_timestamps)
-					{
-						newgen = "["+(new Date().toLocaleTimeString([], {year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}))+"] " + newgen;
-					}
-
-					//append instruction for instruct mode
-					if(localsettings.separate_end_tags)
-					{
-						newgen = prev_et + ist + newgen + iste + iet;
-					}
-					else
-					{
-						newgen = ist + newgen + iet;
-					}
-
-					if(localsettings.inject_jailbreak_instruct)
-					{
-						newgen = newgen + localsettings.custom_jailbreak_text.replaceAll("\\n", "\n");
-					}
-					if(force_thinking_tag && start_thinking_tag!="")
-					{
-						newgen = newgen + start_thinking_tag.replaceAll("\\n", "\n");
-					}
-				}
-				else //may be continuting existing instruction OR starting a brand new session. check if first action
-				{
-					if (is_impersonate_user) {
-						is_impersonate_user = false;
-						if (localsettings.separate_end_tags) {
-							pending_context_preinjection = prev_et + ist; //bot response as first msg
-							pending_context_postinjection = iste + iet;
-						} else {
-							pending_context_preinjection = ist; //bot response as first msg
-							pending_context_postinjection = iet;
-						}
-					} else {
-						if (gametext_arr.length == 0) {
-							newgen = iet;
-						}
-					}
-				}
+				newgen = wrap_newgen_instruct_format(newgen,true);
 			}
 			if (localsettings.opmode == 3 && newgen != "") {
-				//append chatname for chatmode
-				let injecttime = "";
-				if(localsettings.inject_timestamps)
-				{
-					injecttime = " ["+(new Date().toLocaleTimeString([], {year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}))+"]";
-				}
-				newgen = "\n" + get_my_multiplayer_chatname() + ":"+ injecttime +" "+ newgen + "";
+				newgen = wrap_newgen_chat_format(newgen);
 			}
 			else if(localsettings.opmode==3 && newgen.trim()=="")
 			{
@@ -14271,6 +14420,12 @@ Current version indicated by LITEVER below.
 			submit_payload.params.banned_tokens = get_token_bans();
 			submit_payload.params.render_special = localsettings.render_special_tags;
 			submit_payload.params.logprobs = localsettings.request_logprobs;
+			let st = get_instruct_starttag(true);
+			let et = get_instruct_endtag(true);
+			if(st=="{{[INPUT]}}" && et=="{{[OUTPUT]}}")
+			{
+				submit_payload.params.replace_instruct_placeholders = true;
+			}
 		}
 		if(custom_kobold_endpoint != "" && is_using_kcpp_with_dry() && localsettings.dry_multiplier > 0)
 		{
@@ -14428,15 +14583,29 @@ Current version indicated by LITEVER below.
 							mainoaibody.push(oaiimg);
 						}
 					}
-					let myrole = (localsettings.saved_oai_role==2)?"system":(localsettings.saved_oai_role==1?"assistant":"user");
+
 					oai_payload.messages = [];
-					targetep = (custom_oai_endpoint + oai_submit_endpoint_turbo);
+					targetep = (custom_oai_endpoint + oai_submit_endpoint_chat);
 					if (document.getElementById("jailbreakprompt") && document.getElementById("jailbreakprompt").checked && document.getElementById("jailbreakprompttext").value!="") {
 						let addrole = document.getElementById("jailbreakprompttextrole").value;
 						addrole = ((addrole==2)?"system":(addrole==1?"assistant":"user"));
 						oai_payload.messages.push({ "role": addrole, "content": document.getElementById("jailbreakprompttext").value });
 					}
-					oai_payload.messages.push({ "role": myrole, "content": mainoaibody });
+
+					if(localsettings.saved_oai_role!=3) //except auto role
+					{
+						let myrole = (localsettings.saved_oai_role==2)?"system":(localsettings.saved_oai_role==1?"assistant":"user");
+						oai_payload.messages.push({ "role": myrole, "content": mainoaibody });
+					}
+					else //auto role
+					{
+						let mhistory = repack_instruct_history(mainoaibody);
+						for(let i=0;i<mhistory.length;++i)
+						{
+							oai_payload.messages.push({ "role": (mhistory[i].myturn?"user":"assistant"), "content": mhistory[i].msg });
+						}
+					}
+
 					if (document.getElementById("jailbreakprompt2") && document.getElementById("jailbreakprompt2").checked && document.getElementById("jailbreakprompttext2").value!="") {
 						let addrole = document.getElementById("jailbreakprompttext2role").value;
 						addrole = ((addrole==2)?"system":(addrole==1?"assistant":"user"));
@@ -15153,6 +15322,16 @@ Current version indicated by LITEVER below.
 				if (data.id && data.id != "") {
 					//for now, append the new image directly into the gtarr
 					let nimgtag = "[<|p|" + data.id + "|p|>]";
+					if (localsettings.img_newturn) {
+						if(localsettings.opmode == 4)
+						{
+							nimgtag = wrap_newgen_instruct_format(nimgtag,false);
+						}
+						else if(localsettings.opmode == 3)
+						{
+							nimgtag = wrap_newgen_chat_format(nimgtag);
+						}
+					}
 					gametext_arr.push(nimgtag);
 					image_db[data.id] = { done: false, queue: "Starting", result: "", prompt:sentence, poll_category:1 };
 					image_db[data.id].aspect = (iwidth>=iheight*2?5:(iheight>=iwidth*2?4:(iwidth>iheight?2:(iwidth<iheight?1:0))));
@@ -15175,6 +15354,16 @@ Current version indicated by LITEVER below.
 			genimg_payload.models = [desired_model];
 			let imgid = "A1111img"+(Math.floor(10000 + Math.random() * 90000)).toString();
 			let nimgtag = "[<|p|" + imgid + "|p|>]";
+			if (localsettings.img_newturn) {
+				if(localsettings.opmode == 4)
+				{
+					nimgtag = wrap_newgen_instruct_format(nimgtag,false);
+				}
+				else if(localsettings.opmode == 3)
+				{
+					nimgtag = wrap_newgen_chat_format(nimgtag);
+				}
+			}
 			gametext_arr.push(nimgtag);
 			image_db[imgid] = { done: false, queue: "Generating", result: "", prompt:sentence, poll_category:0 };
 			image_db[imgid].aspect = (iwidth>=iheight*2?5:(iheight>=iwidth*2?4:(iwidth>iheight?2:(iwidth<iheight?1:0))));
@@ -15205,6 +15394,16 @@ Current version indicated by LITEVER below.
 			{
 				let imgid = "DALLEimg"+(Math.floor(10000 + Math.random() * 90000)).toString();
 				let nimgtag = "[<|p|" + imgid + "|p|>]";
+				if (localsettings.img_newturn) {
+					if(localsettings.opmode == 4)
+					{
+						nimgtag = wrap_newgen_instruct_format(nimgtag,false);
+					}
+					else if(localsettings.opmode == 3)
+					{
+						nimgtag = wrap_newgen_chat_format(nimgtag);
+					}
+				}
 				gametext_arr.push(nimgtag);
 				image_db[imgid] = { done: false, queue: "Generating", result: "", prompt:sentence, poll_category:0 };
 				image_db[imgid].aspect = 0;
@@ -17585,6 +17784,15 @@ Current version indicated by LITEVER below.
 			document.getElementById("topbtn_admin").classList.add("hidden");
 		}
 
+		if(!localsettings.sidepanel_mode && (perfdata == null || selected_models.length != 0))
+		{
+			document.getElementById("topbtn_settings").classList.remove("hidden");
+			document.getElementById("btn_actmem").classList.remove("hidden");
+		}else{
+			document.getElementById("topbtn_settings").classList.add("hidden");
+			document.getElementById("btn_actmem").classList.add("hidden");
+		}
+
 		if (perfdata == null) {
 			document.getElementById("topbtn_reconnect").classList.remove("hidden");
 			if(localflag)
@@ -17596,7 +17804,6 @@ Current version indicated by LITEVER below.
 			document.getElementById("topbtn_ai").classList.add("hidden");
 			document.getElementById("topbtn_newgame").classList.remove("hidden");
 			document.getElementById("topbtn_save_load").classList.remove("hidden");
-			document.getElementById("topbtn_settings").classList.remove("hidden");
 			document.getElementById("topbtn_scenarios").classList.add("hidden");
 			document.getElementById("topbtn_quickplay").classList.add("hidden");
 		} else {
@@ -17613,13 +17820,11 @@ Current version indicated by LITEVER below.
 			if (selected_models.length == 0) {
 				document.getElementById("topbtn_newgame").classList.add("hidden");
 				document.getElementById("topbtn_save_load").classList.add("hidden");
-				document.getElementById("topbtn_settings").classList.add("hidden");
 				document.getElementById("topbtn_scenarios").classList.add("hidden");
 				document.getElementById("topbtn_quickplay").classList.remove("hidden");
 			} else {
 				document.getElementById("topbtn_newgame").classList.remove("hidden");
 				document.getElementById("topbtn_save_load").classList.remove("hidden");
-				document.getElementById("topbtn_settings").classList.remove("hidden");
 				document.getElementById("topbtn_scenarios").classList.remove("hidden");
 				document.getElementById("topbtn_quickplay").classList.add("hidden");
 			}
@@ -18346,7 +18551,7 @@ Current version indicated by LITEVER below.
 				let entry = "";
 				if(testslot)
 				{
-					entry = `<div onclick="load_from_slot(`+i+`)" class="corpo_leftpanel_btn" type="button">`+testslot+`</div>`;
+					entry = `<div onclick="load_from_slot(`+i+`, true)" class="corpo_leftpanel_btn" type="button">`+testslot+`</div>`;
 				}
 				panelitems += entry;
 			}
@@ -20412,565 +20617,266 @@ Current version indicated by LITEVER below.
 		</div>
 	</div>
 
-	<div class="popupcontainer flex hidden" id="quickstartcontainer">
-		<div class="popupbg flex"></div>
-		<div class="scenariopopup">
+	<div class="popupcontainer flex hidden" id="memorycontainer">
+		<div class="popupbg flex" id="memorycontainerbg"></div>
+		<div class="nspopup flexsizebig evenhigher" id="memorycontainerfg">
 			<div class="popuptitlebar">
-				<div class="popuptitletext">Quick Start - Select A Scenario</div>
+				<div class="popuptitletext">Context Data</div>
 			</div>
+			<div><ul class="nav nav-tabs settingsnav">
+				<li id="memory_tab" class="active"><a class="" href="#" onclick="display_memory_tab(0)">Memory</a></li>
+				<li id="wi_tab"><a class="" href="#" onclick="display_memory_tab(1)">World Info</a></li>
+				<li id="documentdb_tab"><a class="" href="#" onclick="display_memory_tab(2)">TextDB</a></li>
+				<li id="websearch_tab"><a class="" href="#" onclick="display_memory_tab(3)">WebSearch</a></li>
+				<li id="token_tab"><a class="" href="#" onclick="display_memory_tab(4)">Tokens</a></li>
+			  </ul></div>
 
-			<div style="overflow: auto;">
-
-				<div class="scenariosearch">
-				<input class="scenariosearchbox1 form-control" type="text" placeholder="Quick Search" value=""
-					id="scenariosearch" oninput="scenario_search()">
-					<select class="scenariosearchbox2 form-control" id="scenariosearchdropdown" onchange="scenario_search()">
-						<option value="0">All</option>
-						<option value="1">Story</option>
-						<option value="2">Adventure</option>
-						<option value="3">Chat</option>
-						<option value="4">Instruct</option>
-					</select>
-				</div>
-				<div id="scenarioautopickbox" class="menutext" style="text-align: left; padding-left: 8px;">
-					Automatically select AI model <span class="helpicon">?
-						<span class="helptext">This option picks a suitable AI model based on the selected scenario. If no text model is currently selected, an appropriate one will be automatically picked for you.</span>
-					</span>
-					<input type="checkbox" id="scenarioautopickai" onchange="togglescenarioautopick()" checked>
-
-				</div>
-
-				<div id="scenariogrid" class="scenariogrid">
-				</div>
-				<div id="scenariodesc" class="scenariodesc">
-				</div>
-
-				<div class="popupfooter">
-					<button type="button" class="btn btn-primary" id=""
-						onclick="confirm_scenario_verify()">Ok</button>
-					<button type="button" class="btn btn-primary" id=""
-						onclick="hide_popups()">Cancel</button>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer hidden flex" id="charactercreator">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsize higher">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Roleplay Character Creator</div>
-			</div>
-			<div class="menutext">
-				This tool is an easy way to create your own roleplay characters.<br>Alternatively, you can <a href="#" class="color_blueurl" onclick="hide_popups();document.getElementById('loadfileinput').click()"><b>click here to import an existing Tavern Character Card</b></a>.<br><br>
-
-				<div class="inlinelabel">
-					<div class="justifyleft" style="padding:4px">Character Name: </div>
-					<input title="Character Name" style="width:calc(100% - 136px);" type="text" placeholder="Enter Bot's Name (e.g. Arthur Green)" value="" id="charcreator_name">
-				</div>
-				<div class="inlinelabel">
-					<div class="justifyleft" style="padding:4px">Character Avatar: </div>
-					<button type="button" class="btn btn-primary" style="padding:2px 4px;margin:2px;" onclick="selectAvatarImage(false)">Select Image</button>
-					<div id="charcreator_avatar" style="background-position: 50% 50%; background-size: 100% 100%; background-origin: content-box; background-repeat: no-repeat; width: 32px; height:32px; border-radius:100rem; background-clip: content-box; margin: 4px 4px; border:none;"></div>
-				</div>
-				<div class="inlinelabel">
-					<div class="justifyleft" style="padding:4px">Character Persona: </div>
-					<input title="Character Persona" style="width:calc(100% - 136px);" type="text" placeholder="Describe this character (e.g. 25yo Male Elf, Brave, Chatty)" value="" id="charcreator_persona">
-				</div>
-				<div class="inlinelabel">
-					<div class="justifyleft" style="padding:4px">Describe Scenario: </div>
-					<input title="Describe Scenario" style="width:calc(100% - 136px);" type="text" placeholder="Describe the scenario (e.g. A fireside chat at the spooky campsite)" value="" id="charcreator_scenario">
-				</div>
-				<div class="inlinelabel">
-					<div class="justifyleft" style="padding:4px">Character Greeting: </div>
-					<input title="Character Greeting" style="width:calc(100% - 136px);" type="text" placeholder="First message greeting (e.g. Hello, traveller!)" value="" id="charcreator_greeting">
-				</div>
-
-				After creating your character, you can edit it further at any time in the 'Context' memory window.
-			</div>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="character_creator_done(true);">Confirm</button>
-				<button type="button" class="btn btn-primary" onclick="character_creator_done(false);">Cancel</button>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="saveloadcontainer">
-		<div class="popupbg flex"></div>
-		<div class="saveloadpopup">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Save File / Load File / Export File</div>
-			</div>
-
-			<div style="overflow: auto;">
-				<div id="saveloadentries" class="menutext saveloadgrid">
-					<div style="display:flex">
-						<button type="button" style="font-size:12px; margin:2px;width:33%" name="localsave" class="btn btn-primary" onclick="hide_popups();save_file_button()">💾<br>Download File</button>
-						<button type="button" style="font-size:12px; margin:2px;width:33%" name="localload" class="btn btn-primary" onclick="hide_popups();load_file_button()">📁<br>Open File</button>
-						<button type="button" style="font-size:12px; margin:2px;width:34%" name="shareurl" class="btn btn-primary" onclick="hide_popups();share_story_button()">🌐<br>Share</button>
-					</div>
-					<div style="margin-top:3px; text-align: center; align-self: center; width: 100%">
-						<span style="font-weight:bold;text-decoration: underline;">Slot Storage Option</span>
-					</div>
-					<div style="display:flex;">
-						<div style="width: 92px; margin:8px; margin-left: 4px; margin-right: 4px; font-size: 14px;">Data Location</div>
-						<div style="margin:3px; text-align: center; align-self: center; width: calc(100% - 94px);">
-						<select title="Select Slot Location" style="padding:4px;" class="form-control" id="saveslotlocationdropdown" onchange="saveloadchangeslot(true)">
-						<option value="1">Local Browser Cache</option>
-						<option value="2" id="kcppsaveavailable" class="hidden">KoboldCpp Server Storage</option>
-						</select>
+			<div class="context_tab_container" id="memory_tab_container">
+				<div class="settinglabel">
+					<span class="justifyleft">Memory<span class="helpicon">?<span
+						class="helptext">Put the information you want the AI to always remember. It will be inserted into the top of every request sent to the AI.</span></span></span>
+					<span class="justifyright flex-push-right" >
+						<div class="settinglabel" style="padding-top: 4px;">
+							<div class="justifyleft settingsmall" title="Add newline after injecting memory text">Newline After Memory </div>
+						<input type="checkbox" title="Add Newline After Memory" id="newlineaftermemory" style="margin:0px 0 0;" checked>
 						</div>
-					</div>
-					<div style="display:flex;">
-						<div style="width: 92px; margin:8px; margin-left: 4px; margin-right: 4px; font-size: 14px;">Selected Slot</div>
-						<div style="margin:3px; text-align: center; align-self: center; width: calc(100% - 94px);">
-						<select title="Select Save Slot" style="padding:4px;" class="form-control" id="saveslotselecteddropdown" onchange="saveloadchangeslot(false)">
-						</select>
-						</div>
-					</div>
-					<div style="width:100%;align-self: center;">
-						<button type="button" id="savetoslot" title="Save To Slot" class="btn btn-primary bg_primary" onclick="save_to_curr_slot()"><img class="btnicon-save"/> Save Slot</button>
-						<button type="button" id="loadfromslot" title="Load From Slot" class="btn btn-primary bg_primary" onclick="load_from_curr_slot()"><img class="btnicon-load"/> Load Slot</button>
-						<button type="button" id="downloadslot" title="Download Slot" class="btn btn-primary bg_green" onclick="download_from_curr_slot()"><img class="btnicon-download"/> Download</button>
-						<button type="button" id="deleteslot" title="Delete Slot" class="btn btn-primary bg_red" onclick="delete_from_curr_slot()"><img class="btnicon-delete"/> Delete Slot</button>
-					</div>
-				</div>
-				<div class="menutext"><p style="padding:6px;font-size: 10px;" class="color_red">Caution: Local Storage Slots are saved to a temporary cache and can be deleted by your browser. KoboldCpp remote storage will save data to a file in your KoboldCpp server. To avoid losing data, use the download file button.</p></div>
-				<div class="popupfooter">
-					<button type="button" class="btn btn-primary" id=""
-						onclick="hide_popups()">Back</button>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="customendpointcontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsize evenhigher">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Select your AI provider</div>
-			</div>
-			<div style="padding: 4px;">
-			<select id="unusedcustomapidropdown" style="display: none;"></select>
-			<select title="Select your AI provider" style="padding:4px;" class="form-control" id="customapidropdown" onchange="customapi_dropdown(true)">
-				<option value="0">AI Horde</option>
-				<option value="1">KoboldAI Remote API</option>
-				<option value="2">OpenAI Compatible API</option>
-				<option value="3">OpenRouter API</option>
-				<option value="4">Claude By Anthropic API</option>
-				<option value="5">PaLM/Gemini By Google API</option>
-				<option value="6">Cohere API</option>
-				<option value="7">MistralAI API</option>
-				<option value="8">Featherless API</option>
-				<option value="9">Grok API</option>
-			</select>
-			</div>
-
-			<div class="menutext" id="hordeloadmodelcontainer">
-				The AI Horde is a service that generates text using crowdsourced GPUs run by independent volunteer workers. Avoid sending privacy sensitive information. <a href="#" class="color_blueurl" onclick="explain_horde()">Click here for more info</a>
-				<div class="menutext" style="text-align: left;">
-					<span style="float:left; text-align: left;">
-					Your AI Horde API Key <span class="helpicon">?
-						<span class="helptext">You need an API key to use AI Horde to generate text. Get one at
-							https://aihorde.net/register or use the anonymous key 0000000000.</span>
-					</span>
-					<br><a href="#" id="showownworkerslink" class="color_blueurl hidden" onclick="show_my_own_workers()">[Manage My Workers]</a></span>
-					<span class="color_green" style="float:right; text-align: right;" id="kudos_bal">
-						Need a Key?<br><a class='color_blueurl' href='https://aihorde.net/register'>(Register New User)</a>
 					</span>
 				</div>
-				<input class="form-control" type="password" placeholder="Enter API Key (or use 0000000000)" value=""
-					id="apikey" onfocus="focus_api_keys()" onblur="fetch_kudo_balance();blur_api_keys()">
-
-				<div class="menutext" style="text-align: left;">
-					Select AI Horde Model <span class="helpicon">?
-						<span class="helptext">These are the models currently provided by AI Horde volunteers.</span>
-					</span> <a href="#" class="color_blueurl" onclick="reset_horde_selection()">[Reset]</a>
-					<span style="float:right;">
-					<a href="#" class="color_green" onclick="get_and_show_workers()">[See Current Volunteers] </a>
-					</span>
-					<select class="form-control" id="pickedmodel" size="7" multiple></select>
-				</div>
-
-				<div class="menutext" style="text-align: left;">
-					Select By Worker <span class="helpicon">?
-						<span class="helptext">This option explicitly assigns worker IDs, fixed based on the current workers available at model selection time.</span>
-					</span>
-					<input type="checkbox" id="manualworker" onclick="toggle_manual_horde_worker()">
-
-					<span style="float:right;">
-						<input class="settinglabel miniinput" style="margin: 3px; width: 90px;" type="text" placeholder="Quick Search" value="" id="modelquicksearch" oninput="model_quick_search()">
+				<textarea title="Edit Memory" class="form-control menuinput_multiline" id="memorytext" style="height: 120px;"
+					placeholder="Edit the memory to be sent with each request to the AI."></textarea>
+				<div class="settinglabel">
+					<div class="justifyleft"><br>Author's Note<span class="helpicon">?<span
+						class="helptext">Similar to Memory, but inserted near the end of the text instead of the start. A good way to control the mood/behavior of the AI.</span></span></div>
+					<span class="justifyright flex-push-right" >
+						<button type="button" class="btn btn-primary" style="padding:4px 6px;margin-top:4px;" id="btnnotes" onclick="set_personal_notes()">Notes</button>
+						<button type="button" class="btn btn-primary" style="padding:4px 6px;margin-top:4px;" id="btnautogenmem" onclick="autogenerate_summary_memory()">AutoGenerate Memory</button>
 					</span>
 				</div>
-
-			</div>
-
-			<div id="koboldcustom" class="menutext">
-				You can use this to connect to a KoboldAI instance running via a remote tunnel such as <span class="color_orange" style="font-weight: bold;">trycloudflare, localtunnel, ngrok</span>.<br><br>
-				Localhost IPs require host mode enabled. You can use the remote address displayed in the <span class="color_orange" style="font-weight: bold;">terminal console</span> or <span class="color_orange" style="font-weight: bold;">colab window</span>, note that the model must be loaded first.<br><br>
-				<span class="color_green" style="font-weight: bold;">Please input URL of the KoboldAI instance.</span><br><br>
-				<input class="form-control" id="customkoboldendpoint" placeholder="https://sample-remote-address.trycloudflare.com" value="">
-				<input class="form-control" type="password" id="customkoboldkey" placeholder="KoboldAI API Key (Optional)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
-				<div class="borderbox flex flex-push-right">
-					<input type="checkbox" id="remoteconsolelog">
-					<div class="box-label" title="Will display outputs to the remote endpoint's console logs, useful for debugging.">Show Console Logging</div>
-				</div>
-			</div>
-			<div id="oaicustom" class="menutext hidden">
-				<span id="oaidesc">
-				Entering your OpenAI API key will allow you to use KoboldAI Lite with their API.<br><br>
-				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the OpenAI API and is not transmitted to us.<br>Only Temperature, Top-P and Repetition Penalty samplers are used.<br><br>
-				<span class="color_green" style="font-weight: bold;">Please input OpenAI API URL and Key.</span><br><br>
-				</span>
-				<span id="openrouterdesc" class="hidden">
-				Entering your OpenRouter API key will allow you to use KoboldAI Lite with their API.<br><br>
-				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the OpenRouter API and is not transmitted to us.<br>Only Temperature, Top-P and Repetition Penalty samplers are used.<br><br>
-				<span class="color_green" style="font-weight: bold;">Please input OpenRouter Key.</span><br><br>
-				</span>
-				<span id="mistralaidesc" class="hidden">
-				Entering your MistralAI API key will allow you to use KoboldAI Lite with their API.<br><br>
-				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the MistralAI API and is not transmitted to us.<br>Only Temperature and Top-P samplers are used.<br><br>
-				<span class="color_green" style="font-weight: bold;">Please input MistralAI Key.</span><br><br>
-				</span>
-				<span id="featherlessdesc" class="hidden">
-				Entering your Featherless API key will allow you to use KoboldAI Lite with their API.<br><br>
-				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the Featherless API and is not transmitted to us.<br>Only Temperature, Top-P, Top-K, Min-P and Repetition Penalty samplers are used.<br><br>
-				<span class="color_green" style="font-weight: bold;">Please input Featherless Key.</span><br><br>
-				</span>
-				<span id="grokdesc" class="hidden">
-				Entering your Grok API key will allow you to use KoboldAI Lite with their API.<br><br>
-				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the Grok API and is not transmitted to us.<br>Only Temperature, Top-P, Top-K, Min-P and Repetition Penalty samplers are used.<br><br>
-				<span class="color_green" style="font-weight: bold;">Please input Grok Key.</span><br><br>
-				</span>
-
-				<input class="form-control" type="text" id="custom_oai_endpoint" placeholder="OpenAI API URL" value="" onblur="try_fetch_oai_models_auto()">
-				<input class="form-control" type="password" id="custom_oai_key" placeholder="API Key (Required)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
-				Model Choice:<br>
-				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control" id="custom_oai_model" onchange="oai_model_change(true)">
-					<option value="gpt-3.5-turbo-instruct" selected="selected">gpt-3.5-turbo-instruct</option>
-					<option value="davinci-002">davinci-002</option>
-					<option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-					<option value="gpt-3.5-turbo-16k">gpt-3.5-turbo-16k</option>
-					<option value="gpt-4">gpt-4</option>
-					<option value="gpt-4-turbo">gpt-4-turbo</option>
-					<option value="gpt-4o">gpt-4o</option>
-					<option value="gpt-4-32k">gpt-4-32k</option>
-					<option value="o1-mini">o1-mini</option>
-					<option value="o1-preview">o1-preview</option>
-					<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
-				</select>
-				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control hidden" id="custom_openrouter_model" onchange="oai_model_change(true)">
-					<option value="openai/gpt-3.5-turbo">openai/gpt-3.5-turbo</option>
-					<option value="openai/gpt-4">openai/gpt-4</option>
-					<option value="openai/gpt-3.5-turbo-instruct">openai/gpt-3.5-turbo-instruct</option>
-					<option value="mistralai/mistral-7b-instruct" selected="selected">mistralai/mistral-7b-instruct</option>
-					<option value="gryphe/mythomax-l2-13b">gryphe/mythomax-l2-13b</option>
-					<option value="huggingfaceh4/zephyr-7b-beta">huggingfaceh4/zephyr-7b-beta</option>
-					<option value="anthropic/claude-2.0">anthropic/claude-2.0</option>
-					<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
-				</select>
-				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control hidden" id="custom_mistralai_model" onchange="oai_model_change(true)">
-					<option value="open-mistral-7b">open-mistral-7b</option>
-					<option value="open-mistral-nemo">open-mistral-nemo</option>
-					<option value="open-mixtral-8x22b">open-mixtral-8x22b</option>
-					<option value="mistral-tiny">mistral-tiny</option>
-					<option value="mistral-small">mistral-small</option>
-					<option value="mistral-medium-latest">mistral-medium-latest</option>
-					<option value="mistral-large-latest">mistral-large-latest</option>
-					<option value="pixtral-12b-latest">pixtral-12b-latest</option>
-					<option value="pixtral-large-latest">pixtral-large-latest</option>
-					<option value="codestral-latest">codestral-latest</option>
-					<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
-				</select>
-				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control hidden" id="custom_featherless_model" onchange="oai_model_change(true)">
-					<option value="Sao10K/L3-8B-Lunaris-v1">Sao10K/L3-8B-Lunaris-v1</option>
-					<option value="Sao10K/L3-8B-Stheno-v3.2">Sao10K/L3-8B-Stheno-v3.2</option>
-					<option value="unsloth/llama-3-8b-Instruct">unsloth/llama-3-8b-Instruct</option>
-					<option value="beomi/Llama-3-Open-Ko-8B">beomi/Llama-3-Open-Ko-8B</option>
-					<option value="Sao10K/Fimbulvetr-11B-v2">Sao10K/Fimbulvetr-11B-v2</option>
-					<option value="HuggingFaceH4/zephyr-7b-beta">HuggingFaceH4/zephyr-7b-beta</option>
-					<option value="upstage/SOLAR-10.7B-Instruct-v1.0">upstage/SOLAR-10.7B-Instruct-v1.0</option>
-					<option value="alpindale/magnum-72b-v1">alpindale/magnum-72b-v1</option>
-					<option value="Sao10K/L3-70B-Euryale-v2.1">Sao10K/L3-70B-Euryale-v2.1</option>
-					<option value="alpindale/WizardLM-2-8x22B">alpindale/WizardLM-2-8x22B</option>
-					<option value="meta-llama/Meta-Llama-3.1-405B-Instruct">meta-llama/Meta-Llama-3.1-405B-Instruct</option>
-				<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
-				</select>
-				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control hidden" id="custom_grok_model" onchange="oai_model_change(true)">
-					<option value="grok-beta">grok-beta</option>
-					<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
-				</select>
-				<button type="button" class="btn btn-primary" style="display:inline;width:105px;" id="oaifetchlist" onclick="oai_fetch_models()">Fetch List</button>
-				<button type="button" class="btn btn-primary" style="display:inline;width:105px;" id="oaiusecustom" onclick="select_custom_oai_model()">Use Custom</button>
-				<div class="hidden" id="oaiemulatecompletionsbox">
-					<div><input type="checkbox" id="oaiemulatecompletions" title="Emulate Completions with Prefill">
-					<div class="box-label">Emulate Completions API with Prefill</div></div>
-				</div>
-				<div style="display:inline-flex">
-					<div><input type="checkbox" id="oaiaddversion" title="Add Endpoint Version Number" onchange="" checked>
-					<div class="box-label">Add Ver. Num</div></div>
-					<div><input type="checkbox" id="oaistreaming" title="Enable SSE Streaming" onchange="">
-					<div class="box-label">Streaming</div></div>
-					<div><input type="checkbox" id="useoaichatcompl" title="Use ChatCompletions API" onchange="toggleoaichatcompl()">
-					<div class="box-label">Chat-Completions API</div></div>
-					<div><input type="checkbox" id="useoainonstandard" title="Send Non-Standard Fields">
-					<div class="box-label">Non-Standard Fields</div></div>
-				</div>
-				<span id="useoaichatcomplbox" class="hidden" onload="toggleoaichatcompl();">
-					<br>
-					Main Message Role:
-					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" id="oairoledropdown">
-						<option value="0" selected>User</option>
-						<option value="1">Assistant</option>
-						<option value="2">System</option>
-					</select>
-					<input type="checkbox" id="jailbreakprompt" onchange="togglejailbreak()">
-					<div class="box-label" title="Adds extra text at the start to improve AI response">Add Prefix</div>
-					<input type="checkbox" id="jailbreakprompt2" onchange="togglejailbreak2()">
-					<div class="box-label" title="Adds extra text to the end to improve AI response">Add Postfix</div>
-
-					<div style="display:flex" id="oaijailbreakpromptblock1">
-					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" id="jailbreakprompttextrole">
-						<option value="0">User</option>
-						<option value="1">Assistant</option>
-						<option value="2" selected>System</option>
-					</select>
-					<textarea class="form-control" rows="3" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" id="jailbreakprompttext" placeholder="(Enter System Prefix)"
-					value="" onload="togglejailbreak();"></textarea>
-					</div>
-
-					<div style="display:flex" id="oaijailbreakpromptblock2">
-					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" id="jailbreakprompttext2role">
-						<option value="0">User</option>
-						<option value="1" selected>Assistant</option>
-						<option value="2">System</option>
-					</select>
-					<textarea class="form-control" rows="3" style="resize: vertical; line-height:1.1; padding:4px;  display:inline; width: 100%;" type="text" id="jailbreakprompttext2" placeholder="(Enter Assistant Postfix)"
-					value="" onload="togglejailbreak2();"></textarea>
-					</div>
-				</span>
-				<span id="openrouterproviderbox" class="hidden"><br>Preferred Provider: <input style="height: 25px; font-size:12px;padding:4px;display:inline;width:calc(100% - 140px)" class="form-control" type="text" id="openrouterproviders" placeholder="(Automatic)" value="">
-					<div style="display:inline;width:210px;">
-					</div>
-				</span>
-
-			</div>
-			<div id="claudecustom" class="menutext hidden">
-				Entering your Claude API key will allow you to use KoboldAI Lite with their API.<br><br>
-				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. <br><span class="color_red">At this time, the official Claude API has CORS restrictions and must be accessed with a CORS proxy. Your connection WILL be proxied.</span><br>Only Temperature, Top-P and Top-K samplers are used.<br><br>
-				<span class="color_green" style="font-weight: bold;">Please input Claude API URL and Key.</span><br><br>
-				<input class="form-control" type="text" id="custom_claude_endpoint" placeholder="Claude API URL" value="">
-				<input class="form-control" type="password" id="custom_claude_key" placeholder="Claude API Key (Required)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
-				Model Choice:<br>
-				<select style="padding:4px; width:calc(100% - 110px); display:inline-block" class="form-control" id="custom_claude_model"  onload="toggleclaudemodel()"  onchange="toggleclaudemodel()">
-					<option value="claude-v1">claude-v1</option>
-					<option value="claude-v1-100k">claude-v1-100k</option>
-					<option value="claude-instant-v1">claude-instant-v1</option>
-					<option value="claude-instant-v1-100k">claude-instant-v1-100k</option>
-					<option value="claude-2">claude-2</option>
-					<option value="claude-2.1">claude-2.1</option>
-					<option value="claude-2.0">claude-2.0</option>
-					<option value="claude-3-opus-20240229">claude-3-opus</option>
-					<option value="claude-3-sonnet-20240229">claude-3-sonnet</option>
-					<option value="claude-3-haiku-20240307">claude-3-haiku</option>
-					<option value="claude-3-5-sonnet-20240620">claude-3-5-sonnet-20240620</option>
-					<option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022</option>
-					<option value="claude-3-5-sonnet-latest" selected="selected">claude-3-5-sonnet-latest</option>
-					<option value="claude-3-5-haiku-20241022">claude-3-5-haiku-20241022</option>
-					<option value="claude-3-7-sonnet-20250219">claude-3-7-sonnet-20250219</option>
-				</select>
-				<button type="button" class="btn btn-primary" style="display:inline;width:105px;" id="claudefetchlist" onclick="claude_fetch_models()">Fetch List</button>
-				<input type="checkbox" id="claudeaddversion" onchange="" checked>
-				<div class="box-label" title="Add endpoint version">Add Endpoint Version</div>
-				<span id="clauderenamecompatdiv">
-				<input type="checkbox" id="clauderenamecompat" onchange="" checked>
-				<div class="box-label" title="Rename User and Bot tags to work with claude, force inject them otherwise">Claude Compatibility Rename Fix</div>
-				</span>
-
-				<textarea class="form-control hidden" rows="2" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" id="claudesystemprompt" placeholder="(Enter System Prompt)"
-				value="" onload=""></textarea>
-				<textarea class="form-control hidden" rows="2" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" id="claudejailbreakprompt" placeholder="(Enter Assistant Postfix)"
-				value="" onload=""></textarea>
-
-				<div id="claudethinkingbox" class="hidden">
-				<div class="box-label" title="Enable Thinking">Enable Thinking </div>
-				<input type="checkbox" style="display:inline;" id="claudethinking">
-				</div>
-
-			</div>
-			<div id="palmcustom" class="menutext hidden">
-				Uses Gemini or PaLM Text Bison by Google.<br><br>
-				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the Gemini API and is not transmitted to us.<br><br>
-				<div>
-				<select style="padding:4px; width:calc(100% - 110px); display:inline-block" class="form-control" id="custom_palm_model" onchange="togglepalmmodel()">
-					<option value="gemini-pro" selected="selected">gemini-pro</option>
-					<option value="gemini-1.5-pro-001">gemini-1.5-pro-001</option>
-					<option value="gemini-1.5-pro-002">gemini-1.5-pro-002</option>
-					<option value="gemini-1.5-pro-latest">gemini-1.5-pro-latest</option>
-					<option value="gemini-1.5-flash-latest">gemini-1.5-flash-latest</option>
-					<option value="gemini-1.5-pro-exp-0801">gemini-1.5-pro-exp-0801</option>
-					<option value="gemini-1.5-pro-exp-0827">gemini-1.5-pro-exp-0827</option>
-					<option value="gemini-2.0-flash">gemini-2.0-flash</option>
-					<option value="gemini-2.0-pro-exp">gemini-2.0-pro-exp</option>
-					<option value="gemini-exp-1114">gemini-exp-1114</option>
-					<option value="gemini-exp-1121">gemini-exp-1121</option>
-					<option value="text-bison-001">text-bison-001</option>
-				</select>
-				<button type="button" class="btn btn-primary" style="display:inline;width:105px;" id="geminifetchlist" onclick="gemini_fetch_models()">Fetch List</button>
-				</div>
-				<span class="color_green" style="font-weight: bold;">Please input Gemini or PaLM API Key.</span><br><br>
-				<input class="form-control" type="password" id="custom_palm_key" placeholder="PaLM/Gemini API Key (Required)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
-				<div id="gemini_role_options">
-				<div>
-					Main Message Role:
-					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" onload="togglegeminirole();" onchange="togglegeminirole();" id="geminiroledropdown">
-						<option value="" selected>Default</option>
-						<option value="user">User</option>
-						<option value="model">Model</option>
-					</select>
-				</div>
-				<div id="gemini_role_options2" style="display:flex">
-					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" id="gemini_postfix_role">
-						<option value="user">User</option>
-						<option value="model" selected>Model</option>
-					</select>
-					<textarea class="form-control" rows="3" style="resize: vertical; line-height:1.1; padding:4px;  display:inline; width: 100%;" type="text" id="gemini_postfix_text" placeholder="(Enter Gemini Postfix)"
-					value=""></textarea>
-				</div>
-				</div>
-				<textarea class="form-control" rows="3" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" id="gemini_system_instruction" placeholder="(Enter System Instruction)"
-				value=""></textarea><br>
-			</div>
-			<div id="coherecustom" class="menutext hidden">
-				Uses Cohere's models through their own API.<br><br>
-				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the Cohere API and is not transmitted to us.<br><br>
-				<select style="padding:4px;" class="form-control" id="custom_cohere_model">
-					<option value="command" selected="selected">command</option>
-					<option value="command-r">command-r</option>
-					<option value="command-r-plus">command-r-plus</option>
-					<option value="command-r-08-2024">command-r-08-2024</option>
-					<option value="command-r-plus-08-2024">command-r-plus-08-2024</option>
-				</select>
-				<span class="color_green" style="font-weight: bold;">Please input Cohere API Key.</span><br><br>
-				<input class="form-control" type="password" id="custom_cohere_key" placeholder="Cohere API Key (Required)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
-				<input type="checkbox" id="usecohereweb">
-				<div class="box-label" id="usecohereweblabel">Use WebSearch</div>
-				<input type="checkbox" id="useocoherepreamble" onchange="togglecoherepreamble()">
-				<div class="box-label" id="useocoherepreamblelabel">Use Preamble</div>
-
-				<span id="useocoherepreamblebox" class="hidden" onload="togglecoherepreamble();">
-					<textarea class="form-control" id="cohere_preamble" rows="3" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" placeholder="(Enter Preamble)" value=""></textarea>
-				</span>
-			</div>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="clear_cors_proxy_flag();connect_custom_endpoint()">Ok</button>
-				<button type="button" class="btn btn-primary" onclick="dismiss_endpoint_container()">Cancel</button>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="admincontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizevsmall">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Change Loaded KoboldCpp Config</div>
-			</div>
-			<div class="menutext">
-				<b></b>Warning: This will terminate the current KoboldCpp instance and relaunch it with a new config.</b><br><br>
-				If an invalid configuration is selected, the new server may fail to relaunch!<br><br>
-				<div>
-					<select title="Select New Config" style="padding:4px;" class="form-control" id="adminconfigdropdown">
-					</select>
-				</div>
+				<textarea title="Edit Author's Note" style="height: 80px;" class="form-control menuinput_multiline" id="anotetext"
+					placeholder="Author's Note will be inserted close to end of context."></textarea>
 				<br>
+				<div class="settinglabel">
+					<span class="justifyleft">Author's Note Template<span class="helpicon">?<span
+						class="helptext">A placeholder, will be inserted with the author's note replacing the &lt;|&gt;. You generally don't need to change this.</span></span></span>
+					<span class="justifyright flex-push-right" >
+						A/N Strength<span class="helpicon">?<span
+							class="helptext">Controls how far back to insert the Author's Note. Notes injected closer to the end have a stronger effect.</span></span>
+					</span>
+				</div>
+				<div style="display: flex; column-gap: 4px;">
+				<input title="Author's Note Template" class="form-control menuinput_inline" type="text"
+					placeholder="(the &lt;|&gt; will be replaced with the Author's Note text)" value="" id="anotetemplate">
+					<select title="Author's Note Strength" style="padding:4px; display: inline;	width: 94px; padding: 6px 3px;" class="form-control" id="anote_strength">
+						<option value="480">Weak</option>
+						<option value="320">Medium</option>
+						<option value="160">Strong</option>
+						<option value="0">Immediate</option>
+					</select>
+				</div>
 			</div>
-			<div class="popupfooter">
-				<button type="button" style="width:200px" class="btn btn-primary" onclick="trigger_admin_reload()">Reload KoboldCpp</button>
-				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
-			</div>
-		</div>
-	</div>
 
-	<div class="popupcontainer flex hidden" id="newgamecontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizevsmall">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Really Start A New Session?</div>
+			<div class="context_tab_container" id="wi_tab_container">
+				<div style="text-align: right;">
+				<button type="button" style="padding:4px;margin:4px" class="btn bluebtn widelbtn" id="wiadd" onclick="add_wi()">+Add</button>
+				</div>
+				<div class="wilist" id="wilist">
+				</div>
+
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall">WI Insert Location <span class="helpicon">?<span
+						class="helptext">Controls where the world info should be inserted</span></span></div>
+				<select title="World Info Insert Location" style="height:16px;padding:0px;margin:0px 4px 0; width:90px;font-size:10px;" class="form-control" id="wi_insertlocation">
+					<option value="0">After Memory</option>
+					<option value="1">Before A/N</option>
+				</select></div>
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall">WI Search Depth <span class="helpicon">?<span
+						class="helptext">Controls how far back in the text to search for World Info Keys</span></span></div>
+				<select title="World Info Search Depth" style="height:16px;padding:0px;margin:0px 4px 0; width:90px;font-size:10px;" class="form-control" id="wi_searchdepth">
+					<option value="0">Full Context</option>
+					<option value="8192">Last 8192</option>
+					<option value="4096">Last 4096</option>
+					<option value="2048">Last 2048</option>
+					<option value="1024">Last 1024</option>
+					<option value="512">Last 512</option>
+					<option value="256">Last 256</option>
+				</select></div>
+
+
+				<div style="float:right;">
+					<input title="World Info Quick Search" class="settinglabel miniinput" style="margin: 3px; width: 90px;" type="text" placeholder="Quick Search" value="" id="wiquicksearch" oninput="wi_quick_search()">
+				</div>
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall" title="Controls whether the world info keys are matched in a case-sensitive way.">Case Sensitive Keys </div>
+				<input title="World Info Case Sensitive" type="checkbox" id="case_sensitive_wi" style="margin:0px 0 0;">
+				</div>
 			</div>
-			<div class="menutext">
-				Unsaved data will be lost.<br><br>
-				<div>
-					<div style="vertical-align: middle;">
-						<div title="If disabled, brings you back to the start page">
-							<span>Keep AI Selected? </span>
-							<input type="checkbox" id="keep_ai_selected" style=" vertical-align: top;" checked>
-						</div>
-						<div>
-							<span>Keep Memory and World Info? </span>
-							<input type="checkbox" id="keep_memory" style=" vertical-align: top;">
-						</div>
+
+			<div class="context_tab_container" id="documentdb_tab_container">
+				<div class="settinglabel" style="padding: 4px;">Automatically search and include relevant snippets from a text document or history.</div>
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall" title="Enable TextDB">Enable TextDB </div>
+					<input title="Enable TextDB" type="checkbox" id="documentdb_enabled" style="margin:0px 0 0;">
+				</div>
+
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall" title="Search Includes Context History">Search Includes Context History <span class="helpicon">?
+						<span class="helptext">If enabled, the entire story/chat history is used as a searchable document</span></span></div>
+					<input title="Search Context History" type="checkbox" id="documentdb_searchhistory" style="margin:0px 0 0;">
+				</div>
+
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall">Num. Search Results <span class="helpicon">?
+					<span class="helptext">Controls how many snippets to retrieve from DB</span></span></div>
+					<input title="Number of Search Results" class="settinglabel miniinput"
+						style="height:16px;margin:0px 4px 0; width:90px;font-size:10px;" type="number"
+						min="1" max="5" step="1" pattern="\d+" placeholder="" value="" id="documentdb_numresults">
+				</div>
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall">Nearby Text Amount <span class="helpicon">?
+						<span class="helptext">Controls	amount of nearby text included in the search query</span></span>
+					</div>
+					<input title="Nearby Text Amount" class="settinglabel miniinput"
+						style="height:16px;margin:0px 4px 0; width:90px;font-size:10px;" type="number"
+						min="1" step="1" pattern="\d+" placeholder="" value="" id="documentdb_searchrange">
+				</div>
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall">Search Chunk Size <span class="helpicon">?
+					<span class="helptext">Controls the size of each snippet being searched for</span></span>
+					</div>
+					<input title="Search Chunk Size" class="settinglabel miniinput"
+						style="height:16px;margin:0px 4px 0; width:90px;font-size:10px;" type="number"
+						min="0" step="1" pattern="\d+" placeholder="" value="" id="documentdb_chunksize">
+				</div>
+				<div class="settinglabel">
+					<div class="justifyleft"><br>TextDB Storage<span class="helpicon">?<span
+						class="helptext">Paste as much raw text data here as you like. E.g. background information, reference documents, etc. This text will populate the database that will be chunked and searched by TextDB.</span></span></div>
+				</div>
+				<textarea title="Edit TextDB" class="form-control menuinput_multiline" id="documentdb_data" style="height: 120px;"
+					placeholder="Paste as much text data here as you like. This text will populate the database that will be searched by TextDB."></textarea>
+			</div>
+
+			<div class="context_tab_container" id="websearch_tab_container">
+				<div class="settinglabel" style="padding: 4px;">Search the Web for relevant information when using instruct mode<br>(Requires WebSearch enabled KoboldCpp)</div>
+				<div id="websearchunsupporteddiv" class="color_red hidden" style="font-weight:bold;padding:3px;font-size:12px">WebSearch Not Supported</div>
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall" title="Enable WebSearch">Enable WebSearch </div>
+					<input title="Enable WebSearch" type="checkbox" id="websearch_enabled" style="margin:0px 0 0;">
+				</div>
+				<div class="settinglabel" style="padding: 4px;">
+					<div class="justifyleft settingsmall" title="Use Multiple Passes">Use Multiple Passes <span class="helpicon">?<span
+						class="helptext">Using this option will run a second LLM tool call to summarize context and create a more accurate search query. Slower but may be more accurate.</span></span></div>
+					<input title="Use Multiple Passes" type="checkbox" id="websearch_multipass" style="margin:0px 0 0;">
+				</div>
+				<div class="justifyleft settinglabel">Multipass WebSearch Template <span class="helpicon">?<span
+					class="helptext">The template used to generate the search query when multipass search is used</span></span></div>
+					<div style="display: flex; column-gap: 4px; margin-bottom: 4px;">
+					<textarea title="Multipass WebSearch Template" style="height: 80px;" class="form-control menuinput_multiline" id="websearch_template"
+					placeholder=""></textarea>
+				</div>
+			</div>
+
+			<div class="context_tab_container" id="token_tab_container">
+				<div class="justifyleft settinglabel">Extra Stopping Sequences <span class="helpicon">?<span
+					class="helptext">Triggers the text generator to stop generating early if this sequence appears, in addition to default stop sequences. If you want multiple sequences, separate them with the following delimiter: ||$||</span></span></div>
+					<div class="color_red hidden" id="noextrastopseq">Stop Sequences may be unavailable.</div>
+					<div style="display: flex; column-gap: 4px; margin-bottom: 4px;">
+					<input title="Extra Stopping Sequences" class="form-control menuinput_inline" type="text" placeholder="None" value="" id="extrastopseq">
+					<button type="button" class="btn btn-primary" style="width:90px;padding:6px 6px;" onclick="add_stop_seq()">Add New</button>
+				</div>
+
+				<div style="padding:3px;" class="justifyleft settinglabel">Logit Biases <span class="helpicon">?<span
+					class="helptext">Specify a dictionary of token IDs to modify the probability of occuring.</span></span>
+					<button type="button" title="Logit Biases" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandlogitbias')">Expand Section</button>
+				</div>
+				<div id="expandlogitbias" class="hidden">
+					<div class="color_red hidden" id="nologitbias">Logit bias may be unavailable.</div>
+					<div style="color:#ffffff;">Enter OpenAI-formatted logit bias dictionary. Each key is the integer token IDs and their values are the biases (-100.0 to 100.0). Leave blank to disable.<br><a href='https://platform.openai.com/docs/api-reference/chat/create#chat-create-logit_bias' target='_blank' class='color_blueurl'>Input is a JSON object, reference here.</a><br></div>
+					<textarea class="form-control menuinput_multiline" style="height: 80px;line-height:1.1;margin-bottom: 4px;" id="logitbiastxtarea" placeholder="" rows="5"></textarea>
+					<div style="display: flex; column-gap: 4px; margin-bottom: 4px;">
+					<input style="padding:2px" class="form-control menuinput_inline hidden" inputmode="text" type="text" placeholder="Token String" value="" id="newlogitbiasstring">
+					<input style="padding:2px" class="form-control menuinput_inline" inputmode="numeric" type="text" placeholder="Token ID" value="" id="newlogitbiasid">
+					<input style="padding:2px" class="form-control menuinput_inline" inputmode="text" type="text" placeholder="Bias Value" value="" id="newlogitbiasval">
+					<button type="button" class="btn btn-primary" style="width:90px;padding:6px 6px;" onclick="add_logit_bias()">Add New</button>
+					</div>
+					<div class="settinglabel hidden" id="newlogitbiasstringtogglesection">
+						<div class="justifyleft settingsmall">Input Strings Instead of IDs (Uses KCPP Tokenizer) <span class="helpicon">?<span
+							class="helptext">If enabled, allows you to input strings instead of only token IDs, and tokenizes them for you.</span></span></div>
+						<input type="checkbox" id="newlogitbiasstringtoggle" onclick="toggle_logit_bias_string()">
 					</div>
 				</div>
-				<br>
-			</div>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="confirm_newgame()">Ok</button>
-				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
-			</div>
-		</div>
-	</div>
 
-	<div class="popupcontainer flex hidden" id="advancedloadfile">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizevsmall">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Advanced Load File</div>
-			</div>
-			<div class="menutext">
-				Select categories to import from saved file. Selected categories will be overwritten. Unselected categories will retain original values.<br>
-				<br><div>
-				<table style="width:90%; margin:8px auto;">
-				<tr><td><span style="vertical-align: middle;">Main Story</span></td><td><input type="checkbox" id="advset_mainstory" style=" vertical-align: top;" checked></td></tr>
-				<tr><td><span style="vertical-align: middle;">Memory and Author's Note</span></td><td><input type="checkbox" id="advset_memanote" style=" vertical-align: top;" checked></td></tr>
-				<tr><td><span style="vertical-align: middle;">World Info</span></td><td><input type="checkbox" id="advset_worldinfo" style=" vertical-align: top;" checked></td></tr>
-				<tr><td><span style="vertical-align: middle;">Stop Sequences</span></td><td><input type="checkbox" id="advset_stopseq" style=" vertical-align: top;" checked></td></tr>
-				<tr><td><span style="vertical-align: middle;">General Settings</span></td><td><input type="checkbox" id="advset_gensettings" style=" vertical-align: top;" checked></td></tr>
-				<tr><td><span style="vertical-align: middle;">Aesthetic Settings</span></td><td><input type="checkbox" id="advset_aessettings" style=" vertical-align: top;" checked></td></tr>
-				</table>
+				<div style="padding:3px;" class="justifyleft settinglabel">Phrase / Word Ban (Anti-Slop) <span class="helpicon">?<span
+					class="helptext">Prevents specific words or phrases from being generated, either modifying model vocab or by backtracking and regenerating when they appear. If you want multiple sequences, separate them with the following delimiter: ||$||</span></span>
+					<button type="button" title="Phrase / Token Ban (Anti-Slop)" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandtokenbans')">Expand Section</button>
 				</div>
-			</div>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="advload_btnok()">Ok</button>
-				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
-			</div>
-		</div>
-	</div>
+				<div id="expandtokenbans" class="hidden">
+					<div class="color_red hidden" id="notokenbans">Phrase banning may be unavailable.</div>
+					<div style="color:#ffffff;">Prevents specific words or phrases from being generated, either modifying model vocab or by backtracking and regenerating when they appear. If you want multiple sequences, separate them with the following delimiter: ||$||<br><em>Note: If you're trying to ban a specific token by ID, you should use Logit Bias instead!</em><br></div>
+					<div style="display: flex; column-gap: 4px; margin-bottom: 4px;">
+					<input class="form-control menuinput_inline" type="text" placeholder="None" value="" id="tokenbans">
+					<button type="button" class="btn btn-primary" style="width:90px;padding:6px 6px;" onclick="add_token_ban()">Add New</button>
+					</div>
+				</div>
 
-	<div class="popupcontainer flex hidden" id="zoomedimgcontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsize highest">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Image Information</div>
+				<div style="padding:3px;" class="justifyleft settinglabel">Regex Replace <span class="helpicon">?<span
+					class="helptext">Allows transforming incoming text with regex patterns, modifying all matches. Replacements will be applied in sequence.</span></span>
+					<button type="button" title="Regex Replace" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandregexreplace')">Expand Section</button>
+				</div>
+				<div id="expandregexreplace" class="hidden">
+					<table id="regex_replace_table" class="settinglabel" style="border-spacing: 3px 2px; border-collapse: separate; text-align: center;">
+					</table>
+				</div>
+
+				<div style="padding:3px;" class="justifyleft settinglabel">Thinking / Reasoning Tags <span class="helpicon">?<span
+					class="helptext">Allows hiding or removing thinking tags.</span></span>
+					<button type="button" title="Regex Replace" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandthinking')">Expand Section</button>
+				</div>
+				<div id="expandthinking" class="hidden">
+					<div class="settinglabel justifyleft">This allows you to specify regex to handle output from reasoning models, to hide, remove, or ignore the Chain-Of-Thought.</div>
+					<div style="padding:4px" class="settinglabel justifyleft">CoT Regex Pattern: <input class="settinglabel miniinput" style="margin-left:4px;width:calc(100% - 132px);" type="text" placeholder="(Inactive)" value="" id="thinking_pattern"></div>
+					<div style="padding:4px" class="settinglabel justifyleft">CoT Handling: <select class="form-control" style="margin-left:4px;height: 25px; font-size:12px; padding:2px;display:inline;width:120px" id="thinking_action">
+						<option value="0" selected>Display</option>
+						<option value="1">Collapse</option>
+						<option value="2">Hide</option>
+						<option value="3">Remove</option>
+					</select></div>
+					<div style="padding:4px" class="settinglabel justifyleft">Don't Submit Old Thoughts <input title="Do not submit Past Thoughts" type="checkbox" id="strip_past_thinking" style="margin:4px;"></div>
+					<div style="padding:4px" class="settinglabel justifyleft">Force Insert Thinking Tag <input title="Force Insert Thinking Tag" type="checkbox" id="force_thinking_tag" style="margin:4px;"><input class="settinglabel miniinput" style="margin-left:4px;width:100px;" type="text" placeholder="" value="" id="start_thinking_tag"></div>
+					<div style="padding:4px" class="settinglabel justifyleft">Note: 'Force Insert Thinking Tags' does not work with the 'Remove' option of CoT handling regex.</div>
+				</div>
+
+				<div style="padding:3px;" class="justifyleft settinglabel">Placeholder Tags <span class="helpicon">?<span
+					class="helptext">Configure automatic substitutions for placeholders in text.</span></span>
+					<button type="button" title="Placeholder Tags" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandplaceholdertags')">Expand Section</button>
+				</div>
+				<div id="expandplaceholdertags" class="hidden">
+					<div class="settinglabel justifyleft">Stories can use placeholders like {{user}} and {{[INPUT]}} that require dynamic substitution. If disabled, uses plaintext tags verbatim.</div>
+					<div class="settinglabel">
+						<div class="justifyleft settingsmall">Enable Placeholder Tags <span class="helpicon">?<span
+							class="helptext">If enabled, uses placeholders that get swapped on submit. If disabled, uses plaintext verbatim.</span></span></div>
+					<input type="checkbox" id="placeholder_tags2">
+					</div>
+					<table id="placeholder_replace_table" class="settinglabel" style="text-align: center; border-spacing: 3px 2px; border-collapse: separate;">
+					</table>
+					<div class="settinglabel justifyleft">To modify {{[INPUT]}} or {{[OUTPUT]}} and other instruct tags, please edit them in the Settings &gt; Format page.</div>
+				</div>
+
 			</div>
 
-			<div class="zoomedimgdiv">
-				<img class="zoomedimg" id="zoomedimg" src="">
+			<div id="memorycontainerfooter" class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="confirm_memory();save_wi();commit_wi_changes();render_gametext();sync_multiplayer(true);hide_popups()">OK</button>
+				<button type="button" class="btn btn-primary" onclick="hide_popups();">Cancel</button>
 			</div>
-
-			<div class="menutext zoomedimgdesc" id="zoomedimgdesc" style="word-wrap: break-word;">
-				Loading...
-			</div>
-			<br>
-			<div class="popupfooter">
-				<button type="button" class="bg_red btn btn-primary" style="width: 124px;" onclick="delete_curr_image();hide_popups();">Delete Image</button>
-				<button type="button" class="btn btn-primary" onclick="hide_popups()">Close</button>
+			<div id="memorycontainerfooter2" class="popupfooter hidden">
+				<button type="button" class="btn btn-primary" onclick="confirm_memory();save_wi();commit_wi_changes();render_gametext();sync_multiplayer(true);hide_popups()">Apply</button>
 			</div>
 		</div>
 	</div>
 
 	<div class="popupcontainer flex hidden" id="settingscontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsize" style="margin-top: 4vh; background-color:#102840">
+		<div class="popupbg flex" id="settingscontainerbg"></div>
+		<div class="nspopup flexsize" id="settingscontainerfg" style="margin-top: 4vh;">
 			<div class="popuptitlebar">
 				<div class="popuptitletext" title="Settings Menu">Settings</div>
 			</div>
@@ -21534,7 +21440,7 @@ Current version indicated by LITEVER below.
 								</div>
 							</div>
 
-							<div style="border-top: 1px solid #12324f; margin-top: 4px;">
+							<div style="border-top: 1px solid #465d73; margin-top: 4px;">
 								<div>
 									<div class="settinglabel" style="margin-top: 2px;">
 										<div class="justifyleft settingsmall">Alerts <span class="helpicon">?<span class="helptext">Triggers alerts when a generation is completed.</span></span></div>
@@ -21628,7 +21534,7 @@ Current version indicated by LITEVER below.
 						</div>
 
 
-						<div class="settinglabel" style="border-top: 1px solid #12324f; margin-top: 4px;">
+						<div class="settinglabel" style="border-top: 1px solid #465d73; margin-top: 4px;">
 							<div class="justifyleft settingsmall" style="margin-top: 4px;">Voice Input <span class="helpicon">?<span class="helptext">Requires KoboldCpp with Whisper model loaded. Enables Speech-To-Text voice input. Automatically listens for speech in 'On' mode (Voice Detection), or use Push-To-Talk (PTT).</span></span></div>
 							<select title="Speech To Text Mode" style="padding:1px; height:auto; font-size: 8pt;" class="form-control" id="voice_typing_mode">
 								<option value="0">Off</option>
@@ -21719,6 +21625,12 @@ Current version indicated by LITEVER below.
 									<span class="helptext">If enabled, oversized imported images will be cropped to fit. If disabled, images will be letterboxed instead.</span>
 								</span>: </div>
 								<input title="Crop Images" type="checkbox" id="img_crop" style="margin:0px 0 0;">
+							</div>
+							<div class="inlinelabel">
+								<div class="justifyleft rowitem">Insert Images as New Message <span class="helpicon">?
+									<span class="helptext">If enabled, images will be added in a new turn message instead of the existing one.</span>
+								</span>: </div>
+								<input title="Insert Images as New Message" type="checkbox" id="img_newturn" style="margin:0px 0 0;">
 							</div>
 						</div>
 					</div>
@@ -21850,6 +21762,11 @@ Current version indicated by LITEVER below.
 							</select>
 						</div>
 						<div class="settinglabel">
+							<div class="justifyleft settingsmall">SidePanel Mode <span class="helpicon">?<span
+								class="helptext">Displays the settings and context panels permanently on the sides, instead of as popups. Not available on Mobile displays.</span></span></div>
+						   <input title="Inverted Colors" type="checkbox" id="sidepanel_mode" style="margin:0px 0px 0px auto;">
+						</div>
+						<div class="settinglabel">
 							<div class="justifyleft settingsmall">Inverted Colors <span class="helpicon">?<span
 								class="helptext">Inverts all colors, simple light mode</span></span></div>
 						   <input title="Inverted Colors" type="checkbox" id="invert_colors" style="margin:0px 0px 0px auto;">
@@ -21870,454 +21787,12 @@ Current version indicated by LITEVER below.
 
 			</div>
 
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" id="btn_settingsaccept"
-					onclick="confirm_settings()">OK</button>
-				<button type="button" class="btn btn-primary" id="btn_settingsclose"
-					onclick="hide_popups()">Cancel</button>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="memorycontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizebig evenhigher">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Context Data</div>
-			</div>
-			<div><ul class="nav nav-tabs settingsnav">
-				<li id="memory_tab" class="active"><a class="" href="#" onclick="display_memory_tab(0)">Memory</a></li>
-				<li id="wi_tab"><a class="" href="#" onclick="display_memory_tab(1)">World Info</a></li>
-				<li id="documentdb_tab"><a class="" href="#" onclick="display_memory_tab(2)">TextDB</a></li>
-				<li id="websearch_tab"><a class="" href="#" onclick="display_memory_tab(3)">WebSearch</a></li>
-				<li id="token_tab"><a class="" href="#" onclick="display_memory_tab(4)">Tokens</a></li>
-			  </ul></div>
-
-			<div class="context_tab_container" id="memory_tab_container">
-				<div class="settinglabel">
-					<span class="justifyleft">Memory<span class="helpicon">?<span
-						class="helptext">Put the information you want the AI to always remember. It will be inserted into the top of every request sent to the AI.</span></span></span>
-					<span class="justifyright flex-push-right" >
-						<div class="settinglabel" style="padding-top: 4px;">
-							<div class="justifyleft settingsmall" title="Add newline after injecting memory text">Newline After Memory </div>
-						<input type="checkbox" title="Add Newline After Memory" id="newlineaftermemory" style="margin:0px 0 0;" checked>
-						</div>
-					</span>
-				</div>
-				<textarea title="Edit Memory" class="form-control menuinput_multiline" id="memorytext" style="height: 120px;"
-					placeholder="Edit the memory to be sent with each request to the AI."></textarea>
-				<div class="settinglabel">
-					<div class="justifyleft"><br>Author's Note<span class="helpicon">?<span
-						class="helptext">Similar to Memory, but inserted near the end of the text instead of the start. A good way to control the mood/behavior of the AI.</span></span></div>
-					<span class="justifyright flex-push-right" >
-						<button type="button" class="btn btn-primary" style="padding:4px 6px;margin-top:4px;" id="btnnotes" onclick="set_personal_notes()">Notes</button>
-						<button type="button" class="btn btn-primary" style="padding:4px 6px;margin-top:4px;" id="btnautogenmem" onclick="autogenerate_summary_memory()">AutoGenerate Memory</button>
-					</span>
-				</div>
-				<textarea title="Edit Author's Note" style="height: 80px;" class="form-control menuinput_multiline" id="anotetext"
-					placeholder="Author's Note will be inserted close to end of context."></textarea>
-				<br>
-				<div class="settinglabel">
-					<span class="justifyleft">Author's Note Template<span class="helpicon">?<span
-						class="helptext">A placeholder, will be inserted with the author's note replacing the &lt;|&gt;. You generally don't need to change this.</span></span></span>
-					<span class="justifyright flex-push-right" >
-						A/N Strength<span class="helpicon">?<span
-							class="helptext">Controls how far back to insert the Author's Note. Notes injected closer to the end have a stronger effect.</span></span>
-					</span>
-				</div>
-				<div style="display: flex; column-gap: 4px;">
-				<input title="Author's Note Template" class="form-control menuinput_inline" type="text"
-					placeholder="(the &lt;|&gt; will be replaced with the Author's Note text)" value="" id="anotetemplate">
-					<select title="Author's Note Strength" style="padding:4px; display: inline;	width: 94px; padding: 6px 3px;" class="form-control" id="anote_strength">
-						<option value="480">Weak</option>
-						<option value="320">Medium</option>
-						<option value="160">Strong</option>
-						<option value="0">Immediate</option>
-					</select>
-				</div>
-			</div>
-
-			<div class="context_tab_container" id="wi_tab_container">
-				<div style="text-align: right;">
-				<button type="button" style="padding:4px;margin:4px" class="btn bluebtn widelbtn" id="wiadd" onclick="add_wi()">+Add</button>
-				</div>
-				<div class="wilist" id="wilist">
-				</div>
-
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall">WI Insert Location <span class="helpicon">?<span
-						class="helptext">Controls where the world info should be inserted</span></span></div>
-				<select title="World Info Insert Location" style="height:16px;padding:0px;margin:0px 4px 0; width:90px;font-size:10px;" class="form-control" id="wi_insertlocation">
-					<option value="0">After Memory</option>
-					<option value="1">Before A/N</option>
-				</select></div>
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall">WI Search Depth <span class="helpicon">?<span
-						class="helptext">Controls how far back in the text to search for World Info Keys</span></span></div>
-				<select title="World Info Search Depth" style="height:16px;padding:0px;margin:0px 4px 0; width:90px;font-size:10px;" class="form-control" id="wi_searchdepth">
-					<option value="0">Full Context</option>
-					<option value="8192">Last 8192</option>
-					<option value="4096">Last 4096</option>
-					<option value="2048">Last 2048</option>
-					<option value="1024">Last 1024</option>
-					<option value="512">Last 512</option>
-					<option value="256">Last 256</option>
-				</select></div>
-
-
-				<div style="float:right;">
-					<input title="World Info Quick Search" class="settinglabel miniinput" style="margin: 3px; width: 90px;" type="text" placeholder="Quick Search" value="" id="wiquicksearch" oninput="wi_quick_search()">
-				</div>
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall" title="Controls whether the world info keys are matched in a case-sensitive way.">Case Sensitive Keys </div>
-				<input title="World Info Case Sensitive" type="checkbox" id="case_sensitive_wi" style="margin:0px 0 0;">
-				</div>
-			</div>
-
-			<div class="context_tab_container" id="documentdb_tab_container">
-				<div class="settinglabel" style="padding: 4px;">Automatically search and include relevant snippets from a text document or history.</div>
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall" title="Enable TextDB">Enable TextDB </div>
-					<input title="Enable TextDB" type="checkbox" id="documentdb_enabled" style="margin:0px 0 0;">
-				</div>
-
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall" title="Search Includes Context History">Search Includes Context History <span class="helpicon">?
-						<span class="helptext">If enabled, the entire story/chat history is used as a searchable document</span></span></div>
-					<input title="Search Context History" type="checkbox" id="documentdb_searchhistory" style="margin:0px 0 0;">
-				</div>
-
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall">Num. Search Results <span class="helpicon">?
-					<span class="helptext">Controls how many snippets to retrieve from DB</span></span></div>
-					<input title="Number of Search Results" class="settinglabel miniinput"
-						style="height:16px;margin:0px 4px 0; width:90px;font-size:10px;" type="number"
-						min="1" max="5" step="1" pattern="\d+" placeholder="" value="" id="documentdb_numresults">
-				</div>
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall">Nearby Text Amount <span class="helpicon">?
-						<span class="helptext">Controls	amount of nearby text included in the search query</span></span>
-					</div>
-					<input title="Nearby Text Amount" class="settinglabel miniinput"
-						style="height:16px;margin:0px 4px 0; width:90px;font-size:10px;" type="number"
-						min="1" step="1" pattern="\d+" placeholder="" value="" id="documentdb_searchrange">
-				</div>
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall">Search Chunk Size <span class="helpicon">?
-					<span class="helptext">Controls the size of each snippet being searched for</span></span>
-					</div>
-					<input title="Search Chunk Size" class="settinglabel miniinput"
-						style="height:16px;margin:0px 4px 0; width:90px;font-size:10px;" type="number"
-						min="0" step="1" pattern="\d+" placeholder="" value="" id="documentdb_chunksize">
-				</div>
-				<div class="settinglabel">
-					<div class="justifyleft"><br>TextDB Storage<span class="helpicon">?<span
-						class="helptext">Paste as much raw text data here as you like. E.g. background information, reference documents, etc. This text will populate the database that will be chunked and searched by TextDB.</span></span></div>
-				</div>
-				<textarea title="Edit TextDB" class="form-control menuinput_multiline" id="documentdb_data" style="height: 120px;"
-					placeholder="Paste as much text data here as you like. This text will populate the database that will be searched by TextDB."></textarea>
-			</div>
-
-			<div class="context_tab_container" id="websearch_tab_container">
-				<div class="settinglabel" style="padding: 4px;">Search the Web for relavant information when using instruct mode<br>(Requires WebSearch enabled KoboldCpp)</div>
-				<div id="websearchunsupporteddiv" class="color_red hidden" style="font-weight:bold;padding:3px;font-size:12px">WebSearch Not Supported</div>
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall" title="Enable WebSearch">Enable WebSearch </div>
-					<input title="Enable WebSearch" type="checkbox" id="websearch_enabled" style="margin:0px 0 0;">
-				</div>
-				<div class="settinglabel" style="padding: 4px;">
-					<div class="justifyleft settingsmall" title="Use Multiple Passes">Use Multiple Passes <span class="helpicon">?<span
-						class="helptext">Using this option will run a second LLM tool call to summarize context and create a more accurate search query. Slower but may be more accurate.</span></span></div>
-					<input title="Use Multiple Passes" type="checkbox" id="websearch_multipass" style="margin:0px 0 0;">
-				</div>
-				<div class="justifyleft settinglabel">Multipass WebSearch Template <span class="helpicon">?<span
-					class="helptext">The template used to generate the search query when multipass search is used</span></span></div>
-					<div style="display: flex; column-gap: 4px; margin-bottom: 4px;">
-					<textarea title="Multipass WebSearch Template" style="height: 80px;" class="form-control menuinput_multiline" id="websearch_template"
-					placeholder=""></textarea>
-				</div>
-			</div>
-
-			<div class="context_tab_container" id="token_tab_container">
-				<div class="justifyleft settinglabel">Extra Stopping Sequences <span class="helpicon">?<span
-					class="helptext">Triggers the text generator to stop generating early if this sequence appears, in addition to default stop sequences. If you want multiple sequences, separate them with the following delimiter: ||$||</span></span></div>
-					<div class="color_red hidden" id="noextrastopseq">Stop Sequences may be unavailable.</div>
-					<div style="display: flex; column-gap: 4px; margin-bottom: 4px;">
-					<input title="Extra Stopping Sequences" class="form-control menuinput_inline" type="text" placeholder="None" value="" id="extrastopseq">
-					<button type="button" class="btn btn-primary" style="width:90px;padding:6px 6px;" onclick="add_stop_seq()">Add New</button>
-				</div>
-
-				<div style="padding:3px;" class="justifyleft settinglabel">Logit Biases <span class="helpicon">?<span
-					class="helptext">Specify a dictionary of token IDs to modify the probability of occuring.</span></span>
-					<button type="button" title="Logit Biases" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandlogitbias')">Expand Section</button>
-				</div>
-				<div id="expandlogitbias" class="hidden">
-					<div class="color_red hidden" id="nologitbias">Logit bias may be unavailable.</div>
-					<div style="color:#ffffff;">Enter OpenAI-formatted logit bias dictionary. Each key is the integer token IDs and their values are the biases (-100.0 to 100.0). Leave blank to disable.<br><a href='https://platform.openai.com/docs/api-reference/chat/create#chat-create-logit_bias' target='_blank' class='color_blueurl'>Input is a JSON object, reference here.</a><br></div>
-					<textarea class="form-control menuinput_multiline" style="height: 80px;line-height:1.1;margin-bottom: 4px;" id="logitbiastxtarea" placeholder="" rows="5"></textarea>
-					<div style="display: flex; column-gap: 4px; margin-bottom: 4px;">
-					<input style="padding:2px" class="form-control menuinput_inline hidden" inputmode="text" type="text" placeholder="Token String" value="" id="newlogitbiasstring">
-					<input style="padding:2px" class="form-control menuinput_inline" inputmode="numeric" type="text" placeholder="Token ID" value="" id="newlogitbiasid">
-					<input style="padding:2px" class="form-control menuinput_inline" inputmode="text" type="text" placeholder="Bias Value" value="" id="newlogitbiasval">
-					<button type="button" class="btn btn-primary" style="width:90px;padding:6px 6px;" onclick="add_logit_bias()">Add New</button>
-					</div>
-					<div class="settinglabel hidden" id="newlogitbiasstringtogglesection">
-						<div class="justifyleft settingsmall">Input Strings Instead of IDs (Uses KCPP Tokenizer) <span class="helpicon">?<span
-							class="helptext">If enabled, allows you to input strings instead of only token IDs, and tokenizes them for you.</span></span></div>
-						<input type="checkbox" id="newlogitbiasstringtoggle" onclick="toggle_logit_bias_string()">
-					</div>
-				</div>
-
-				<div style="padding:3px;" class="justifyleft settinglabel">Phrase / Word Ban (Anti-Slop) <span class="helpicon">?<span
-					class="helptext">Prevents specific words or phrases from being generated, either modifying model vocab or by backtracking and regenerating when they appear. If you want multiple sequences, separate them with the following delimiter: ||$||</span></span>
-					<button type="button" title="Phrase / Token Ban (Anti-Slop)" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandtokenbans')">Expand Section</button>
-				</div>
-				<div id="expandtokenbans" class="hidden">
-					<div class="color_red hidden" id="notokenbans">Phrase banning may be unavailable.</div>
-					<div style="color:#ffffff;">Prevents specific words or phrases from being generated, either modifying model vocab or by backtracking and regenerating when they appear. If you want multiple sequences, separate them with the following delimiter: ||$||<br><em>Note: If you're trying to ban a specific token by ID, you should use Logit Bias instead!</em><br></div>
-					<div style="display: flex; column-gap: 4px; margin-bottom: 4px;">
-					<input class="form-control menuinput_inline" type="text" placeholder="None" value="" id="tokenbans">
-					<button type="button" class="btn btn-primary" style="width:90px;padding:6px 6px;" onclick="add_token_ban()">Add New</button>
-					</div>
-				</div>
-
-				<div style="padding:3px;" class="justifyleft settinglabel">Regex Replace <span class="helpicon">?<span
-					class="helptext">Allows transforming incoming text with regex patterns, modifying all matches. Replacements will be applied in sequence.</span></span>
-					<button type="button" title="Regex Replace" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandregexreplace')">Expand Section</button>
-				</div>
-				<div id="expandregexreplace" class="hidden">
-					<table id="regex_replace_table" class="settinglabel" style="border-spacing: 3px 2px; border-collapse: separate; text-align: center;">
-					</table>
-				</div>
-
-				<div style="padding:3px;" class="justifyleft settinglabel">Thinking / Reasoning Tags <span class="helpicon">?<span
-					class="helptext">Allows hiding or removing thinking tags.</span></span>
-					<button type="button" title="Regex Replace" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandthinking')">Expand Section</button>
-				</div>
-				<div id="expandthinking" class="hidden">
-					<div class="settinglabel justifyleft">This allows you to specify regex to handle output from reasoning models, to hide, remove, or ignore the Chain-Of-Thought.</div>
-					<div style="padding:4px" class="settinglabel justifyleft">CoT Regex Pattern: <input class="settinglabel miniinput" style="margin-left:4px;width:calc(100% - 132px);" type="text" placeholder="(Inactive)" value="" id="thinking_pattern"></div>
-					<div style="padding:4px" class="settinglabel justifyleft">CoT Handling: <select class="form-control" style="margin-left:4px;height: 25px; font-size:12px; padding:2px;display:inline;width:120px" id="thinking_action">
-						<option value="0" selected>Display</option>
-						<option value="1">Collapse</option>
-						<option value="2">Hide</option>
-						<option value="3">Remove</option>
-					</select></div>
-					<div style="padding:4px" class="settinglabel justifyleft">Don't Submit Old Thoughts <input title="Do not submit Past Thoughts" type="checkbox" id="strip_past_thinking" style="margin:4px;"></div>
-					<div style="padding:4px" class="settinglabel justifyleft">Force Insert Thinking Tag <input title="Force Insert Thinking Tag" type="checkbox" id="force_thinking_tag" style="margin:4px;"><input class="settinglabel miniinput" style="margin-left:4px;width:100px;" type="text" placeholder="" value="" id="start_thinking_tag"></div>
-					<div style="padding:4px" class="settinglabel justifyleft">Note: 'Force Insert Thinking Tags' does not work with the 'Remove' option of CoT handling regex.</div>
-				</div>
-
-				<div style="padding:3px;" class="justifyleft settinglabel">Placeholder Tags <span class="helpicon">?<span
-					class="helptext">Configure automatic substitutions for placeholders in text.</span></span>
-					<button type="button" title="Placeholder Tags" class="btn btn-primary" style="font-size:12px;padding:2px 2px;" onclick="expand_tokens_section('expandplaceholdertags')">Expand Section</button>
-				</div>
-				<div id="expandplaceholdertags" class="hidden">
-					<div class="settinglabel justifyleft">Stories can use placeholders like {{user}} and {{[INPUT]}} that require dynamic substitution. If disabled, uses plaintext tags verbatim.</div>
-					<div class="settinglabel">
-						<div class="justifyleft settingsmall">Enable Placeholder Tags <span class="helpicon">?<span
-							class="helptext">If enabled, uses placeholders that get swapped on submit. If disabled, uses plaintext verbatim.</span></span></div>
-					<input type="checkbox" id="placeholder_tags2">
-					</div>
-					<table id="placeholder_replace_table" class="settinglabel" style="text-align: center; border-spacing: 3px 2px; border-collapse: separate;">
-					</table>
-					<div class="settinglabel justifyleft">To modify {{[INPUT]}} or {{[OUTPUT]}} and other instruct tags, please edit them in the Settings &gt; Format page.</div>
-				</div>
-
-			</div>
-
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="confirm_memory();save_wi();commit_wi_changes();render_gametext();sync_multiplayer(true);hide_popups()">OK</button>
-				<button type="button" class="btn btn-primary" onclick="hide_popups();">Cancel</button>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="workercontainer">
-		<div class="popupbg flex"></div>
-		<div class="workerpopup">
-			<div class="popuptitlebar">
-				<div><span style="float:right;">
-					<input class="settinglabel miniinput" style="margin: 3px; width: 90px;" type="text" placeholder="Quick Search" value="" id="workerlistquicksearch" oninput="worker_list_quick_search()">
-				</span></div>
-				<div class="popuptitletext" id="worktitlecount">Worker List</div>
-			</div>
-			<div class="workerTableDiv">
-			<table class="table workerTable" style="text-align: center;">
-			<thead class="sticky-top bg-white">
-			<tr><th><a class="color_blueurl" href="#" onclick="sort_display_workers('name')">Name</a></th><th><a class="color_blueurl" href="#" onclick="sort_display_workers('defaultmodel')">Model</a></th><th><a class="color_blueurl" href="#" onclick="sort_display_workers('tokenspersec')">Capabilities</a></th><th><a class="color_blueurl" href="#" onclick="sort_display_workers('uptime')">Uptime</a></th><th><a class="color_blueurl" href="#" onclick="sort_display_workers('kudos_rewards')">Kudos</a></th></tr>
-			</thead>
-			<tbody id="workertable">
-			</tbody>
-			</table>
-			</div>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="hide_workertable()">OK</button>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="myownworkercontainer">
-		<div class="popupbg flex"></div>
-		<div class="workerpopup">
-			<div class="popuptitlebar">
-				<div class="popuptitletext" id="myownworktitlecount">My Worker List</div>
-			</div>
-			<div class="workerTableDiv">
-			<table class="table workerTable" style="text-align: center;">
-			<thead class="sticky-top bg-white">
-			<tr><th>Name</th><th>Description</th><th>Uptime</th><th>Kudos</th><th>Maint.</th><th>Del.</th></tr>
-			</thead>
-			<tbody id="myownworkertable">
-			</tbody>
-			</table>
-			</div>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="update_my_workers();hide_workertable()">OK</button>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="sharecontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizevsmall higher">
-			<div class="popuptitlebar">
-				<div class="popuptitletext" id="sharecontainertitle">Share Story</div>
-			</div>
-			<div class="menutext shareStory" id="sharestorytext" style=" word-wrap: break-word;">
-
-			</div>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="copy_share_url()">Copy</button>
-				<button type="button" class="btn btn-primary" onclick="hide_popups()">Close</button>
-			</div>
-			<div class="box-label hidden" id="sharewarning">Warning: This story is very long. It may not load in some browsers. You should save it as a file instead.</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="dynatempcontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizevsmall">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Dynamic Temperature Wizard</div>
-			</div>
-			<div class="inlinelabel">
-			Dynamic temperature is specified by a Temperature Value and a Temperature Range. Actual temperature is allowed to be automatically adjusted dynamically between (DynaTemp ± DynaRange).<br><br>
-			For ease of use, a simple converter is provided here. Setting both values to the same temperature disables DynaTemp.<br><br>
-			</div>
-
-			<div class="inlinelabel">
-				<div class="justifyleft" style="padding:4px">Minimum Temperature: </div>
-				<input type="text" oninput="preview_dynatemp(false)" inputmode="decimal" id="dynatemp_min" style="width:60px">
-			</div>
-			<div class="inlinelabel">
-				<div class="justifyleft" style="padding:4px">Maximum Temperature: </div>
-				<input type="text" oninput="preview_dynatemp(false)" inputmode="decimal" id="dynatemp_max" style="width:60px">
-			</div>
-			<hr>
-			<div class="inlinelabel">
-				<div class="justifyleft" style="padding:4px">Temperature:</div>
-				<input type="text" oninput="preview_dynatemp(true)" inputmode="decimal" id="dynatemp_outtemp" style="width:60px" >
-			</div>
-			<div class="inlinelabel">
-				<div class="justifyleft" style="padding:4px">DynaTemp-Range:</div>
-				<input type="text" oninput="preview_dynatemp(true)" inputmode="decimal" id="dynatemp_range" style="width:60px" >
-			</div>
-			<hr>
-			<div class="inlinelabel">
-				<div class="justifyleft" style="padding:4px">DynaTemp-Exponent:</div>
-				<input type="text" oninput="preview_dynatemp(false)" inputmode="decimal" id="dynatemp_exponent" style="width:60px" >
-			</div>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="confirm_dynatemp()">Ok</button>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="addimgcontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizevsmall">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Add New Image</div>
-			</div>
-			<div class="menutext">
-				<button type="button" class="btn btn-primary bg_green" id="btn_inner_genimg_auto" onclick="add_img_btn_auto()">Generate Image (Automatic)</button>
-			</div>
-			<div class="menutext">
-				<button type="button" class="btn btn-primary bg_green" id="btn_inner_genimg_custom" onclick="add_img_btn_custom()">Generate Image (Custom Prompt)</button>
-			</div>
-			<div class="menutext">
-				<button type="button" class="btn btn-primary bg_green" onclick="add_img_btn_upload()">Upload Image File</button>
-			</div>
-			<div class="menutext">
-				<button type="button" class="btn btn-primary bg_green" onclick="add_img_btn_paste()">Paste from Clipboard</button>
-			</div>
-			<div class="menutext">
-				<button type="button" class="btn btn-primary" onclick="hide_popups();display_settings();display_settings_tab(2);">Customize Settings</button>
-			</div>
-			<div class="menutext hidden" id="btn_open_stableui">
-				<button type="button" class="btn btn-primary bg_purple" onclick="go_to_stableui()">Go To StableUI</button>
-			</div>
-			<br>
-			<input type="file" id="addimgfileinput" style="display:none" accept="image/*">
-			<div class="popupfooter">
+			<div id="settingscontainerfooter" class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="confirm_settings()">OK</button>
 				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
 			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="pasteimgcontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizevsmall">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Paste Image From Clipboard</div>
-			</div>
-			<input type="text" id="pasteimgwin" style="width:100%; height:100px; text-align: center;" oninput="clear_paste_window()" onpaste="return img_paste_event(event)" value="" placeholder="[Drag/Paste Image Here]">
-			<br>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="choosesharecontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizevsmall">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Share Story Import / Export</div>
-			</div>
-			<div class="menutext">
-				<button type="button" class="btn btn-primary bg_green" onclick="export_share_story(0)">Export Share as TextData</button>
-			</div>
-			<div class="menutext">
-				<button type="button" class="btn btn-primary bg_green" onclick="export_share_story(1)">Export Share as Web URL</button>
-			</div>
-			<div class="menutext">
-				<button type="button" class="btn btn-primary bg_green" onclick="export_share_story(2)">Export Share as Plaintext</button>
-			</div>
-			<div class="menutext">
-				<button type="button" class="btn btn-primary" onclick="import_share_story()">Import Share from TextData</button>
-			</div>
-			<br>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
-			</div>
-		</div>
-	</div>
-
-	<div class="popupcontainer flex hidden" id="groupselectcontainer">
-		<div class="popupbg flex"></div>
-		<div class="nspopup flexsizevsmall">
-			<div class="popuptitlebar">
-				<div class="popuptitletext">Chat Selectors</div>
-			</div>
-			<div class="menutext">
-				<div id="groupselectitems">
-				</div>
-			</div>
-			<div class="popupfooter">
-				<button type="button" class="btn btn-primary" onclick="confirm_groupchat_select()">Ok</button>
-				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
+			<div id="settingscontainerfooter2" class="popupfooter hidden">
+				<button type="button" class="btn btn-primary" onclick="confirm_settings()">Apply</button>
 			</div>
 		</div>
 	</div>
@@ -22496,6 +21971,752 @@ Current version indicated by LITEVER below.
 					<div id="aesthetic_text_preview" style="background-color: black; margin: 2px; text-align: left; word-wrap: break-word;"></div>
 				</div>
 				<input type="file" id="portraitFileInput" style="display:none" accept="image/*">
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="quickstartcontainer">
+		<div class="popupbg flex"></div>
+		<div class="scenariopopup">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Quick Start - Select A Scenario</div>
+			</div>
+
+			<div style="overflow: auto;">
+
+				<div class="scenariosearch">
+				<input class="scenariosearchbox1 form-control" type="text" placeholder="Quick Search" value=""
+					id="scenariosearch" oninput="scenario_search()">
+					<select class="scenariosearchbox2 form-control" id="scenariosearchdropdown" onchange="scenario_search()">
+						<option value="0">All</option>
+						<option value="1">Story</option>
+						<option value="2">Adventure</option>
+						<option value="3">Chat</option>
+						<option value="4">Instruct</option>
+					</select>
+				</div>
+				<div id="scenarioautopickbox" class="menutext" style="text-align: left; padding-left: 8px;">
+					Automatically select AI model <span class="helpicon">?
+						<span class="helptext">This option picks a suitable AI model based on the selected scenario. If no text model is currently selected, an appropriate one will be automatically picked for you.</span>
+					</span>
+					<input type="checkbox" id="scenarioautopickai" onchange="togglescenarioautopick()" checked>
+
+				</div>
+
+				<div id="scenariogrid" class="scenariogrid">
+				</div>
+				<div id="scenariodesc" class="scenariodesc">
+				</div>
+
+				<div class="popupfooter">
+					<button type="button" class="btn btn-primary" id=""
+						onclick="confirm_scenario_verify()">Ok</button>
+					<button type="button" class="btn btn-primary" id=""
+						onclick="hide_popups()">Cancel</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="charactercreator">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsize higher">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Roleplay Character Creator</div>
+			</div>
+			<div class="menutext">
+				This tool is an easy way to create your own roleplay characters.<br>Alternatively, you can <a href="#" class="color_blueurl" onclick="hide_popups();document.getElementById('loadfileinput').click()"><b>click here to import an existing Tavern Character Card</b></a>.<br><br>
+
+				<div class="inlinelabel">
+					<div class="justifyleft" style="padding:4px">Character Name: </div>
+					<input title="Character Name" style="width:calc(100% - 136px);" type="text" placeholder="Enter Bot's Name (e.g. Arthur Green)" value="" id="charcreator_name">
+				</div>
+				<div class="inlinelabel">
+					<div class="justifyleft" style="padding:4px">Character Avatar: </div>
+					<button type="button" class="btn btn-primary" style="padding:2px 4px;margin:2px;" onclick="selectAvatarImage(false)">Select Image</button>
+					<div id="charcreator_avatar" style="background-position: 50% 50%; background-size: 100% 100%; background-origin: content-box; background-repeat: no-repeat; width: 32px; height:32px; border-radius:100rem; background-clip: content-box; margin: 4px 4px; border:none;"></div>
+				</div>
+				<div class="inlinelabel">
+					<div class="justifyleft" style="padding:4px">Character Persona: </div>
+					<input title="Character Persona" style="width:calc(100% - 136px);" type="text" placeholder="Describe this character (e.g. 25yo Male Elf, Brave, Chatty)" value="" id="charcreator_persona">
+				</div>
+				<div class="inlinelabel">
+					<div class="justifyleft" style="padding:4px">Describe Scenario: </div>
+					<input title="Describe Scenario" style="width:calc(100% - 136px);" type="text" placeholder="Describe the scenario (e.g. A fireside chat at the spooky campsite)" value="" id="charcreator_scenario">
+				</div>
+				<div class="inlinelabel">
+					<div class="justifyleft" style="padding:4px">Character Greeting: </div>
+					<input title="Character Greeting" style="width:calc(100% - 136px);" type="text" placeholder="First message greeting (e.g. Hello, traveller!)" value="" id="charcreator_greeting">
+				</div>
+
+				After creating your character, you can edit it further at any time in the 'Context' memory window.
+			</div>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="character_creator_done(true);">Confirm</button>
+				<button type="button" class="btn btn-primary" onclick="character_creator_done(false);">Cancel</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="saveloadcontainer">
+		<div class="popupbg flex"></div>
+		<div class="saveloadpopup">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Save File / Load File / Export File</div>
+			</div>
+
+			<div style="overflow: auto;">
+				<div id="saveloadentries" class="menutext saveloadgrid">
+					<div style="display:flex">
+						<button type="button" style="font-size:12px; margin:2px;width:33%" name="localsave" class="btn btn-primary" onclick="hide_popups();save_file_button()">💾<br>Download File</button>
+						<button type="button" style="font-size:12px; margin:2px;width:33%" name="localload" class="btn btn-primary" onclick="hide_popups();load_file_button()">📁<br>Open File</button>
+						<button type="button" style="font-size:12px; margin:2px;width:34%" name="shareurl" class="btn btn-primary" onclick="hide_popups();share_story_button()">🌐<br>Share</button>
+					</div>
+					<div style="margin-top:3px; text-align: center; align-self: center; width: 100%">
+						<span style="font-weight:bold;text-decoration: underline;">Slot Storage Option</span>
+					</div>
+					<div style="display:flex;">
+						<div style="width: 92px; margin:8px; margin-left: 4px; margin-right: 4px; font-size: 14px;">Data Location</div>
+						<div style="margin:3px; text-align: center; align-self: center; width: calc(100% - 94px);">
+						<select title="Select Slot Location" style="padding:4px;" class="form-control" id="saveslotlocationdropdown" onchange="saveloadchangeslot(true)">
+						<option value="1">Local Browser Cache</option>
+						<option value="2" id="kcppsaveavailable" class="hidden">KoboldCpp Server Storage</option>
+						</select>
+						</div>
+					</div>
+					<div style="display:flex;">
+						<div style="width: 92px; margin:8px; margin-left: 4px; margin-right: 4px; font-size: 14px;">Selected Slot</div>
+						<div style="margin:3px; text-align: center; align-self: center; width: calc(100% - 94px);">
+						<select title="Select Save Slot" style="padding:4px;" class="form-control" id="saveslotselecteddropdown" onchange="saveloadchangeslot(false)">
+						</select>
+						</div>
+					</div>
+					<div style="width:100%;align-self: center;">
+						<button type="button" id="savetoslot" title="Save To Slot" class="btn btn-primary bg_primary" onclick="save_to_curr_slot()"><img class="btnicon-save"/> Save Slot</button>
+						<button type="button" id="loadfromslot" title="Load From Slot" class="btn btn-primary bg_primary" onclick="load_from_curr_slot()"><img class="btnicon-load"/> Load Slot</button>
+						<button type="button" id="downloadslot" title="Download Slot" class="btn btn-primary bg_green" onclick="download_from_curr_slot()"><img class="btnicon-download"/> Download</button>
+						<button type="button" id="deleteslot" title="Delete Slot" class="btn btn-primary bg_red" onclick="delete_from_curr_slot()"><img class="btnicon-delete"/> Delete Slot</button>
+					</div>
+				</div>
+				<div class="menutext"><p style="padding:6px;font-size: 10px;" class="color_red">Caution: Local Storage Slots are saved to a temporary cache and can be deleted by your browser. KoboldCpp remote storage will save data to a file in your KoboldCpp server. To avoid losing data, use the download file button.</p></div>
+				<div class="popupfooter">
+					<button type="button" class="btn btn-primary" id=""
+						onclick="hide_popups()">Back</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="customendpointcontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsize evenhigher">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Select your AI provider</div>
+			</div>
+			<div style="padding: 4px;">
+			<select id="unusedcustomapidropdown" style="display: none;"></select>
+			<select title="Select your AI provider" style="padding:4px;" class="form-control" id="customapidropdown" onchange="customapi_dropdown(true)">
+				<option value="0">AI Horde</option>
+				<option value="1">KoboldAI Remote API</option>
+				<option value="2">OpenAI Compatible API</option>
+				<option value="3">OpenRouter API</option>
+				<option value="4">Claude By Anthropic API</option>
+				<option value="5">PaLM/Gemini By Google API</option>
+				<option value="6">Cohere API</option>
+				<option value="7">MistralAI API</option>
+				<option value="8">Featherless API</option>
+				<option value="9">Grok API</option>
+			</select>
+			</div>
+
+			<div class="menutext" id="hordeloadmodelcontainer">
+				The AI Horde is a service that generates text using crowdsourced GPUs run by independent volunteer workers. Avoid sending privacy sensitive information. <a href="#" class="color_blueurl" onclick="explain_horde()">Click here for more info</a>
+				<div class="menutext" style="text-align: left;">
+					<span style="float:left; text-align: left;">
+					Your AI Horde API Key <span class="helpicon">?
+						<span class="helptext">You need an API key to use AI Horde to generate text. Get one at
+							https://aihorde.net/register or use the anonymous key 0000000000.</span>
+					</span>
+					<br><a href="#" id="showownworkerslink" class="color_blueurl hidden" onclick="show_my_own_workers()">[Manage My Workers]</a></span>
+					<span class="color_green" style="float:right; text-align: right;" id="kudos_bal">
+						Need a Key?<br><a class='color_blueurl' href='https://aihorde.net/register'>(Register New User)</a>
+					</span>
+				</div>
+				<input class="form-control" type="password" placeholder="Enter API Key (or use 0000000000)" value=""
+					id="apikey" onfocus="focus_api_keys()" onblur="fetch_kudo_balance();blur_api_keys()">
+
+				<div class="menutext" style="text-align: left;">
+					Select AI Horde Model <span class="helpicon">?
+						<span class="helptext">These are the models currently provided by AI Horde volunteers.</span>
+					</span> <a href="#" class="color_blueurl" onclick="reset_horde_selection()">[Reset]</a>
+					<span style="float:right;">
+					<a href="#" class="color_green" onclick="get_and_show_workers()">[See Current Volunteers] </a>
+					</span>
+					<select class="form-control" id="pickedmodel" size="7" multiple></select>
+				</div>
+
+				<div class="menutext" style="text-align: left;">
+					Select By Worker <span class="helpicon">?
+						<span class="helptext">This option explicitly assigns worker IDs, fixed based on the current workers available at model selection time.</span>
+					</span>
+					<input type="checkbox" id="manualworker" onclick="toggle_manual_horde_worker()">
+
+					<span style="float:right;">
+						<input class="settinglabel miniinput" style="margin: 3px; width: 90px;" type="text" placeholder="Quick Search" value="" id="modelquicksearch" oninput="model_quick_search()">
+					</span>
+				</div>
+
+			</div>
+
+			<div id="koboldcustom" class="menutext">
+				You can use this to connect to a KoboldAI instance running via a remote tunnel such as <span class="color_orange" style="font-weight: bold;">trycloudflare, localtunnel, ngrok</span>.<br><br>
+				Localhost IPs require host mode enabled. You can use the remote address displayed in the <span class="color_orange" style="font-weight: bold;">terminal console</span> or <span class="color_orange" style="font-weight: bold;">colab window</span>, note that the model must be loaded first.<br><br>
+				<span class="color_green" style="font-weight: bold;">Please input URL of the KoboldAI instance.</span><br><br>
+				<input class="form-control" id="customkoboldendpoint" placeholder="https://sample-remote-address.trycloudflare.com" value="">
+				<input class="form-control" type="password" id="customkoboldkey" placeholder="KoboldAI API Key (Optional)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
+				<div class="borderbox flex flex-push-right">
+					<input type="checkbox" id="remoteconsolelog">
+					<div class="box-label" title="Will display outputs to the remote endpoint's console logs, useful for debugging.">Show Console Logging</div>
+				</div>
+			</div>
+			<div id="oaicustom" class="menutext hidden">
+				<span id="oaidesc">
+				Entering your OpenAI API key will allow you to use KoboldAI Lite with their API.<br><br>
+				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the OpenAI API and is not transmitted to us.<br>Only Temperature, Top-P and Repetition Penalty samplers are used.<br><br>
+				<span class="color_green" style="font-weight: bold;">Please input OpenAI API URL and Key.</span><br><br>
+				</span>
+				<span id="openrouterdesc" class="hidden">
+				Entering your OpenRouter API key will allow you to use KoboldAI Lite with their API.<br><br>
+				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the OpenRouter API and is not transmitted to us.<br>Only Temperature, Top-P and Repetition Penalty samplers are used.<br><br>
+				<span class="color_green" style="font-weight: bold;">Please input OpenRouter Key.</span><br><br>
+				</span>
+				<span id="mistralaidesc" class="hidden">
+				Entering your MistralAI API key will allow you to use KoboldAI Lite with their API.<br><br>
+				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the MistralAI API and is not transmitted to us.<br>Only Temperature and Top-P samplers are used.<br><br>
+				<span class="color_green" style="font-weight: bold;">Please input MistralAI Key.</span><br><br>
+				</span>
+				<span id="featherlessdesc" class="hidden">
+				Entering your Featherless API key will allow you to use KoboldAI Lite with their API.<br><br>
+				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the Featherless API and is not transmitted to us.<br>Only Temperature, Top-P, Top-K, Min-P and Repetition Penalty samplers are used.<br><br>
+				<span class="color_green" style="font-weight: bold;">Please input Featherless Key.</span><br><br>
+				</span>
+				<span id="grokdesc" class="hidden">
+				Entering your Grok API key will allow you to use KoboldAI Lite with their API.<br><br>
+				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the Grok API and is not transmitted to us.<br>Only Temperature, Top-P, Top-K, Min-P and Repetition Penalty samplers are used.<br><br>
+				<span class="color_green" style="font-weight: bold;">Please input Grok Key.</span><br><br>
+				</span>
+
+				<input class="form-control" type="text" id="custom_oai_endpoint" placeholder="OpenAI API URL" value="" onblur="try_fetch_oai_models_auto()">
+				<input class="form-control" type="password" id="custom_oai_key" placeholder="API Key (Required)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
+				Model Choice:<br>
+				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control" id="custom_oai_model" onchange="oai_model_change(true)">
+					<option value="gpt-3.5-turbo-instruct" selected="selected">gpt-3.5-turbo-instruct</option>
+					<option value="davinci-002">davinci-002</option>
+					<option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+					<option value="gpt-3.5-turbo-16k">gpt-3.5-turbo-16k</option>
+					<option value="gpt-4">gpt-4</option>
+					<option value="gpt-4-turbo">gpt-4-turbo</option>
+					<option value="gpt-4o">gpt-4o</option>
+					<option value="gpt-4-32k">gpt-4-32k</option>
+					<option value="o1-mini">o1-mini</option>
+					<option value="o1-preview">o1-preview</option>
+					<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
+				</select>
+				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control hidden" id="custom_openrouter_model" onchange="oai_model_change(true)">
+					<option value="openai/gpt-3.5-turbo">openai/gpt-3.5-turbo</option>
+					<option value="openai/gpt-4">openai/gpt-4</option>
+					<option value="openai/gpt-3.5-turbo-instruct">openai/gpt-3.5-turbo-instruct</option>
+					<option value="mistralai/mistral-7b-instruct" selected="selected">mistralai/mistral-7b-instruct</option>
+					<option value="gryphe/mythomax-l2-13b">gryphe/mythomax-l2-13b</option>
+					<option value="huggingfaceh4/zephyr-7b-beta">huggingfaceh4/zephyr-7b-beta</option>
+					<option value="anthropic/claude-2.0">anthropic/claude-2.0</option>
+					<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
+				</select>
+				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control hidden" id="custom_mistralai_model" onchange="oai_model_change(true)">
+					<option value="open-mistral-7b">open-mistral-7b</option>
+					<option value="open-mistral-nemo">open-mistral-nemo</option>
+					<option value="open-mixtral-8x22b">open-mixtral-8x22b</option>
+					<option value="mistral-tiny">mistral-tiny</option>
+					<option value="mistral-small">mistral-small</option>
+					<option value="mistral-medium-latest">mistral-medium-latest</option>
+					<option value="mistral-large-latest">mistral-large-latest</option>
+					<option value="pixtral-12b-latest">pixtral-12b-latest</option>
+					<option value="pixtral-large-latest">pixtral-large-latest</option>
+					<option value="codestral-latest">codestral-latest</option>
+					<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
+				</select>
+				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control hidden" id="custom_featherless_model" onchange="oai_model_change(true)">
+					<option value="Sao10K/L3-8B-Lunaris-v1">Sao10K/L3-8B-Lunaris-v1</option>
+					<option value="Sao10K/L3-8B-Stheno-v3.2">Sao10K/L3-8B-Stheno-v3.2</option>
+					<option value="unsloth/llama-3-8b-Instruct">unsloth/llama-3-8b-Instruct</option>
+					<option value="beomi/Llama-3-Open-Ko-8B">beomi/Llama-3-Open-Ko-8B</option>
+					<option value="Sao10K/Fimbulvetr-11B-v2">Sao10K/Fimbulvetr-11B-v2</option>
+					<option value="HuggingFaceH4/zephyr-7b-beta">HuggingFaceH4/zephyr-7b-beta</option>
+					<option value="upstage/SOLAR-10.7B-Instruct-v1.0">upstage/SOLAR-10.7B-Instruct-v1.0</option>
+					<option value="alpindale/magnum-72b-v1">alpindale/magnum-72b-v1</option>
+					<option value="Sao10K/L3-70B-Euryale-v2.1">Sao10K/L3-70B-Euryale-v2.1</option>
+					<option value="alpindale/WizardLM-2-8x22B">alpindale/WizardLM-2-8x22B</option>
+					<option value="meta-llama/Meta-Llama-3.1-405B-Instruct">meta-llama/Meta-Llama-3.1-405B-Instruct</option>
+				<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
+				</select>
+				<select style="padding:4px;display:inline;width:calc(100% - 220px)" class="form-control hidden" id="custom_grok_model" onchange="oai_model_change(true)">
+					<option value="grok-beta">grok-beta</option>
+					<option style="display:none;" class="custom_model_option" value="custom">[Custom]</option>
+				</select>
+				<button type="button" class="btn btn-primary" style="display:inline;width:105px;" id="oaifetchlist" onclick="oai_fetch_models()">Fetch List</button>
+				<button type="button" class="btn btn-primary" style="display:inline;width:105px;" id="oaiusecustom" onclick="select_custom_oai_model()">Use Custom</button>
+				<div class="hidden" id="oaiemulatecompletionsbox">
+					<div><input type="checkbox" id="oaiemulatecompletions" title="Emulate Completions with Prefill">
+					<div class="box-label">Emulate Completions API with Prefill</div></div>
+				</div>
+				<div style="display:inline-flex">
+					<div><input type="checkbox" id="oaiaddversion" title="Add Endpoint Version Number" onchange="" checked>
+					<div class="box-label">Add Ver. Num</div></div>
+					<div><input type="checkbox" id="oaistreaming" title="Enable SSE Streaming" onchange="">
+					<div class="box-label">Streaming</div></div>
+					<div><input type="checkbox" id="useoaichatcompl" title="Use ChatCompletions API" onchange="toggleoaichatcompl()">
+					<div class="box-label">Chat-Completions API</div></div>
+					<div><input type="checkbox" id="useoainonstandard" title="Send Non-Standard Fields">
+					<div class="box-label">Non-Standard Fields</div></div>
+				</div>
+				<span id="useoaichatcomplbox" class="hidden" onload="toggleoaichatcompl();">
+					<br>
+					Main Message Role:
+					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" id="oairoledropdown">
+						<option value="0" selected>User</option>
+						<option value="1">Assistant</option>
+						<option value="2">System</option>
+						<option value="3">AutoRole</option>
+					</select>
+					<input type="checkbox" id="jailbreakprompt" onchange="togglejailbreak()">
+					<div class="box-label" title="Adds extra text at the start to improve AI response">Add Prefix</div>
+					<input type="checkbox" id="jailbreakprompt2" onchange="togglejailbreak2()">
+					<div class="box-label" title="Adds extra text to the end to improve AI response">Add Postfix</div>
+
+					<div style="display:flex" id="oaijailbreakpromptblock1">
+					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" id="jailbreakprompttextrole">
+						<option value="0">User</option>
+						<option value="1">Assistant</option>
+						<option value="2" selected>System</option>
+					</select>
+					<textarea class="form-control" rows="3" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" id="jailbreakprompttext" placeholder="(Enter System Prefix)"
+					value="" onload="togglejailbreak();"></textarea>
+					</div>
+
+					<div style="display:flex" id="oaijailbreakpromptblock2">
+					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" id="jailbreakprompttext2role">
+						<option value="0">User</option>
+						<option value="1" selected>Assistant</option>
+						<option value="2">System</option>
+					</select>
+					<textarea class="form-control" rows="3" style="resize: vertical; line-height:1.1; padding:4px;  display:inline; width: 100%;" type="text" id="jailbreakprompttext2" placeholder="(Enter Assistant Postfix)"
+					value="" onload="togglejailbreak2();"></textarea>
+					</div>
+				</span>
+				<span id="openrouterproviderbox" class="hidden"><br>Preferred Provider: <input style="height: 25px; font-size:12px;padding:4px;display:inline;width:calc(100% - 140px)" class="form-control" type="text" id="openrouterproviders" placeholder="(Automatic)" value="">
+					<div style="display:inline;width:210px;">
+					</div>
+				</span>
+
+			</div>
+			<div id="claudecustom" class="menutext hidden">
+				Entering your Claude API key will allow you to use KoboldAI Lite with their API.<br><br>
+				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. <br><span class="color_red">At this time, the official Claude API has CORS restrictions and must be accessed with a CORS proxy. Your connection WILL be proxied.</span><br>Only Temperature, Top-P and Top-K samplers are used.<br><br>
+				<span class="color_green" style="font-weight: bold;">Please input Claude API URL and Key.</span><br><br>
+				<input class="form-control" type="text" id="custom_claude_endpoint" placeholder="Claude API URL" value="">
+				<input class="form-control" type="password" id="custom_claude_key" placeholder="Claude API Key (Required)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
+				Model Choice:<br>
+				<select style="padding:4px; width:calc(100% - 110px); display:inline-block" class="form-control" id="custom_claude_model"  onload="toggleclaudemodel()"  onchange="toggleclaudemodel()">
+					<option value="claude-v1">claude-v1</option>
+					<option value="claude-v1-100k">claude-v1-100k</option>
+					<option value="claude-instant-v1">claude-instant-v1</option>
+					<option value="claude-instant-v1-100k">claude-instant-v1-100k</option>
+					<option value="claude-2">claude-2</option>
+					<option value="claude-2.1">claude-2.1</option>
+					<option value="claude-2.0">claude-2.0</option>
+					<option value="claude-3-opus-20240229">claude-3-opus</option>
+					<option value="claude-3-sonnet-20240229">claude-3-sonnet</option>
+					<option value="claude-3-haiku-20240307">claude-3-haiku</option>
+					<option value="claude-3-5-sonnet-20240620">claude-3-5-sonnet-20240620</option>
+					<option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022</option>
+					<option value="claude-3-5-sonnet-latest" selected="selected">claude-3-5-sonnet-latest</option>
+					<option value="claude-3-5-haiku-20241022">claude-3-5-haiku-20241022</option>
+					<option value="claude-3-7-sonnet-20250219">claude-3-7-sonnet-20250219</option>
+				</select>
+				<button type="button" class="btn btn-primary" style="display:inline;width:105px;" id="claudefetchlist" onclick="claude_fetch_models()">Fetch List</button>
+				<input type="checkbox" id="claudeaddversion" onchange="" checked>
+				<div class="box-label" title="Add endpoint version">Add Endpoint Version</div>
+				<span id="clauderenamecompatdiv">
+				<input type="checkbox" id="clauderenamecompat" onchange="" checked>
+				<div class="box-label" title="Rename User and Bot tags to work with claude, force inject them otherwise">Claude Compatibility Rename Fix</div>
+				</span>
+
+				<textarea class="form-control hidden" rows="2" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" id="claudesystemprompt" placeholder="(Enter System Prompt)"
+				value="" onload=""></textarea>
+				<textarea class="form-control hidden" rows="2" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" id="claudejailbreakprompt" placeholder="(Enter Assistant Postfix)"
+				value="" onload=""></textarea>
+
+				<div id="claudethinkingbox" class="hidden">
+				<div class="box-label" title="Enable Thinking">Enable Thinking </div>
+				<input type="checkbox" style="display:inline;" id="claudethinking">
+				</div>
+
+			</div>
+			<div id="palmcustom" class="menutext hidden">
+				Uses Gemini or PaLM Text Bison by Google.<br><br>
+				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the Gemini API and is not transmitted to us.<br><br>
+				<div>
+				<select style="padding:4px; width:calc(100% - 110px); display:inline-block" class="form-control" id="custom_palm_model" onchange="togglepalmmodel()">
+					<option value="gemini-pro" selected="selected">gemini-pro</option>
+					<option value="gemini-1.5-pro-001">gemini-1.5-pro-001</option>
+					<option value="gemini-1.5-pro-002">gemini-1.5-pro-002</option>
+					<option value="gemini-1.5-pro-latest">gemini-1.5-pro-latest</option>
+					<option value="gemini-1.5-flash-latest">gemini-1.5-flash-latest</option>
+					<option value="gemini-1.5-pro-exp-0801">gemini-1.5-pro-exp-0801</option>
+					<option value="gemini-1.5-pro-exp-0827">gemini-1.5-pro-exp-0827</option>
+					<option value="gemini-2.0-flash">gemini-2.0-flash</option>
+					<option value="gemini-2.0-pro-exp">gemini-2.0-pro-exp</option>
+					<option value="gemini-exp-1114">gemini-exp-1114</option>
+					<option value="gemini-exp-1121">gemini-exp-1121</option>
+					<option value="text-bison-001">text-bison-001</option>
+				</select>
+				<button type="button" class="btn btn-primary" style="display:inline;width:105px;" id="geminifetchlist" onclick="gemini_fetch_models()">Fetch List</button>
+				</div>
+				<span class="color_green" style="font-weight: bold;">Please input Gemini or PaLM API Key.</span><br><br>
+				<input class="form-control" type="password" id="custom_palm_key" placeholder="PaLM/Gemini API Key (Required)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
+				<div id="gemini_role_options">
+				<div>
+					Main Message Role:
+					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" onload="togglegeminirole();" onchange="togglegeminirole();" id="geminiroledropdown">
+						<option value="" selected>Default</option>
+						<option value="user">User</option>
+						<option value="model">Model</option>
+					</select>
+				</div>
+				<div id="gemini_role_options2" style="display:flex">
+					<select class="form-control" style="height: 25px; font-size:12px; padding:4px;display:inline;width:100px" id="gemini_postfix_role">
+						<option value="user">User</option>
+						<option value="model" selected>Model</option>
+					</select>
+					<textarea class="form-control" rows="3" style="resize: vertical; line-height:1.1; padding:4px;  display:inline; width: 100%;" type="text" id="gemini_postfix_text" placeholder="(Enter Gemini Postfix)"
+					value=""></textarea>
+				</div>
+				</div>
+				<textarea class="form-control" rows="3" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" id="gemini_system_instruction" placeholder="(Enter System Instruction)"
+				value=""></textarea><br>
+			</div>
+			<div id="coherecustom" class="menutext hidden">
+				Uses Cohere's models through their own API.<br><br>
+				Note that KoboldAI Lite takes no responsibility for your usage or consequences of this feature. Your API key is used directly with the Cohere API and is not transmitted to us.<br><br>
+				<select style="padding:4px;" class="form-control" id="custom_cohere_model">
+					<option value="command" selected="selected">command</option>
+					<option value="command-r">command-r</option>
+					<option value="command-r-plus">command-r-plus</option>
+					<option value="command-r-08-2024">command-r-08-2024</option>
+					<option value="command-r-plus-08-2024">command-r-plus-08-2024</option>
+				</select>
+				<span class="color_green" style="font-weight: bold;">Please input Cohere API Key.</span><br><br>
+				<input class="form-control" type="password" id="custom_cohere_key" placeholder="Cohere API Key (Required)" value="" onfocus="focus_api_keys()" onblur="blur_api_keys()"><br>
+				<input type="checkbox" id="usecohereweb">
+				<div class="box-label" id="usecohereweblabel">Use WebSearch</div>
+				<input type="checkbox" id="useocoherepreamble" onchange="togglecoherepreamble()">
+				<div class="box-label" id="useocoherepreamblelabel">Use Preamble</div>
+
+				<span id="useocoherepreamblebox" class="hidden" onload="togglecoherepreamble();">
+					<textarea class="form-control" id="cohere_preamble" rows="3" style="resize: vertical; line-height:1.1; padding:4px; display:inline; width: 100%" type="text" placeholder="(Enter Preamble)" value=""></textarea>
+				</span>
+			</div>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="clear_cors_proxy_flag();connect_custom_endpoint()">Ok</button>
+				<button type="button" class="btn btn-primary" onclick="dismiss_endpoint_container()">Cancel</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="admincontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsizevsmall">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Change Loaded KoboldCpp Config</div>
+			</div>
+			<div class="menutext">
+				<b></b>Warning: This will terminate the current KoboldCpp instance and relaunch it with a new config.</b><br><br>
+				If an invalid configuration is selected, the new server may fail to relaunch!<br><br>
+				<div>
+					<select title="Select New Config" style="padding:4px;" class="form-control" id="adminconfigdropdown">
+					</select>
+				</div>
+				<br>
+			</div>
+			<div class="popupfooter">
+				<button type="button" style="width:200px" class="btn btn-primary" onclick="trigger_admin_reload()">Reload KoboldCpp</button>
+				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="newgamecontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsizevsmall">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Really Start A New Session?</div>
+			</div>
+			<div class="menutext">
+				Unsaved data will be lost.<br><br>
+				<div>
+					<div style="vertical-align: middle;">
+						<div title="If disabled, brings you back to the start page">
+							<span>Keep AI Selected? </span>
+							<input type="checkbox" id="keep_ai_selected" style=" vertical-align: top;" checked>
+						</div>
+						<div>
+							<span>Keep Memory and World Info? </span>
+							<input type="checkbox" id="keep_memory" style=" vertical-align: top;">
+						</div>
+					</div>
+				</div>
+				<br>
+			</div>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="confirm_newgame()">Ok</button>
+				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="advancedloadfile">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsizevsmall">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Advanced Load File</div>
+			</div>
+			<div class="menutext">
+				Select categories to import from saved file. Selected categories will be overwritten. Unselected categories will retain original values.<br>
+				<br><div>
+				<table style="width:90%; margin:8px auto;">
+				<tr><td><span style="vertical-align: middle;">Main Story</span></td><td><input type="checkbox" id="advset_mainstory" style=" vertical-align: top;" checked></td></tr>
+				<tr><td><span style="vertical-align: middle;">Memory and Author's Note</span></td><td><input type="checkbox" id="advset_memanote" style=" vertical-align: top;" checked></td></tr>
+				<tr><td><span style="vertical-align: middle;">World Info</span></td><td><input type="checkbox" id="advset_worldinfo" style=" vertical-align: top;" checked></td></tr>
+				<tr><td><span style="vertical-align: middle;">Stop Sequences</span></td><td><input type="checkbox" id="advset_stopseq" style=" vertical-align: top;" checked></td></tr>
+				<tr><td><span style="vertical-align: middle;">General Settings</span></td><td><input type="checkbox" id="advset_gensettings" style=" vertical-align: top;" checked></td></tr>
+				<tr><td><span style="vertical-align: middle;">Aesthetic Settings</span></td><td><input type="checkbox" id="advset_aessettings" style=" vertical-align: top;" checked></td></tr>
+				</table>
+				</div>
+			</div>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="advload_btnok()">Ok</button>
+				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="zoomedimgcontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsize highest">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Image Information</div>
+			</div>
+
+			<div class="zoomedimgdiv">
+				<img class="zoomedimg" id="zoomedimg" src="">
+			</div>
+
+			<div class="menutext zoomedimgdesc" id="zoomedimgdesc" style="word-wrap: break-word;">
+				Loading...
+			</div>
+			<br>
+			<div class="popupfooter">
+				<button type="button" class="bg_red btn btn-primary" style="width: 124px;" onclick="delete_curr_image();hide_popups();">Delete Image</button>
+				<button type="button" class="btn btn-primary" onclick="hide_popups()">Close</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="workercontainer">
+		<div class="popupbg flex"></div>
+		<div class="workerpopup">
+			<div class="popuptitlebar">
+				<div><span style="float:right;">
+					<input class="settinglabel miniinput" style="margin: 3px; width: 90px;" type="text" placeholder="Quick Search" value="" id="workerlistquicksearch" oninput="worker_list_quick_search()">
+				</span></div>
+				<div class="popuptitletext" id="worktitlecount">Worker List</div>
+			</div>
+			<div class="workerTableDiv">
+			<table class="table workerTable" style="text-align: center;">
+			<thead class="sticky-top bg-white">
+			<tr><th><a class="color_blueurl" href="#" onclick="sort_display_workers('name')">Name</a></th><th><a class="color_blueurl" href="#" onclick="sort_display_workers('defaultmodel')">Model</a></th><th><a class="color_blueurl" href="#" onclick="sort_display_workers('tokenspersec')">Capabilities</a></th><th><a class="color_blueurl" href="#" onclick="sort_display_workers('uptime')">Uptime</a></th><th><a class="color_blueurl" href="#" onclick="sort_display_workers('kudos_rewards')">Kudos</a></th></tr>
+			</thead>
+			<tbody id="workertable">
+			</tbody>
+			</table>
+			</div>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="hide_workertable()">OK</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="myownworkercontainer">
+		<div class="popupbg flex"></div>
+		<div class="workerpopup">
+			<div class="popuptitlebar">
+				<div class="popuptitletext" id="myownworktitlecount">My Worker List</div>
+			</div>
+			<div class="workerTableDiv">
+			<table class="table workerTable" style="text-align: center;">
+			<thead class="sticky-top bg-white">
+			<tr><th>Name</th><th>Description</th><th>Uptime</th><th>Kudos</th><th>Maint.</th><th>Del.</th></tr>
+			</thead>
+			<tbody id="myownworkertable">
+			</tbody>
+			</table>
+			</div>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="update_my_workers();hide_workertable()">OK</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="sharecontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsizevsmall higher">
+			<div class="popuptitlebar">
+				<div class="popuptitletext" id="sharecontainertitle">Share Story</div>
+			</div>
+			<div class="menutext shareStory" id="sharestorytext" style=" word-wrap: break-word;">
+
+			</div>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="copy_share_url()">Copy</button>
+				<button type="button" class="btn btn-primary" onclick="hide_popups()">Close</button>
+			</div>
+			<div class="box-label hidden" id="sharewarning">Warning: This story is very long. It may not load in some browsers. You should save it as a file instead.</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="dynatempcontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsizevsmall">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Dynamic Temperature Wizard</div>
+			</div>
+			<div class="inlinelabel">
+			Dynamic temperature is specified by a Temperature Value and a Temperature Range. Actual temperature is allowed to be automatically adjusted dynamically between (DynaTemp ± DynaRange).<br><br>
+			For ease of use, a simple converter is provided here. Setting both values to the same temperature disables DynaTemp.<br><br>
+			</div>
+
+			<div class="inlinelabel">
+				<div class="justifyleft" style="padding:4px">Minimum Temperature: </div>
+				<input type="text" oninput="preview_dynatemp(false)" inputmode="decimal" id="dynatemp_min" style="width:60px">
+			</div>
+			<div class="inlinelabel">
+				<div class="justifyleft" style="padding:4px">Maximum Temperature: </div>
+				<input type="text" oninput="preview_dynatemp(false)" inputmode="decimal" id="dynatemp_max" style="width:60px">
+			</div>
+			<hr>
+			<div class="inlinelabel">
+				<div class="justifyleft" style="padding:4px">Temperature:</div>
+				<input type="text" oninput="preview_dynatemp(true)" inputmode="decimal" id="dynatemp_outtemp" style="width:60px" >
+			</div>
+			<div class="inlinelabel">
+				<div class="justifyleft" style="padding:4px">DynaTemp-Range:</div>
+				<input type="text" oninput="preview_dynatemp(true)" inputmode="decimal" id="dynatemp_range" style="width:60px" >
+			</div>
+			<hr>
+			<div class="inlinelabel">
+				<div class="justifyleft" style="padding:4px">DynaTemp-Exponent:</div>
+				<input type="text" oninput="preview_dynatemp(false)" inputmode="decimal" id="dynatemp_exponent" style="width:60px" >
+			</div>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="confirm_dynatemp()">Ok</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="addimgcontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsizevsmall">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Add New Image</div>
+			</div>
+			<div class="menutext">
+				<button type="button" class="btn btn-primary bg_green" id="btn_inner_genimg_auto" onclick="add_img_btn_auto()">Generate Image (Automatic)</button>
+			</div>
+			<div class="menutext">
+				<button type="button" class="btn btn-primary bg_green" id="btn_inner_genimg_custom" onclick="add_img_btn_custom()">Generate Image (Custom Prompt)</button>
+			</div>
+			<div class="menutext">
+				<button type="button" class="btn btn-primary bg_green" onclick="add_img_btn_upload()">Upload Image File</button>
+			</div>
+			<div class="menutext">
+				<button type="button" class="btn btn-primary bg_green" onclick="add_img_btn_paste()">Drag Drop / Paste from Clipboard</button>
+			</div>
+			<div class="menutext">
+				<button type="button" class="btn btn-primary" onclick="hide_popups();display_settings();display_settings_tab(2);">Customize Image Settings</button>
+			</div>
+			<div class="menutext hidden" id="btn_open_stableui">
+				<button type="button" class="btn btn-primary bg_purple" onclick="go_to_stableui()">Go To StableUI</button>
+			</div>
+			<br>
+			<input type="file" id="addimgfileinput" style="display:none" accept="image/*">
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="pasteimgcontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsizevsmall">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Paste Image From Clipboard</div>
+			</div>
+			<input type="text" id="pasteimgwin" style="width:100%; height:100px; text-align: center;" oninput="clear_paste_window()" onpaste="return img_paste_event(event)" value="" placeholder="[Drag/Paste Image Here]">
+			<br>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="choosesharecontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsizevsmall">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Share Story Import / Export</div>
+			</div>
+			<div class="menutext">
+				<button type="button" class="btn btn-primary bg_green" onclick="export_share_story(0)">Export Share as TextData</button>
+			</div>
+			<div class="menutext">
+				<button type="button" class="btn btn-primary bg_green" onclick="export_share_story(1)">Export Share as Web URL</button>
+			</div>
+			<div class="menutext">
+				<button type="button" class="btn btn-primary bg_green" onclick="export_share_story(2)">Export Share as Plaintext</button>
+			</div>
+			<div class="menutext">
+				<button type="button" class="btn btn-primary" onclick="import_share_story()">Import Share from TextData</button>
+			</div>
+			<br>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="popupcontainer flex hidden" id="groupselectcontainer">
+		<div class="popupbg flex"></div>
+		<div class="nspopup flexsizevsmall">
+			<div class="popuptitlebar">
+				<div class="popuptitletext">Chat Selectors</div>
+			</div>
+			<div class="menutext">
+				<div id="groupselectitems">
+				</div>
+			</div>
+			<div class="popupfooter">
+				<button type="button" class="btn btn-primary" onclick="confirm_groupchat_select()">Ok</button>
+				<button type="button" class="btn btn-primary" onclick="hide_popups()">Cancel</button>
 			</div>
 		</div>
 	</div>

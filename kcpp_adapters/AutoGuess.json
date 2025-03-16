@@ -44,6 +44,15 @@
         "assistant_end": "<end_of_turn>\n"
     }
 }, {
+    "search": ["<start_of_image>", "<start_of_turn>", "<end_of_turn>"],
+    "name": "Google Gemma 3.",
+    "adapter": {
+        "user_start": "<start_of_turn>user\n",
+        "user_end": "<end_of_turn>\n",
+        "assistant_start": "<start_of_turn>model\n",
+        "assistant_end": "<end_of_turn>\n"
+    }
+}, {
     "search": ["<|start_header_id|>system"],
     "name": "Llama 3.x.",
     "adapter": {
@@ -90,6 +99,17 @@
 }, {
     "search": ["<|system|>", "<|user|>"],
     "name": "Phi 3.5",
+    "adapter": {
+        "system_start": "<|system|>\n",
+        "system_end": "<|end|>\n",
+        "user_start": "<|user|>\n",
+        "user_end": "<|end|>\n",
+        "assistant_start": "<|assistant|>\n",
+        "assistant_end": "<|end|>\n"
+    }
+}, {
+    "search": ["'<|' + message['role'] + '|>'"],
+    "name": "Phi 4 (mini)",
     "adapter": {
         "system_start": "<|system|>\n",
         "system_end": "<|end|>\n",
