@@ -1,7 +1,31 @@
 ##### Original ([llama.cpp rocm port](https://github.com/ggerganov/llama.cpp/pull/1087), [llama.cpp commit](https://github.com/ggerganov/llama.cpp/commit/6bbc598a632560cb45dd2c51ad403bda8723b629)) by SlyEcho, YellowRoseCx, ardfork, funnbot, Engininja2, Kerfuffle, jammm, and jdecourval.
 ##### Further modified and ported to KoboldCpp by YellowRoseCx.
 # koboldcpp-ROCM for AMD
-### Quick Linux install:
+### Features
+- Single file executable, with no installation required and no external dependencies
+- Runs on CPU or GPU, supports full or partial offloaded
+- LLM text generation (Supports all GGML and GGUF models, backwards compatibility with ALL past models)
+- Image Generation (Stable Diffusion 1.5, SDXL, SD3, Flux)
+- Speech-To-Text (Voice Recognition) via Whisper
+- Text-To-Speech (Voice Generation) via OuteTTS
+- Provides many compatible APIs endpoints for many popular webservices (KoboldCppApi OpenAiApi OllamaApi A1111ForgeApi ComfyUiApi WhisperTranscribeApi XttsApi OpenAiSpeechApi)
+- Bundled KoboldAI Lite UI with editing tools, save formats, memory, world info, author's note, characters, scenarios.
+- Includes multiple modes (chat, adventure, instruct, storywriter) and UI Themes (aesthetic roleplay, classic writer, corporate assistant, messsenger)
+- Supports loading Tavern Character Cards, importing many different data formats from various sites, reading or exporting JSON savefiles and persistent stories.
+- Many other features including new samplers, regex support, websearch, RAG via TextDB and more.
+- [Need help finding a model? Read this!](https://github.com/LostRuins/koboldcpp/wiki#getting-an-ai-model-file)
+
+## Windows Usage
+- **[Download the latest .exe release here](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/latest)** or clone the git repo.
+- Windows binaries are provided in the form of **koboldcpp_rocm.exe**, which is a pyinstaller wrapper for a few **.dll** files and **koboldcpp.py**. You can also rebuild it yourself with the provided makefiles and scripts.
+- Weights are not included, you can use the official llama.cpp `quantize.exe` to generate them from your official weight files (or download them from other places such as [TheBloke's Huggingface](https://huggingface.co/TheBloke).
+- To run, simply execute **koboldcpp_rocm.exe**.
+- Launching with no command line arguments displays a GUI containing a subset of configurable settings. Generally you dont have to change much besides the `Presets` and `GPU Layers`. Read the `--help` for more info about each settings.
+- Obtain and load a GGUF model. See [here](#Obtaining-a-GGUF-model)
+- By default, you can connect to http://localhost:5001
+- You can also run it using the command line. For info, please check `koboldcpp.exe --help` or `python koboldcpp.py --help`
+
+## Quick Linux install:
 To install, either use the file "[easy_KCPP-ROCm_install.sh](https://github.com/YellowRoseCx/koboldcpp-rocm/blob/main/easy_KCPP-ROCm_install.sh)" or navigate to the folder you want to download to in Terminal then run
 ```
 git clone https://github.com/YellowRoseCx/koboldcpp-rocm.git -b main --depth 1 && \
@@ -23,23 +47,10 @@ KoboldCpp-ROCm is an easy-to-use AI text-generation software for GGML and GGUF m
 - Fedora users need some additional preparations for compiling koboldcpp with the ROCm feature. Please see [below](#fedora) for more details.
 - Arch Linux users can install koboldcpp via the AUR package provided by @AlpinDale. Please see [below](#arch-linux-packages) for more details.
 - For an ROCm only build, do ``make LLAMA_HIPBLAS=1 -j4`` (-j4 means it will use 4 cores of your CPU; you can adjust accordingly or leave it off altogether)
-- Alternatively, if you want a full-featured build, you can also link CLBlast and or OpenBLAS by adding `LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1` to the make command, for this you will need to obtain and link OpenCL and CLBlast libraries.
-  - For Arch Linux: Install `cblas` `openblas` and `clblast`.
-  - For Debian: Install `libclblast-dev` and `libopenblas-dev`.
-- For a full featured build, do `make LLAMA_OPENBLAS=1 LLAMA_VULKAN=1 LLAMA_CLBLAST=1 LLAMA_HIPBLAS=1 -j4`
 - After all binaries are built, you can use the GUI with ``python koboldcpp.py`` and select hipBLAS or run use ROCm through the python script with the command `python koboldcpp.py --usecublas --gpulayers [number] --contextsize 4096 --model [model.gguf]`
-- There are several parameters than can be added to CLI launch, I recommend using ``--usecublas mmq`` or ``--usecublas mmq lowvram`` as it uses optimized Kernels instead of the generic rocBLAS code.
-My typical start command looks like this: ``python koboldcpp.py --threads 6 --blasthreads 6 --usecublas --gpulayers 18 --blasbatchsize 256 --contextsize 8192 --model /AI/llama-2-70b-chat.Q4_K_M.gguf``
+- There are several parameters than can be added to CLI launch, such as ``--usecublas mmq`` or ``--usecublas mmq lowvram`` which uses optimized Kernels that could increase performance.
+A typical start command looks like this: ``python koboldcpp.py --threads 6 --blasthreads 6 --usecublas --gpulayers 18 --blasbatchsize 256 --contextsize 8192 --model /AI/llama-2-70b-chat.Q4_K_M.gguf``
 
-## Windows Usage
-- **[Download the latest .exe release here](https://github.com/YellowRoseCx/koboldcpp-rocm/releases/latest)** or clone the git repo.
-- Windows binaries are provided in the form of **koboldcpp_rocm.exe**, which is a pyinstaller wrapper for a few **.dll** files and **koboldcpp.py**. You can also rebuild it yourself with the provided makefiles and scripts.
-- Weights are not included, you can use the official llama.cpp `quantize.exe` to generate them from your official weight files (or download them from other places such as [TheBloke's Huggingface](https://huggingface.co/TheBloke).
-- To run, simply execute **koboldcpp_rocm.exe**.
-- Launching with no command line arguments displays a GUI containing a subset of configurable settings. Generally you dont have to change much besides the `Presets` and `GPU Layers`. Read the `--help` for more info about each settings.
-- Obtain and load a GGUF model. See [here](#Obtaining-a-GGUF-model)
-- By default, you can connect to http://localhost:5001
-- You can also run it using the command line. For info, please check `koboldcpp.exe --help` or `python koboldcpp.py --help`
 
 - **AMD GPU Acceleration**: If you're on Windows with an AMD GPU you can get CUDA/ROCm HIPblas support out of the box using the `--usecublas` flag.
 - **GPU Layer Offloading**: Want even more speedup? Combine one of the above GPU flags with `--gpulayers` to offload entire layers to the GPU! **Much faster, but uses more VRAM**. Experiment to determine number of layers to offload, and reduce by a few if you run out of memory.
@@ -47,12 +58,6 @@ My typical start command looks like this: ``python koboldcpp.py --threads 6 --bl
 - If you are having crashes or issues, you can try turning off BLAS with the `--noblas` flag. You can also try running in a non-avx2 compatibility mode with `--noavx2`. Lastly, you can try turning off mmap with `--nommap`.
 
 For more information, be sure to run the program with the `--help` flag, or [check the wiki](https://github.com/LostRuins/koboldcpp/wiki).
-
-## Obtaining a GGUF model
-- KoboldCpp uses GGUF models. They are not included with KoboldCpp, but you can download GGUF files from other places such as [TheBloke's Huggingface](https://huggingface.co/TheBloke). Search for "GGUF" on huggingface.co for plenty of compatible models in the `.gguf` format.
-- For beginners, we recommend the models [Airoboros Mistral 7B](https://huggingface.co/TheBloke/airoboros-mistral2.2-7B-GGUF/resolve/main/airoboros-mistral2.2-7b.Q4_K_S.gguf) (smaller and weaker) or [Tiefighter 13B](https://huggingface.co/KoboldAI/LLaMA2-13B-Tiefighter-GGUF/resolve/main/LLaMA2-13B-Tiefighter.Q4_K_S.gguf) (larger model) or [Beepo 22B](https://huggingface.co/concedo/Beepo-22B-GGUF/resolve/main/Beepo-22B-Q4_K_S.gguf) (largest and most powerful)
-- [Alternatively, you can download the tools to convert models to the GGUF format yourself here](https://kcpptools.concedo.workers.dev). Run `convert-hf-to-gguf.py` to convert them, then `quantize_gguf.exe` to quantize the result.
-- Other models for Whisper (speech recognition), Image Generation, Text to Speech or Image Recognition [can be found on the Wiki](https://github.com/LostRuins/koboldcpp/wiki#what-models-does-koboldcpp-support-what-architectures-are-supported)
 
 ## Compiling for AMD on Windows
 (More in depth guide below)
@@ -196,10 +201,14 @@ You can then run koboldcpp anywhere from the terminal by running `koboldcpp` to 
 - If you encounter any errors, make sure your packages are up-to-date with `pkg up`
 - GPU acceleration for Termux may be possible but I have not explored it. If you find a good cross-device solution, do share or PR it.
 
-## AMD
-- Please check out https://github.com/YellowRoseCx/koboldcpp-rocm (you're already here 😊)
 
-### Improving Performance
+## Obtaining a GGUF model
+- KoboldCpp uses GGUF models. They are not included with KoboldCpp, but you can download GGUF files from other places such as [Bartowski's Huggingface](https://huggingface.co/bartowski). Search for "GGUF" on huggingface.co for plenty of compatible models in the `.gguf` format.
+- For beginners, we recommend the models [Airoboros Mistral 7B](https://huggingface.co/TheBloke/airoboros-mistral2.2-7B-GGUF/resolve/main/airoboros-mistral2.2-7b.Q4_K_S.gguf) (smaller and weaker) or [Tiefighter 13B](https://huggingface.co/KoboldAI/LLaMA2-13B-Tiefighter-GGUF/resolve/main/LLaMA2-13B-Tiefighter.Q4_K_S.gguf) (larger model) or [Beepo 22B](https://huggingface.co/concedo/Beepo-22B-GGUF/resolve/main/Beepo-22B-Q4_K_S.gguf) (largest and most powerful)
+- [Alternatively, you can download the tools to convert models to the GGUF format yourself here](https://kcpptools.concedo.workers.dev). Run `convert-hf-to-gguf.py` to convert them, then `quantize_gguf.exe` to quantize the result.
+- Other models for Whisper (speech recognition), Image Generation, Text to Speech or Image Recognition [can be found on the Wiki](https://github.com/LostRuins/koboldcpp/wiki#what-models-does-koboldcpp-support-what-architectures-are-supported)
+
+## Improving Performance
 - **(Nvidia Only) GPU Acceleration**: If you're on Windows with an Nvidia GPU you can get CUDA support out of the box using the `--usecublas` flag, make sure you select the correct .exe with CUDA support.
 - **Any GPU Acceleration**: As a slightly slower alternative, try CLBlast with `--useclblast` flags for a slightly slower but more GPU compatible speedup.
 - **GPU Layer Offloading**: Want even more speedup? Combine one of the above GPU flags with `--gpulayers` to offload entire layers to the GPU! **Much faster, but uses more VRAM**. Experiment to determine number of layers to offload, and reduce by a few if you run out of memory.

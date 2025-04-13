@@ -29,6 +29,7 @@ import html
 import urllib.parse as urlparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from typing import Tuple
 
 # constants
 sampler_order_max = 7
@@ -109,7 +110,8 @@ start_time = time.time()
 last_req_time = time.time()
 last_non_horde_req_time = time.time()
 currfinishreason = None
-
+zenity_recent_dir = os.getcwd()
+zenity_permitted = True
 
 saved_stdout = None
 saved_stderr = None
@@ -263,6 +265,8 @@ class sd_generation_inputs(ctypes.Structure):
     _fields_ = [("prompt", ctypes.c_char_p),
                 ("negative_prompt", ctypes.c_char_p),
                 ("init_images", ctypes.c_char_p),
+                ("mask", ctypes.c_char_p),
+                ("flip_mask", ctypes.c_bool),
                 ("denoising_strength", ctypes.c_float),
                 ("cfg_scale", ctypes.c_float),
                 ("sample_steps", ctypes.c_int),
@@ -638,9 +642,8 @@ def unpack_to_dir(destpath = ""):
     print("Attempt to unpack KoboldCpp into directory...")
 
     if not cliunpack:
-        from tkinter.filedialog import askdirectory
         from tkinter import messagebox
-        destpath = askdirectory(title='Select an empty folder to unpack KoboldCpp')
+        destpath = zentk_askdirectory(title='Select an empty folder to unpack KoboldCpp')
         if not destpath:
             return
 
@@ -760,6 +763,23 @@ def truncate_long_json(data, max_length):
         return data[:max_length] + "..." if len(data) > max_length else data
     else:
         return data
+
+def convert_json_to_gbnf(json_obj):
+    try:
+        from json_to_gbnf import SchemaConverter
+        prop_order = []
+        converter = SchemaConverter(
+        prop_order={name: idx for idx, name in enumerate(prop_order)},
+        allow_fetch=False,
+        dotall=False,
+        raw_pattern=False)
+        schema = json.loads(json.dumps(json_obj))
+        converter.visit(schema, '')
+        outstr = converter.format_grammar()
+        return outstr
+    except Exception as e:
+        print(f"JSON to GBNF failed: {e}")
+        return ""
 
 def get_capabilities():
     global savedata_obj, has_multiplayer, KcppVersion, friendlymodelname, friendlysdmodelname, fullsdmodelpath, mmprojpath, password, fullwhispermodelpath, ttsmodelpath, embeddingsmodelpath
@@ -997,11 +1017,12 @@ def autoset_gpu_layers(ctxsize,sdquanted,bbs): #shitty algo to determine how man
 def fetch_gpu_properties(testCL,testCU,testVK):
     import subprocess
 
+    gpumem_ignore_limit = 1024*1024*600
+
     if testCU:
         FetchedCUdevices = []
         FetchedCUdeviceMem = []
         FetchedCUfreeMem = []
-        faileddetectvram = False
 
         AMDgpu = None
         try: # Get NVIDIA GPU names
@@ -1012,7 +1033,6 @@ def fetch_gpu_properties(testCL,testCU,testVK):
         except Exception:
             FetchedCUdeviceMem = []
             FetchedCUfreeMem = []
-            faileddetectvram = True
             pass
         if len(FetchedCUdevices)==0:
             faileddetectvram = False
@@ -1035,7 +1055,6 @@ def fetch_gpu_properties(testCL,testCU,testVK):
             except Exception:
                 FetchedCUdeviceMem = []
                 FetchedCUfreeMem = []
-                faileddetectvram = True
                 pass
         lowestcumem = 0
         lowestfreecumem = 0
@@ -1054,16 +1073,16 @@ def fetch_gpu_properties(testCL,testCU,testVK):
         except Exception:
             lowestcumem = 0
             lowestfreecumem = 0
-            faileddetectvram = True
-
-        if faileddetectvram:
-            print("Unable to detect VRAM, please set layers manually.")
 
         MaxMemory[0] = max(lowestcumem,MaxMemory[0])
         MaxFreeMemory[0] = max(lowestfreecumem,MaxFreeMemory[0])
 
+        if MaxMemory[0] < (1024*1024*256):
+            print("Unable to detect VRAM, please set layers manually.")
+
     if testVK:
         try: # Get Vulkan names
+            foundVkGPU = False
             output = subprocess.run(['vulkaninfo','--summary'], capture_output=True, text=True, check=True, encoding='utf-8', timeout=10).stdout
             devicelist = [line.split("=")[1].strip() for line in output.splitlines() if "deviceName" in line]
             devicetypes = [line.split("=")[1].strip() for line in output.splitlines() if "deviceType" in line]
@@ -1076,8 +1095,31 @@ def fetch_gpu_properties(testCL,testCU,testVK):
                 idx = 0
                 for dvtype in devicetypes:
                     if idx<len(VKIsDGPU):
-                        VKIsDGPU[idx] = (1 if dvtype=="PHYSICAL_DEVICE_TYPE_DISCRETE_GPU" else 0)
+                        typeflag = (1 if dvtype=="PHYSICAL_DEVICE_TYPE_DISCRETE_GPU" else 0)
+                        VKIsDGPU[idx] = typeflag
+                        if typeflag:
+                            foundVkGPU = True
                         idx += 1
+
+            if foundVkGPU:
+                try: # Try get vulkan memory (experimental)
+                    output = subprocess.run(['vulkaninfo'], capture_output=True, text=True, check=True, encoding='utf-8', timeout=10).stdout
+                    devicechunks = output.split("VkPhysicalDeviceMemoryProperties")[1:]
+                    gpuidx = 0
+                    lowestvkmem = 0
+                    for chunk in devicechunks:
+                        heaps = chunk.split("memoryTypes:")[0].split("memoryHeaps[")[1:]
+                        snippet = heaps[0]
+                        if "MEMORY_HEAP_DEVICE_LOCAL_BIT" in snippet and "size" in snippet:
+                            match = re.search(r"size\s*=\s*(\d+)", snippet)
+                            if match:
+                                dmem = int(match.group(1))
+                                if dmem > gpumem_ignore_limit:
+                                    lowestvkmem = dmem if lowestvkmem==0 else (dmem if dmem<lowestvkmem else lowestvkmem)
+                        gpuidx += 1
+                except Exception: # failed to get vulkan vram
+                    pass
+            MaxMemory[0] = max(lowestvkmem,MaxMemory[0])
         except Exception:
             pass
 
@@ -1103,7 +1145,8 @@ def fetch_gpu_properties(testCL,testCU,testVK):
                     idx = plat+dev*2
                     if idx<len(CLDevices):
                         CLDevicesNames[idx] = dname
-                        lowestclmem = dmem if lowestclmem==0 else (dmem if dmem<lowestclmem else lowestclmem)
+                        if dmem > gpumem_ignore_limit:
+                            lowestclmem = dmem if lowestclmem==0 else (dmem if dmem<lowestclmem else lowestclmem)
                     dev += 1
                 plat += 1
             MaxMemory[0] = max(lowestclmem,MaxMemory[0])
@@ -1487,6 +1530,8 @@ def sd_generate(genparams):
             prompt = forced_posprompt
     init_images_arr = genparams.get("init_images", [])
     init_images = ("" if (not init_images_arr or len(init_images_arr)==0 or not init_images_arr[0]) else init_images_arr[0])
+    mask = genparams.get("mask", "")
+    flip_mask = genparams.get("inpainting_mask_invert", 0)
     denoising_strength = tryparsefloat(genparams.get("denoising_strength", 0.6))
     cfg_scale = tryparsefloat(genparams.get("cfg_scale", 5))
     sample_steps = tryparseint(genparams.get("steps", 20))
@@ -1523,6 +1568,8 @@ def sd_generate(genparams):
     inputs.prompt = prompt.encode("UTF-8")
     inputs.negative_prompt = negative_prompt.encode("UTF-8")
     inputs.init_images = init_images.encode("UTF-8")
+    inputs.mask = "".encode("UTF-8") if not mask else mask.encode("UTF-8")
+    inputs.flip_mask = flip_mask
     inputs.cfg_scale = cfg_scale
     inputs.denoising_strength = denoising_strength
     inputs.sample_steps = sample_steps
@@ -2062,6 +2109,7 @@ def transform_genparams(genparams, api_format):
                         elif item['type']=="image_url":
                             if 'image_url' in item and item['image_url'] and item['image_url']['url'] and item['image_url']['url'].startswith("data:image"):
                                 images_added.append(item['image_url']['url'].split(",", 1)[1])
+                                messages_string += "\n(Attached Image)\n"
                 # If last message, add any tools calls after message content and before message end token if any
                 if message['role'] == "user" and message_index == len(messages_array):
                     # Check if user is passing a openai tools array, if so add to end of prompt before assistant prompt unless tool_choice has been set to None
@@ -2787,11 +2835,12 @@ Enter Prompt:<br>
         body = None
         if contlenstr:
             content_length = int(contlenstr)
-            if content_length > (1024*1024*48): #48mb payload limit
+            max_pl = int(args.maxrequestsize) if args.maxrequestsize else 32
+            if content_length > (1024*1024*max_pl): #payload size limit
                 self.send_response(500)
                 self.end_headers(content_type='application/json')
                 self.wfile.write(json.dumps({"detail": {
-                "msg": "Payload is too big. Max payload size is 48MB.",
+                "msg": f"Payload is too big. Max payload size is {max_pl}MB.",
                 "type": "bad_input",
                 }}).encode())
                 return
@@ -2859,6 +2908,19 @@ Enter Prompt:<br>
                 response_body = (json.dumps({"result": detokstr,"success":True}).encode())
             except Exception as e:
                 utfprint("Detokenize Error: " + str(e))
+                response_code = 400
+                response_body = (json.dumps({"result": "","success":False}).encode())
+
+        elif self.path.endswith('/api/extra/json_to_grammar'):
+            if not self.secure_endpoint():
+                return
+            try:
+                genparams = json.loads(body)
+                schema = genparams.get('schema', {})
+                decoded = convert_json_to_gbnf(schema)
+                response_body = (json.dumps({"result": decoded,"success":(True if decoded else False)}).encode())
+            except Exception as e:
+                utfprint("JSON to Grammar Error: " + str(e))
                 response_code = 400
                 response_body = (json.dumps({"result": "","success":False}).encode())
 
@@ -3453,19 +3515,119 @@ def RunServerMultiThreaded(addr, port, server_handler):
                 threadArr[i].stop()
             sys.exit(0)
 
+# Based on https://github.com/mathgeniuszach/xdialog/blob/main/xdialog/zenity_dialogs.py - MIT license | - Expanded version by Henk717
+def zenity(filetypes=None, initialdir="", initialfile="", **kwargs) -> Tuple[int, str]:
+    import shutil
+    import subprocess
+    global zenity_recent_dir, zenity_permitted
+
+    if not zenity_permitted:
+        raise Exception("Zenity disabled, attempting to use TK GUI.")
+    if sys.platform != "linux":
+        raise Exception("Zenity GUI is only usable on Linux, attempting to use TK GUI.")
+    zenity_bin = shutil.which("zenity")
+    if not zenity_bin:
+        zenity_bin = shutil.which("yad")
+    if not zenity_bin:
+        raise Exception("Zenity not present, falling back to TK GUI.")
+
+    def zenity_clean(txt: str):
+        return txt.replace("\\", "\\\\").replace("$", "\\$").replace("!", "\\!").replace("*", "\\*")\
+        .replace("?", "\\?").replace("&", "&amp;").replace("|", "&#124;").replace("<", "&lt;").replace(">", "&gt;")\
+        .replace("(", "\\(").replace(")", "\\)").replace("[", "\\[").replace("]", "\\]").replace("{", "\\{").replace("}", "\\}")
+
+    # Build args based on keywords
+    args = ['/usr/bin/env', zenity_bin, '--file-selection']
+    for k, v in kwargs.items():
+        if v is True:
+            args.append(f'--{k.replace("_", "-").strip("-")}')
+        elif isinstance(v, str):
+            cv = zenity_clean(v) if k != "title" else v
+            args.append(f'--{k.replace("_", "-").strip("-")}={cv}')
+
+    # Build filetypes specially if specified
+    if filetypes:
+        for name, globs in filetypes:
+            if name:
+                globlist = globs.split()
+                args.append(f'--file-filter={name.replace("|", "")} ({", ".join(t for t in globlist)})|{globs}')
+
+    # Default filename and folder
+    if initialdir is None:
+        initialdir=zenity_recent_dir
+    if initialfile is None:
+        initialfile=""
+    initialpath = os.path.join(initialdir, initialfile)
+    args.append(f'--filename={initialpath}')
+
+    clean_env = os.environ.copy()
+    clean_env.pop("LD_LIBRARY_PATH", None)
+    clean_env["PATH"] = "/usr/bin:/bin"
+
+    procres = subprocess.run(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=clean_env,
+        check=False
+    )
+    result = procres.stdout.decode('utf-8').strip()
+    if procres.returncode==0 and result:
+        directory = result
+        if not os.path.isdir(result):
+            directory = os.path.dirname(result)
+        zenity_recent_dir = directory
+    return (procres.returncode, result)
+
+# note: In this section we wrap around file dialogues to allow for zenity
+def zentk_askopenfilename(**options):
+    try:
+        result = zenity(filetypes=options.get("filetypes"), initialdir=options.get("initialdir"), title=options.get("title"))[1]
+        if result and not os.path.isfile(result):
+            print("A folder was selected while we need a file, ignoring selection.")
+            return ''
+    except Exception:
+        from tkinter.filedialog import askopenfilename
+        result = askopenfilename(**options)
+    return result
+
+def zentk_askopenmultiplefilenames(**options):
+    try:
+        files = zenity(filetypes=options.get("filetypes"), initialdir=options.get("initialdir"), title=options.get("title"), multiple=True, separator="\n")[1].splitlines()
+        result = tuple(filter(os.path.isfile, files))
+    except Exception:
+        from tkinter.filedialog import askopenfilenames
+        result = askopenfilenames(**options)
+    return result
+
+def zentk_askdirectory(**options):
+    try:
+        result = zenity(initialdir=options.get("initialdir"), title=options.get("title"), directory=True)[1]
+    except Exception:
+        from tkinter.filedialog import askdirectory
+        result = askdirectory(**options)
+    return result
+
+def zentk_asksaveasfilename(**options):
+    try:
+        result = zenity(filetypes=options.get("filetypes"), initialdir=options.get("initialdir"), initialfile=options.get("initialfile"), title=options.get("title"), save=True)[1]
+    except Exception:
+        from tkinter.filedialog import asksaveasfilename
+        result = asksaveasfilename(**options)
+    return result
+### End of MIT license
+
 # note: customtkinter-5.2.0
 def show_gui():
     global using_gui_launcher
     using_gui_launcher = True
-    from tkinter.filedialog import askopenfilename, askdirectory
-    from tkinter.filedialog import asksaveasfilename
 
     # if args received, launch
     if len(sys.argv) != 1 and not args.showgui:
         import tkinter as tk
         root = tk.Tk() #we dont want the useless window to be visible, but we want it in taskbar
         root.attributes("-alpha", 0)
-        args.model_param = askopenfilename(title="Select ggml model .bin or .gguf file or .kcpps config")
+        args.model_param = zentk_askopenfilename(title="Select ggml model .bin or .gguf file or .kcpps config")
         root.withdraw()
         root.quit()
         if args.model_param and args.model_param!="" and (args.model_param.lower().endswith('.kcpps') or args.model_param.lower().endswith('.kcppt') or args.model_param.lower().endswith('.kcpps?download=true') or args.model_param.lower().endswith('.kcppt?download=true')):
@@ -3677,6 +3839,7 @@ def show_gui():
     ssl_cert_var = ctk.StringVar()
     ssl_key_var = ctk.StringVar()
     password_var = ctk.StringVar()
+    maxrequestsize_var = ctk.StringVar(value=str(32))
 
     sd_model_var = ctk.StringVar()
     sd_lora_var = ctk.StringVar()
@@ -3703,6 +3866,8 @@ def show_gui():
     admin_var = ctk.IntVar(value=0)
     admin_dir_var = ctk.StringVar()
     admin_password_var = ctk.StringVar()
+
+    nozenity_var = ctk.IntVar(value=0)
 
     curr_tab_idx = 0
 
@@ -3780,16 +3945,16 @@ def show_gui():
             initialDir = initialDir if os.path.isdir(initialDir) else None
             fnam = None
             if dialog_type==2:
-                fnam = askdirectory(title=text, mustexist=True, initialdir=initialDir)
+                fnam = zentk_askdirectory(title=text, mustexist=True, initialdir=initialDir)
             elif dialog_type==1:
-                fnam = asksaveasfilename(title=text, filetypes=filetypes, defaultextension=filetypes, initialdir=initialDir)
+                fnam = zentk_asksaveasfilename(title=text, filetypes=filetypes, defaultextension=filetypes, initialdir=initialDir)
                 if not fnam:
                     fnam = ""
                 else:
                     fnam = str(fnam).strip()
                     fnam = f"{fnam}.jsondb" if ".jsondb" not in fnam.lower() else fnam
             else:
-                fnam = askopenfilename(title=text,filetypes=filetypes, initialdir=initialDir)
+                fnam = zentk_askopenfilename(title=text,filetypes=filetypes, initialdir=initialDir)
             if fnam:
                 var.set(fnam)
                 if onchoosefile:
@@ -4069,6 +4234,13 @@ def show_gui():
         num_backends_built.grid(row=1, column=1, padx=205, pady=0)
         num_backends_built.configure(text_color="#00ff00")
 
+    def vulkan_fa_lbl():
+        if flashattention.get()!=0 and (runopts_var.get() == "Use Vulkan" or runopts_var.get() == "Use Vulkan (Old CPU)") and (gpulayers_var.get()!="" and int(gpulayers_var.get())):
+            avoidfalabel.grid()
+        else:
+            avoidfalabel.grid_remove()
+
+
     def gui_changed_modelfile(*args):
         global importvars_in_progress
         if not importvars_in_progress:
@@ -4104,7 +4276,7 @@ def show_gui():
         else:
             layercounter_label.grid_remove()
             quick_layercounter_label.grid_remove()
-        pass
+        vulkan_fa_lbl()
 
     def changed_gpu_choice_var(*args):
         global exitcounter
@@ -4162,8 +4334,7 @@ def show_gui():
             noqkvlabel.grid()
         else:
             noqkvlabel.grid_remove()
-
-
+        vulkan_fa_lbl()
 
     def guibench():
         args.benchmark = "stdout"
@@ -4220,8 +4391,10 @@ def show_gui():
             tensor_split_label.grid(row=8, column=0, padx = 8, pady=1, stick="nw")
             tensor_split_entry.grid(row=8, column=1, padx=8, pady=1, stick="nw")
             quick_use_flashattn.grid_remove()
+            use_flashattn.grid(row=28, column=0, padx=8, pady=1,  stick="nw")
         else:
             quick_use_flashattn.grid(row=22, column=1, padx=8, pady=1,  stick="nw")
+            use_flashattn.grid(row=28, column=0, padx=8, pady=1,  stick="nw")
 
         if index == "Use Vulkan" or index == "Use Vulkan (Old CPU)" or index == "Use CLBlast" or index == "Use CLBlast (Old CPU)" or index == "Use CLBlast (Older CPU)" or index == "Use CuBLAS" or index == "Use hipBLAS (ROCm)":
             gpu_layers_label.grid(row=6, column=0, padx = 8, pady=1, stick="nw")
@@ -4240,7 +4413,7 @@ def show_gui():
             quick_gpu_layers_entry.grid_remove()
         changed_gpulayers_estimate()
         changed_gpu_choice_var()
-
+        vulkan_fa_lbl()
 
     # presets selector
     makelabel(quick_tab, "Presets:", 1,0,"Select a backend to use.\nCuBLAS runs on Nvidia GPUs, and is much faster.\nVulkan and CLBlast works on all GPUs but is somewhat slower.\nOtherwise, runs on CPU only.\nNoAVX2 and Failsafe modes support older PCs.")
@@ -4342,11 +4515,6 @@ def show_gui():
     ctk.CTkButton(hardware_tab , text = "Run Benchmark", command = guibench ).grid(row=110,column=0, stick="se", padx= 0, pady=2)
 
 
-    runopts_var.trace('w', changerunmode)
-    changerunmode(1,1,1)
-    global runmode_untouched
-    runmode_untouched = True
-
     # Tokens Tab
     tokens_tab = tabcontent["Tokens"]
     # tokens checkboxes
@@ -4369,17 +4537,15 @@ def show_gui():
             else:
                 item.grid_remove()
     makecheckbox(tokens_tab,  "Custom RoPE Config", variable=customrope_var, row=22, command=togglerope,tooltiptxt="Override the default RoPE configuration with custom RoPE scaling.")
-    makecheckbox(tokens_tab, "Use FlashAttention", flashattention, 28, command=toggleflashattn,  tooltiptxt="Enable flash attention for GGUF models.")
+    use_flashattn = makecheckbox(tokens_tab, "Use FlashAttention", flashattention, 28, command=toggleflashattn,  tooltiptxt="Enable flash attention for GGUF models.")
     noqkvlabel = makelabel(tokens_tab,"QuantKV works best with flash attention enabled",33,0,"WARNING: NOT RECOMMENDED.\nOnly K cache can be quantized, and performance can suffer.\nIn some cases, it might even use more VRAM when doing a full offload.")
     noqkvlabel.configure(text_color="#ff5555")
+    avoidfalabel = makelabel(tokens_tab,"Flash attention discouraged with Vulkan GPU offload!",35,0,"FlashAttention is discouraged when using Vulkan GPU offload.")
+    avoidfalabel.configure(text_color="#ff5555")
     qkvslider,qkvlabel,qkvtitle = makeslider(tokens_tab, "Quantize KV Cache:", quantkv_text, quantkv_var, 0, 2, 30, set=0,tooltip="Enable quantization of KV cache.\nRequires FlashAttention for full effect, otherwise only K cache is quantized.")
     quantkv_var.trace("w", toggleflashattn)
     makecheckbox(tokens_tab, "No BOS Token", nobostoken_var, 43, tooltiptxt="Prevents BOS token from being added at the start of any prompt. Usually NOT recommended for most models.")
     makelabelentry(tokens_tab, "MoE Experts:", moeexperts_var, row=45, padx=100, singleline=True, tooltip="Override number of MoE experts.")
-
-    togglerope(1,1,1)
-    toggleflashattn(1,1,1)
-    togglectxshift(1,1,1)
 
     # Model Tab
     model_tab = tabcontent["Loaded Files"]
@@ -4400,7 +4566,7 @@ def show_gui():
     def pickpremadetemplate():
         initialDir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'kcpp_adapters')
         initialDir = initialDir if os.path.isdir(initialDir) else None
-        fnam = askopenfilename(title="Pick Premade ChatCompletions Adapter",filetypes=[("JSON Adapter", "*.json")], initialdir=initialDir)
+        fnam = zentk_askopenfilename(title="Pick Premade ChatCompletions Adapter",filetypes=[("JSON Adapter", "*.json")], initialdir=initialDir)
         if fnam:
             chatcompletionsadapter_var.set(fnam)
     ctk.CTkButton(model_tab, 64, text="Pick Premade", command=pickpremadetemplate).grid(row=25, column=0, padx=322, stick="nw")
@@ -4428,6 +4594,9 @@ def show_gui():
     makefileentry(network_tab, "SSL Key:", "Select SSL key.pem file", ssl_key_var, 8, width=200, filetypes=[("Unencrypted Key PEM", "*.pem")], singlerow=True, singlecol=False, tooltiptxt="Select your unencrypted .pem SSL key file for https.\nCan be generated with OpenSSL.")
     makelabelentry(network_tab, "Password: ", password_var, 9, 150,tooltip="Enter a password required to use this instance.\nThis key will be required for all text endpoints.\nImage endpoints are not secured.")
 
+    makelabelentry(network_tab, "Max Req. Size (MB):", maxrequestsize_var, row=20, width=50, tooltip="Specify a max request payload size. Any requests to the server larger than this size will be dropped. Do not change if unsure.")
+
+
     # Horde Tab
     horde_tab = tabcontent["Horde Worker"]
     makelabel(horde_tab, "Horde:", 18,0,"Settings for embedded AI Horde worker").grid(pady=10)
@@ -4454,7 +4623,6 @@ def show_gui():
             horde_name_var.set(sanitize_string(os.path.splitext(basefile)[0]))
 
     makecheckbox(horde_tab, "Configure for Horde", usehorde_var, 19, command=togglehorde,tooltiptxt="Enable the embedded AI Horde worker.")
-    togglehorde(1,1,1)
 
     # Image Gen Tab
 
@@ -4528,12 +4696,12 @@ def show_gui():
         file_type = [("KoboldCpp LaunchTemplate", "*.kcppt")]
         #remove blacklisted fields
         savdict = convert_args_to_template(savdict)
-        filename = asksaveasfilename(filetypes=file_type, defaultextension=".kcppt")
+        filename = zentk_asksaveasfilename(filetypes=file_type, defaultextension=".kcppt")
         if not filename:
             return
         filenamestr = str(filename).strip()
         if not filenamestr.endswith(".kcppt"):
-            filenamestr += ".kcpps"
+            filenamestr += ".kcppt"
         file = open(filenamestr, 'w')
         file.write(json.dumps(savdict))
         file.close()
@@ -4548,11 +4716,27 @@ def show_gui():
     ctk.CTkButton(extra_tab , text = "Generate LaunchTemplate", command = kcpp_export_template ).grid(row=5,column=0, stick="w", padx= 8, pady=2)
     makelabel(extra_tab, "Analyze GGUF Metadata", 6, 0,tooltiptxt="Reads the metadata, weight types and tensor names in any GGUF file.")
     ctk.CTkButton(extra_tab , text = "Analyze GGUF", command = analyze_gguf_model_wrapper ).grid(row=7,column=0, stick="w", padx= 8, pady=2)
+    if sys.platform == "linux":
+        def togglezenity(a,b,c):
+            global zenity_permitted
+            zenity_permitted = (nozenity_var.get()==0)
+        makecheckbox(extra_tab, "Use Classic FilePicker", nozenity_var, 20, tooltiptxt="Use the classic TKinter file picker instead.")
+        nozenity_var.trace("w", togglezenity)
+
+    # refresh
+    runopts_var.trace('w', changerunmode)
+    changerunmode(1,1,1)
+    global runmode_untouched
+    runmode_untouched = True
+    togglerope(1,1,1)
+    toggleflashattn(1,1,1)
+    togglectxshift(1,1,1)
+    togglehorde(1,1,1)
 
     # launch
     def guilaunch():
         if model_var.get() == "" and sd_model_var.get() == "" and whisper_model_var.get() == "" and tts_model_var.get() == "" and embeddings_model_var.get() == "" and nomodel.get()!=1:
-            tmp = askopenfilename(title="Select ggml model .bin or .gguf file")
+            tmp = zentk_askopenfilename(title="Select ggml model .bin or .gguf file")
             model_var.set(tmp)
         nonlocal nextstate
         nextstate = 1
@@ -4688,6 +4872,7 @@ def show_gui():
         args.multiuser = multiuser_var.get()
         args.multiplayer = (multiplayer_var.get()==1)
         args.websearch = (websearch_var.get()==1)
+        args.maxrequestsize = int(maxrequestsize_var.get()) if maxrequestsize_var.get()!="" else 32
 
         if usehorde_var.get() != 0:
             args.hordemodelname = horde_name_var.get()
@@ -4896,6 +5081,8 @@ def show_gui():
         horde_apikey_var.set(dict["hordekey"] if ("hordekey" in dict and dict["hordekey"]) else "")
         horde_workername_var.set(dict["hordeworkername"] if ("hordeworkername" in dict and dict["hordeworkername"]) else "")
         usehorde_var.set(1 if ("hordekey" in dict and dict["hordekey"]) else 0)
+        if "maxrequestsize" in dict and dict["maxrequestsize"]:
+            maxrequestsize_var.set(dict["maxrequestsize"])
 
         sd_model_var.set(dict["sdmodel"] if ("sdmodel" in dict and dict["sdmodel"]) else "")
         sd_clamped_var.set(int(dict["sdclamped"]) if ("sdclamped" in dict and dict["sdclamped"]) else 0)
@@ -4935,7 +5122,7 @@ def show_gui():
         export_vars()
         savdict = json.loads(json.dumps(args.__dict__))
         file_type = [("KoboldCpp Settings", "*.kcpps")]
-        filename = asksaveasfilename(filetypes=file_type, defaultextension=".kcpps")
+        filename = zentk_asksaveasfilename(filetypes=file_type, defaultextension=".kcpps")
         if not filename:
             return
         filenamestr = str(filename).strip()
@@ -4949,7 +5136,7 @@ def show_gui():
     def load_config_gui(): #this is used to populate the GUI with a config file, whereas load_config_cli simply overwrites cli args
         file_type = [("KoboldCpp Settings", "*.kcpps *.kcppt")]
         global runmode_untouched
-        filename = askopenfilename(filetypes=file_type, defaultextension=".kcppt", initialdir=None)
+        filename = zentk_askopenfilename(filetypes=file_type, defaultextension=".kcppt", initialdir=None)
         if not filename or filename=="":
             return
         runmode_untouched = False
@@ -5546,6 +5733,8 @@ def reload_from_new_args(newargs):
         setattr(args,"prompt","")
         setattr(args,"config",None)
         setattr(args,"launch",None)
+        if "istemplate" in newargs and newargs["istemplate"]:
+            auto_set_backend_cli()
     except Exception as e:
         print(f"Reload New Config Failed: {e}")
 
@@ -5765,8 +5954,7 @@ def analyze_gguf_model(args,filename):
 def analyze_gguf_model_wrapper(filename=""):
     if not filename or filename=="":
         try:
-            from tkinter.filedialog import askopenfilename
-            filename = askopenfilename(title="Select GGUF to analyze")
+            filename = zentk_askopenfilename(title="Select GGUF to analyze")
         except Exception as e:
             print(f"Cannot select file to analyze: {e}")
     if not filename or filename=="" or not os.path.exists(filename):
@@ -6274,6 +6462,8 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
 
         if not args.blasthreads or args.blasthreads <= 0:
             args.blasthreads = args.threads
+        if args.flashattention and (args.usevulkan is not None) and args.gpulayers!=0:
+            print("\nWARNING: FlashAttention is strongly discouraged when using Vulkan GPU offload as it is extremely slow!\n")
 
         modelname = os.path.abspath(args.model_param)
         print(args)
@@ -6744,6 +6934,7 @@ if __name__ == '__main__':
     advparser.add_argument("--moeexperts", metavar=('[num of experts]'), help="How many experts to use for MoE models (default=follow gguf)", type=int, default=-1)
     advparser.add_argument("--defaultgenamt", help="How many tokens to generate by default, if not specified. Must be smaller than context size. Usually, your frontend GUI will override this.", type=check_range(int,128,2048), default=512)
     advparser.add_argument("--nobostoken", help="Prevents BOS token from being added at the start of any prompt. Usually NOT recommended for most models.", action='store_true')
+    advparser.add_argument("--maxrequestsize", metavar=('[size in MB]'), help="Specify a max request payload size. Any requests to the server larger than this size will be dropped. Do not change if unsure.", type=int, default=32)
     compatgroup2 = parser.add_mutually_exclusive_group()
     compatgroup2.add_argument("--showgui", help="Always show the GUI instead of launching the model right away when loading settings from a .kcpps file.", action='store_true')
     compatgroup2.add_argument("--skiplauncher", help="Doesn't display or use the GUI launcher.", action='store_true')

@@ -10,6 +10,7 @@ make LLAMA_HIPBLAS=1 LLAMA_VULKAN=1 LLAMA_OPENBLAS=1 -j$NUMCPUS && \
 pyinstaller --noconfirm --onefile --clean --console --collect-all customtkinter --collect-all libclblast-dev --collect-all clinfo --icon ".\niko.ico" \
 --add-data "./kcpp_adapters:./kcpp_adapters" \
 --add-data "./koboldcpp.py:." \
+--add-data "./json_to_gbnf.py:." \
 --add-data "./klite.embd:." \
 --add-data "./kcpp_docs.embd:." \
 --add-data "./kcpp_sdui.embd:." \
