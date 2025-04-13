@@ -188,7 +188,7 @@ extern "C"
             }
             else if(file_format==FileFormat::GGUF_GENERIC)
             {
-                printf("\n---\nIdentified as GGUF model: (ver %d)\nAttempting to Load...\n---\n", file_format);
+                printf("\n---\nIdentified as GGUF model.\nAttempting to Load...\n---\n", file_format);
             }
             else if(file_format==FileFormat::GGML || file_format==FileFormat::GGHF || file_format==FileFormat::GGJT || file_format==FileFormat::GGJT_2 || file_format==FileFormat::GGJT_3)
             {
@@ -245,6 +245,15 @@ extern "C"
     tts_generation_outputs tts_generate(const tts_generation_inputs inputs)
     {
         return ttstype_generate(inputs);
+    }
+
+    bool embeddings_load_model(const embeddings_load_model_inputs inputs)
+    {
+        return embeddingstype_load_model(inputs);
+    }
+    embeddings_generation_outputs embeddings_generate(const embeddings_generation_inputs inputs)
+    {
+        return embeddingstype_generate(inputs);
     }
 
     const char * new_token(int idx) {

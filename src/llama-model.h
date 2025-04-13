@@ -29,6 +29,7 @@ enum llm_type {
     LLM_TYPE_109M,
     LLM_TYPE_137M,
     LLM_TYPE_160M,
+    LLM_TYPE_190M,
     LLM_TYPE_220M,
     LLM_TYPE_250M,
     LLM_TYPE_270M,
@@ -43,8 +44,10 @@ enum llm_type {
     LLM_TYPE_1_4B,
     LLM_TYPE_1_5B,
     LLM_TYPE_1_6B,
+    LLM_TYPE_1_8B,
     LLM_TYPE_2B,
     LLM_TYPE_2_8B,
+    LLM_TYPE_2_9B,
     LLM_TYPE_3B,
     LLM_TYPE_4B,
     LLM_TYPE_6B,
@@ -82,6 +85,7 @@ enum llm_type {
     LLM_TYPE_10B_128x3_66B,
     LLM_TYPE_57B_A14B,
     LLM_TYPE_27B,
+    LLM_TYPE_290B,
 };
 
 struct llama_layer_posnet {
@@ -260,6 +264,20 @@ struct llama_layer {
     struct ggml_tensor * time_mix_receptance_b = nullptr;
     struct ggml_tensor * time_mix_gate         = nullptr;
 
+    // rwkv7
+    struct ggml_tensor * time_mix_w0         = nullptr;
+    struct ggml_tensor * time_mix_a0         = nullptr;
+    struct ggml_tensor * time_mix_a1         = nullptr;
+    struct ggml_tensor * time_mix_a2         = nullptr;
+    struct ggml_tensor * time_mix_v0         = nullptr;
+    struct ggml_tensor * time_mix_v1         = nullptr;
+    struct ggml_tensor * time_mix_v2         = nullptr;
+    struct ggml_tensor * time_mix_g1         = nullptr;
+    struct ggml_tensor * time_mix_g2         = nullptr;
+    struct ggml_tensor * time_mix_k_k        = nullptr;
+    struct ggml_tensor * time_mix_k_a        = nullptr;
+    struct ggml_tensor * time_mix_r_k        = nullptr;
+
     struct ggml_tensor * time_mix_ln     = nullptr;
     struct ggml_tensor * time_mix_ln_b   = nullptr;
     struct ggml_tensor * time_mix_output = nullptr;
@@ -363,6 +381,8 @@ struct llama_model {
     ggml_backend_dev_t dev_output() const;
 
     ggml_backend_buffer_type_t select_buft(int il) const;
+
+    bool has_tensor_overrides() const;
 
     const struct ggml_tensor * get_tensor(const char * name) const;
 

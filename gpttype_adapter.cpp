@@ -583,7 +583,7 @@ static void speculative_decoding_setup(std::string spec_model_filename, const ll
     draft_ctx_params.type_v = base_ctx_params.type_v;
 
     llama_model * draftmodel = llama_model_load_from_file(spec_model_filename.c_str(), draft_model_params);
-    draft_ctx = llama_new_context_with_model(draftmodel, draft_ctx_params);
+    draft_ctx = llama_init_from_model(draftmodel, draft_ctx_params);
     if(draft_ctx == NULL)
     {
         printf("Error: failed to load speculative decoding draft model '%s'\n", spec_model_filename.c_str());
@@ -2226,7 +2226,7 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         llama_ctx_params.flash_attn = kcpp_data->flash_attn;
         llama_ctx_params.type_k = (inputs.quant_k>1?GGML_TYPE_Q4_0:(inputs.quant_k==1?GGML_TYPE_Q8_0:GGML_TYPE_F16));
         llama_ctx_params.type_v = (inputs.quant_v>1?GGML_TYPE_Q4_0:(inputs.quant_v==1?GGML_TYPE_Q8_0:GGML_TYPE_F16));
-        llama_ctx_v4 = llama_new_context_with_model(llamamodel, llama_ctx_params);
+        llama_ctx_v4 = llama_init_from_model(llamamodel, llama_ctx_params);
 
         if (llama_ctx_v4 == NULL)
         {
@@ -2296,8 +2296,11 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
             }
         }
 
-        //determine mem per token
-        std::vector<int> tmp = {1, 2, 3, 4};
+        //warmup at least 33 tokens to trigger batch
+        std::vector<int> tmp;
+        for (int i = 1; i <= 33; ++i) {
+            tmp.push_back(i);
+        }
         llama_kv_self_clear(llama_ctx_v4);
         auto er = llama_decode(llama_ctx_v4, llama_batch_get_one(tmp.data(), tmp.size()));
         if(er!=0)
@@ -2792,11 +2795,12 @@ int GetThreadsToUse(bool blasmode)
 }
 
 //this function prepares the clip embds for llava. it's only needed when images change
-static void PrepareLlavaEmbds(const int nctx, const std::vector<int> & llava_sep)
+static void PrepareLlavaEmbds(const int nctx, const std::vector<int> & llava_sep, const std::vector<int> & llava_intro)
 {
     if(clp_ctx!=nullptr && clp_img_data!=nullptr)
     {
         int sepsize = llava_sep.size();
+        int introsize = llava_intro.size();
         last_llava_mem.clear();
 
         for(int i=0;i<llava_images.size();++i)
@@ -2825,6 +2829,10 @@ static void PrepareLlavaEmbds(const int nctx, const std::vector<int> & llava_sep
                 if(llava_images[i].clp_image_tokens>0 && llava_images[i].clp_image_tokens < nctx)
                 {
                     int tokcnt = (i==0?(llava_images[i].clp_image_tokens):(llava_images[i].clp_image_tokens+sepsize));
+                    if(i==0)
+                    {
+                        tokcnt += introsize;
+                    }
                     for(int n=0;n<tokcnt;++n)
                     {
                         last_llava_mem.push_back(current_llava_identifier);
@@ -3140,12 +3148,15 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
     std::vector<int> embd_inp;
     std::vector<int> embd_inp_mem; //for storing added memory
     std::vector<int> llava_sep; //to separate between different llava images
+    std::vector<int> llava_intro; //to separate between different llava images
     bool llava_embds_built = false;
 
     int32_t nctx = kcpp_data->n_ctx;
 
     TokenizeString(kcpp_data->prompt, embd_inp, file_format, add_bos_token);
+    bool use_mrope = (file_format == FileFormat::GGUF_GENERIC && file_format_meta.model_architecture == GGUFArch::ARCH_QWEN2VL);
     TokenizeString("\n\n", llava_sep, file_format, false);
+    TokenizeString("\nImages:\n", llava_intro, file_format, false);
 
     if(llava_composite_image_signature=="")
     {
@@ -3153,7 +3164,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
     }
     if(llava_images_changed)
     {
-        PrepareLlavaEmbds(nctx, llava_sep);
+        PrepareLlavaEmbds(nctx, llava_sep, llava_intro);
         llava_embds_built = true;
     }
 
@@ -3445,7 +3456,6 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
                 if(embd.size()!=1 || draft_ctx==nullptr || remaining_tokens<=speculative_chunk_amt || grammar!=nullptr || startedsampling==false) //for large batch, or if no draft model, PP/TG as usual
                 {
                     draft_used = false;
-                    bool use_mrope = (file_format==FileFormat::GGUF_GENERIC && file_format_meta.model_architecture == GGUFArch::ARCH_QWEN2VL);
                     kcpp_embd_batch batch = kcpp_embd_batch(embd, n_past, use_mrope, false);
                     evalres = (llama_decode(llama_ctx_v4, batch.batch)==0);
                     if(draft_ctx)
@@ -3868,9 +3878,9 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
                 {
                     if(!llava_embds_built) //this should never happen! however, handle it anyway
                     {
-                        PrepareLlavaEmbds(nctx, llava_sep);
+                        PrepareLlavaEmbds(nctx, llava_sep, llava_intro);
                         llava_embds_built = true;
-                        printf("\nSomehow vision embd was not prepared, rebuilting it...\n");
+                        printf("\nSomehow vision embd was not prepared (maybe no fast forward), rebuilding it...\n");
                     }
 
                     //if partial batch, dispatch existing first
@@ -3884,6 +3894,7 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
                         int llavatokenscounted = 0;
                         int llavatokensevaled = 0;
                         int sepsize = llava_sep.size();
+                        int introsize = llava_intro.size();
                         while(input_consumed < embd_inp.size() && (embd_inp[input_consumed]==LLAVA_TOKEN_IDENTIFIER_A || embd_inp[input_consumed]==LLAVA_TOKEN_IDENTIFIER_B))
                         {
                             if (!last_n_tokens.empty())
@@ -3898,10 +3909,27 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
                         for(int i=0;i<llava_images.size();++i)
                         {
                             //note: no handling for draft_ctx as we don't support vision for it
-                            if(i>0 && sepsize>0)
+                            if(introsize>0 && i==0)
+                            {
+                                //added at the start of everything
+                                kcpp_embd_batch batch = kcpp_embd_batch(llava_intro, n_past, use_mrope, false);
+                                auto evr = llama_decode(llama_ctx_v4, batch.batch);
+                                if(evr!=0)
+                                {
+                                    printf("\nError when appending llava intro: %d\n",evr);
+                                }
+                                else
+                                {
+                                    printf("\rProcessing LLaVa Intro (%d tokens)",introsize);
+                                }
+                                n_past += introsize;
+                                llavatokensevaled += introsize;
+                            }
+                            if(sepsize>0 && i>0)
                             {
                                 //add a separator between each image
-                                auto evr = llama_decode(llama_ctx_v4, llama_batch_get_one(llava_sep.data(), sepsize));
+                                kcpp_embd_batch batch = kcpp_embd_batch(llava_sep, n_past, use_mrope, false);
+                                auto evr = llama_decode(llama_ctx_v4, batch.batch);
                                 if(evr!=0)
                                 {
                                     printf("\nError when appending llava separator: %d\n",evr);

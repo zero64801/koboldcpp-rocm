@@ -226,10 +226,37 @@ struct tts_generation_inputs
     const char * prompt = nullptr;
     const int speaker_seed = 0;
     const int audio_seed = 0;
+    const char * custom_speaker_text = "";
+    const char * custom_speaker_data = "";
 };
 struct tts_generation_outputs
 {
     int status = -1;
+    const char * data = "";
+};
+
+struct embeddings_load_model_inputs
+{
+    const int threads = 4;
+    const char * model_filename = nullptr;
+    const char * executable_path = nullptr;
+    const int clblast_info = 0;
+    const int cublas_info = 0;
+    const char * vulkan_info = nullptr;
+    const int gpulayers = 0;
+    const bool flash_attention = false;
+    const bool quiet = false;
+    const int debugmode = 0;
+};
+struct embeddings_generation_inputs
+{
+    const char * prompt = nullptr;
+    const bool truncate = true;
+};
+struct embeddings_generation_outputs
+{
+    int status = -1;
+    int count = 0;
     const char * data = "";
 };
 
