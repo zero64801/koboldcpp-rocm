@@ -8,19 +8,6 @@
 
 #include <float.h>
 
-#if defined(_MSC_VER)
-// disable "possible loss of data" to avoid hundreds of casts
-// we should just be careful :)
-#pragma warning(disable: 4244 4267)
-
-// disable POSIX deprecation warnings
-// these functions are never going away, anyway
-#pragma warning(disable: 4996)
-
-// unreachable code because of multiple instances of code after GGML_ABORT
-#pragma warning(disable: 4702)
-#endif
-
 // ggml_compute_forward_dup
 
 static void ggml_compute_forward_dup_same_cont(
@@ -2704,6 +2691,109 @@ static void ggml_compute_forward_gelu(
     }
 }
 
+// ggml_compute_forward_gelu_erf
+
+static void ggml_compute_forward_gelu_erf_f32(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    const ggml_tensor * src0 = dst->src[0];
+
+    assert(ggml_is_contiguous_1(src0));
+    assert(ggml_is_contiguous_1(dst));
+    assert(ggml_are_same_shape(src0, dst));
+
+    const int ith = params->ith;
+    const int nth = params->nth;
+
+    const int nc = src0->ne[0];
+    const int nr = ggml_nrows(src0);
+
+    // rows per thread
+    const int dr = (nr + nth - 1)/nth;
+
+    // row range for this thread
+    const int ir0 = dr*ith;
+    const int ir1 = MIN(ir0 + dr, nr);
+
+    for (int i1 = ir0; i1 < ir1; i1++) {
+        ggml_vec_gelu_erf_f32(nc,
+                (float *) ((char *) dst->data  + i1*( dst->nb[1])),
+                (float *) ((char *) src0->data + i1*(src0->nb[1])));
+
+#ifndef NDEBUG
+        for (int k = 0; k < nc; k++) {
+            const float x = ((float *) ((char *) dst->data + i1*( dst->nb[1])))[k];
+            GGML_UNUSED(x);
+            assert(!isnan(x));
+            assert(!isinf(x));
+        }
+#endif
+    }
+}
+
+static void ggml_compute_forward_gelu_erf_f16(
+    const ggml_compute_params * params,
+    ggml_tensor * dst) {
+
+    const ggml_tensor * src0 = dst->src[0];
+
+    assert(ggml_is_contiguous_1(src0));
+    assert(ggml_is_contiguous_1(dst));
+    assert(ggml_are_same_shape(src0, dst));
+
+    const int ith = params->ith;
+    const int nth = params->nth;
+
+    const int nc = src0->ne[0];
+    const int nr = ggml_nrows(src0);
+
+    // rows per thread
+    const int dr = (nr + nth - 1)/nth;
+
+    // row range for this thread
+    const int ir0 = dr*ith;
+    const int ir1 = MIN(ir0 + dr, nr);
+
+    for (int i1 = ir0; i1 < ir1; i1++) {
+        ggml_vec_gelu_erf_f16(nc,
+                (ggml_fp16_t *) ((char *) dst->data  + i1*( dst->nb[1])),
+                (ggml_fp16_t *) ((char *) src0->data + i1*(src0->nb[1])));
+
+#ifndef NDEBUG
+        for (int k = 0; k < nc; k++) {
+            const ggml_fp16_t x = ((ggml_fp16_t *) ((char *) dst->data + i1*( dst->nb[1])))[k];
+            const float v = GGML_FP16_TO_FP32(x);
+            GGML_UNUSED(v);
+            assert(!isnan(v));
+            assert(!isinf(v));
+        }
+#endif
+    }
+}
+
+static void ggml_compute_forward_gelu_erf(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    const ggml_tensor * src0 = dst->src[0];
+
+    switch (src0->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_gelu_erf_f32(params, dst);
+            } break;
+        case GGML_TYPE_F16:
+            {
+                ggml_compute_forward_gelu_erf_f16(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
 // ggml_compute_forward_gelu_quick
 
 static void ggml_compute_forward_gelu_quick_f32(
@@ -4222,7 +4312,7 @@ static void ggml_compute_forward_get_rows_f16(
 
         GGML_ASSERT(i01 >= 0 && i01 < ne01);
 
-        ggml_fp16_to_fp32_row(
+        ggml_cpu_fp16_to_fp32(
             (const ggml_fp16_t*) ((char *) src0->data + i01*nb01 + i11*nb02 + i12*nb03),
                        (float *) ((char *)  dst->data + i10*nb1  + i11*nb2  + i12*nb3), nc);
     }
@@ -4263,7 +4353,7 @@ static void ggml_compute_forward_get_rows_bf16(
 
         GGML_ASSERT(i01 >= 0 && i01 < ne01);
 
-        ggml_bf16_to_fp32_row(
+        ggml_cpu_bf16_to_fp32(
             (const ggml_bf16_t *) ((char *) src0->data + i01*nb01 + i11*nb02 + i12*nb03),
                         (float *) ((char *)  dst->data + i10*nb1  + i11*nb2  + i12*nb3), nc);
     }
@@ -6064,6 +6154,178 @@ void ggml_compute_forward_conv_transpose_2d(
     }
 }
 
+// ggml_compute_forward_conv_2d_dw
+
+struct ggml_conv_2d_dw_params {
+    int64_t channels;
+    int64_t batch;
+    int64_t src_w;
+    int64_t src_h;
+    int64_t dst_w;
+    int64_t dst_h;
+    int64_t knl_w;
+    int64_t knl_h;
+    int stride_x;
+    int stride_y;
+    int pad_x;
+    int pad_y;
+    int dilation_x;
+    int dilation_y;
+};
+
+static void ggml_compute_forward_conv_2d_dw_cwhn(
+        const ggml_compute_params * params,
+        const ggml_tensor * src,
+        const ggml_tensor * kernel,
+        ggml_tensor * dst,
+        const ggml_conv_2d_dw_params & p) {
+
+    const int64_t c = p.channels;
+    const float * knl_data = (const float *)kernel->data;
+
+    const int64_t rows_total = p.dst_h * p.batch;
+    const int64_t rows_per_thread = (rows_total + params->nth - 1) / params->nth;
+    const int64_t row_start = params->ith * rows_per_thread;
+    const int64_t row_end = MIN(row_start + rows_per_thread, rows_total);
+
+#ifdef GGML_SIMD
+    const int64_t pkg_size = GGML_F32_EPR;
+    const int64_t pkg_count = c / pkg_size;
+    const int64_t c_pkg_end = pkg_count * pkg_size;
+#else
+    const int64_t c_pkg_end = 0;
+#endif
+
+    for (int64_t row = row_start; row < row_end; ++row) {
+        const int64_t dst_y = row % p.dst_h;
+        const float * src_data = (const float *)src->data + (row / p.dst_h) * p.src_w * p.src_h * c;
+        for (int64_t dst_x = 0; dst_x < p.dst_w; ++dst_x) {
+            float * dst_data = (float *)dst->data + (row * p.dst_w + dst_x) * c;
+            const int64_t src_y_base = dst_y * p.stride_y - p.pad_y;
+            const int64_t src_x_base = dst_x * p.stride_x - p.pad_x;
+
+#ifdef GGML_SIMD
+            // Vectorized loop
+            for (int64_t c_i = 0; c_i < c_pkg_end; c_i += pkg_size) {
+                GGML_F32_VEC sum = GGML_F32_VEC_ZERO;
+                for (int64_t knl_y = 0; knl_y < p.knl_h; ++knl_y) {
+                    const int64_t src_y = src_y_base + knl_y * p.dilation_y;
+                    if (src_y < 0 || src_y >= p.src_h) {
+                        continue;
+                    }
+                    for (int64_t knl_x = 0; knl_x < p.knl_w; ++knl_x) {
+                        const int64_t src_x = src_x_base + knl_x * p.dilation_x;
+                        if (src_x < 0 || src_x >= p.src_w) {
+                            continue;
+                        }
+                        GGML_F32_VEC k = GGML_F32_VEC_LOAD(knl_data + (knl_y * p.knl_w + knl_x) * c + c_i);
+                        GGML_F32_VEC s = GGML_F32_VEC_LOAD(src_data + (src_y * p.src_w + src_x) * c + c_i);
+                        sum = GGML_F32_VEC_FMA(sum, k, s);
+                    }
+                }
+                GGML_F32_VEC_STORE(dst_data + c_i, sum);
+            }
+#endif
+            // Scalar loop
+            for (int64_t c_i = c_pkg_end; c_i < c; ++c_i) {
+                float sum = 0.0f;
+                for (int64_t knl_y = 0; knl_y < p.knl_h; ++knl_y) {
+                    const int64_t src_y = src_y_base + knl_y * p.dilation_y;
+                    if (src_y < 0 || src_y >= p.src_h) {
+                        continue;
+                    }
+                    for (int64_t knl_x = 0; knl_x < p.knl_w; ++knl_x) {
+                        const int64_t src_x = src_x_base + knl_x * p.dilation_x;
+                        if (src_x < 0 || src_x >= p.src_w) {
+                            continue;
+                        }
+                        sum += knl_data[(knl_y * p.knl_w + knl_x) * c + c_i]
+                             * src_data[(src_y * p.src_w + src_x) * c + c_i];
+                    }
+                }
+                dst_data[c_i] = sum;
+            }
+        }
+    }
+}
+
+static void ggml_compute_forward_conv_2d_dw_whcn(
+        const ggml_compute_params * params,
+        const ggml_tensor * src,
+        const ggml_tensor * kernel,
+        ggml_tensor * dst,
+        const ggml_conv_2d_dw_params & p) {
+
+    const int64_t n = p.channels * p.batch;
+    const int64_t per_thread = (n + params->nth - 1) / params->nth;
+    const int64_t start = params->ith * per_thread;
+    const int64_t end = MIN(start + per_thread, n);
+
+    for (int64_t i = start; i < end; ++i) {
+        const float * knl_data = (const float *)kernel->data + (i % p.channels) * p.knl_w * p.knl_h;
+        const float * src_data = (const float *)src->data + i * p.src_w * p.src_h;
+        float * dst_data = (float *)dst->data + i * p.dst_w * p.dst_h;
+
+        for (int64_t dst_y = 0; dst_y < p.dst_h; ++dst_y) {
+            for (int64_t dst_x = 0; dst_x < p.dst_w; ++dst_x) {
+
+                float sum = 0.0f;
+                for (int64_t knl_y = 0; knl_y < p.knl_h; ++knl_y) {
+                    const int64_t src_y = dst_y * p.stride_y + knl_y * p.dilation_y - p.pad_y;
+                    if (src_y < 0 || src_y >= p.src_h) {
+                        continue;
+                    }
+                    for (int64_t knl_x = 0; knl_x < p.knl_w; ++knl_x) {
+                        const int64_t src_x = dst_x * p.stride_x + knl_x * p.dilation_x - p.pad_x;
+                        if (src_x < 0 || src_x >= p.src_w) {
+                            continue;
+                        }
+                        sum += knl_data[knl_y * p.knl_w + knl_x]
+                             * src_data[src_y * p.src_w + src_x];
+                    }
+                }
+                dst_data[dst_y * p.dst_w + dst_x] = sum;
+            }
+        }
+    }
+}
+
+void ggml_compute_forward_conv_2d_dw(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+
+    const ggml_tensor * kernel = dst->src[0];
+    const ggml_tensor * src = dst->src[1];
+    ggml_conv_2d_dw_params p;
+    p.channels = src->ne[2];
+    p.batch = src->ne[3];
+    p.src_w = src->ne[0];
+    p.src_h = src->ne[1];
+    p.dst_w = dst->ne[0];
+    p.dst_h = dst->ne[1];
+    p.knl_w = kernel->ne[0];
+    p.knl_h = kernel->ne[1];
+    p.stride_x = dst->op_params[0];
+    p.stride_y = dst->op_params[1];
+    p.pad_x = dst->op_params[2];
+    p.pad_y = dst->op_params[3];
+    p.dilation_x = dst->op_params[4];
+    p.dilation_y = dst->op_params[5];
+
+    GGML_ASSERT(kernel->ne[3] == p.channels);
+    GGML_ASSERT(dst->ne[3] == p.batch);
+
+    if (ggml_is_contiguous(src)) {
+        ggml_compute_forward_conv_2d_dw_whcn(params, src, kernel, dst, p);
+    } else if (ggml_is_contiguous_channels(src)) {
+        // kernel should also have channels most contiguous in memory
+        GGML_ASSERT(kernel->nb[0] >= kernel->nb[2] && kernel->nb[1] >= kernel->nb[0]);
+        ggml_compute_forward_conv_2d_dw_cwhn(params, src, kernel, dst, p);
+    } else {
+        GGML_ABORT("non-contiguous memory layout not supported");
+    }
+}
+
 // ggml_compute_forward_pool_1d_sk_p0
 
 static void ggml_compute_forward_pool_1d_sk_p0(
@@ -7589,6 +7851,10 @@ void ggml_compute_forward_unary(
         case GGML_UNARY_OP_GELU:
             {
                 ggml_compute_forward_gelu(params, dst);
+            } break;
+        case GGML_UNARY_OP_GELU_ERF:
+            {
+                ggml_compute_forward_gelu_erf(params, dst);
             } break;
         case GGML_UNARY_OP_GELU_QUICK:
             {

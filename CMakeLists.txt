@@ -104,7 +104,7 @@ if (LLAMA_CUBLAS)
 
         add_compile_definitions(GGML_USE_LLAMAFILE)
         add_compile_definitions(GGML_USE_CUDA)
-        add_compile_definitions(SD_USE_CUBLAS)
+        add_compile_definitions(SD_USE_CUDA)
 
         if (LLAMA_CUDA_F16 OR LLAMA_CUDA_DMMV_F16)
             add_compile_definitions(GGML_CUDA_F16)
@@ -138,15 +138,16 @@ if (LLAMA_CUBLAS)
         # 61 == integer CUDA intrinsics
         # 70 == (assumed) compute capability at which unrolling a loop in mul_mat_q kernels is faster
         # 75 == int8 tensor cores
+        # 80 == Ampere, asynchronous data loading, faster tensor core instructions
         if (LLAMA_CUDA_F16 OR LLAMA_CUDA_DMMV_F16)
-            set(CMAKE_CUDA_ARCHITECTURES "60;61;70;75") # needed for f16 CUDA intrinsics
+            set(CMAKE_CUDA_ARCHITECTURES "60-virtual;61-virtual;70-virtual;75-virtual;80-virtual") # needed for f16 CUDA intrinsics
         else()
             message("CUDA Toolkit Version: ${CUDAToolkit_VERSION}")
             if(CUDAToolkit_VERSION VERSION_GREATER 12)
                  add_compile_definitions(GGML_CUDA_USE_GRAPHS) #try enable cuda graphs on cu12 build
-                 set(CMAKE_CUDA_ARCHITECTURES "50;61;70;75") # lowest CUDA 12 standard + lowest for integer intrinsics
+                 set(CMAKE_CUDA_ARCHITECTURES "50-virtual;61-virtual;70-virtual;75-virtual;80-virtual") # lowest CUDA 12 standard + lowest for integer intrinsics
             else()
-                 set(CMAKE_CUDA_ARCHITECTURES "37;50;61;70;75") # lowest CUDA 12 standard + lowest for integer intrinsics
+                 set(CMAKE_CUDA_ARCHITECTURES "35-virtual;50-virtual;61-virtual;70-virtual;75-virtual") # lowest CUDA 12 standard + lowest for integer intrinsics
             endif()
         endif()
     endif()
@@ -187,6 +188,10 @@ if (LLAMA_HIPBLAS)
         list(APPEND GGML_SOURCES_CUDA "ggml/src/ggml-cuda/ggml-cuda.cu")
         file(GLOB SRCS "ggml/src/ggml-cuda/template-instances/fattn-mma*.cu")
         list(APPEND GGML_SOURCES_CUDA ${SRCS})
+        file(GLOB SRCS "ggml/src/ggml-cuda/template-instances/mmq*.cu")
+        list(APPEND GGML_SOURCES_CUDA ${SRCS})
+        add_compile_definitions(GGML_USE_HIP GGML_USE_CUDA SD_USE_CUDA)
+        add_library(ggml-rocm ${GGML_SOURCES_CUDA})
 
         file(GLOB SRCS "ggml/src/ggml-cuda/template-instances/fattn-vec*q4_0-q4_0.cu")
         list(APPEND GGML_SOURCES_CUDA ${SRCS})
@@ -492,6 +497,7 @@ target_include_directories(ggml PUBLIC . ./ggml/include ./ggml/src ./ggml/src/gg
 target_compile_features(ggml PUBLIC c_std_11) # don't bump
 target_link_libraries(ggml PUBLIC Threads::Threads ${LLAMA_EXTRA_LIBS})
 set_target_properties(ggml PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_options(ggml PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-use_fast_math -extended-lambda>)
 
 add_library(ggml_v1
             otherarch/ggml_v1.c
@@ -525,51 +531,51 @@ add_library(common2
             common/common.h
             common/sampling.cpp
             common/sampling.h
-            examples/llava/llava.cpp
-            examples/llava/llava.h
-            examples/llava/clip.cpp
-            examples/llava/clip.h
+            tools/mtmd/llava.cpp
+            tools/mtmd/llava.h
+            tools/mtmd/clip.cpp
+            tools/mtmd/clip.h
             src/unicode.h
             src/unicode.cpp
             src/unicode-data.cpp
             otherarch/utils.cpp
             otherarch/utils.h)
-target_include_directories(common2 PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./examples ./common)
+target_include_directories(common2 PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./tools ./common)
 target_compile_features(common2 PUBLIC cxx_std_17) # don't bump
 target_link_libraries(common2 PRIVATE ggml ${LLAMA_EXTRA_LIBS})
 set_target_properties(common2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(sdtype_adapter
             otherarch/sdcpp/sdtype_adapter.cpp)
-target_include_directories(sdtype_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./examples ./common)
+target_include_directories(sdtype_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./tools ./common)
 target_compile_features(sdtype_adapter PUBLIC cxx_std_17) # don't bump
 target_link_libraries(sdtype_adapter PRIVATE common2 ggml ${LLAMA_EXTRA_LIBS})
 set_target_properties(sdtype_adapter PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(whisper_adapter
             otherarch/whispercpp/whisper_adapter.cpp)
-target_include_directories(whisper_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/whispercpp ./examples ./common)
+target_include_directories(whisper_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/whispercpp ./tools ./common)
 target_compile_features(whisper_adapter PUBLIC cxx_std_17) # don't bump
 target_link_libraries(whisper_adapter PRIVATE common2 ggml ${LLAMA_EXTRA_LIBS})
 set_target_properties(whisper_adapter PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(tts_adapter
             otherarch/tts_adapter.cpp)
-target_include_directories(tts_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./examples ./common)
+target_include_directories(tts_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./tools ./common)
 target_compile_features(tts_adapter PUBLIC cxx_std_17) # don't bump
 target_link_libraries(tts_adapter PRIVATE common2 ggml ${LLAMA_EXTRA_LIBS})
 set_target_properties(tts_adapter PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(embeddings_adapter
             otherarch/embeddings_adapter.cpp)
-target_include_directories(embeddings_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./examples ./common)
+target_include_directories(embeddings_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./tools ./common)
 target_compile_features(embeddings_adapter PUBLIC cxx_std_17) # don't bump
 target_link_libraries(embeddings_adapter PRIVATE common2 ggml ${LLAMA_EXTRA_LIBS})
 set_target_properties(embeddings_adapter PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(gpttype_adapter
             gpttype_adapter.cpp)
-target_include_directories(gpttype_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./examples ./common)
+target_include_directories(gpttype_adapter PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./tools ./common)
 target_compile_features(gpttype_adapter PUBLIC cxx_std_17) # don't bump
 target_link_libraries(gpttype_adapter PRIVATE common2 ggml ggml_v1 ggml_v2 ggml_v3 ${LLAMA_EXTRA_LIBS})
 set_target_properties(gpttype_adapter PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -577,7 +583,7 @@ set_target_properties(gpttype_adapter PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if (LLAMA_CUBLAS)
     set(TARGET koboldcpp_cublas)
     add_library(${TARGET} SHARED expose.cpp expose.h)
-    target_include_directories(${TARGET} PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./examples ./common)
+    target_include_directories(${TARGET} PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./tools ./common)
     target_compile_features(${TARGET} PUBLIC cxx_std_17) # don't bump
     set_target_properties(${TARGET} PROPERTIES PREFIX "")
     set_target_properties(${TARGET} PROPERTIES OUTPUT_NAME "koboldcpp_cublas")
@@ -597,14 +603,12 @@ endif()
 if (LLAMA_HIPBLAS)
     set(TARGET koboldcpp_hipblas)
     add_library(${TARGET} SHARED expose.cpp expose.h)
-
     # Set ROCm compilers for koboldcpp_hipblas
     set_property(TARGET ${TARGET} PROPERTY C_STANDARD 11)
     set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 17)
     set_property(TARGET ${TARGET} PROPERTY C_COMPILER ${LLVM_CC})
     set_property(TARGET ${TARGET} PROPERTY CXX_COMPILER ${LLVM_CXX})
-
-    target_include_directories(${TARGET} PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./examples ./common)
+    target_include_directories(${TARGET} PUBLIC . ./ggml/include ./ggml/src ./ggml/src/ggml-cpu ./include ./otherarch ./otherarch/tools ./otherarch/sdcpp ./otherarch/sdcpp/thirdparty ./tools ./common)
     target_compile_features(${TARGET} PUBLIC cxx_std_17) # don't bump
     set_target_properties(${TARGET} PROPERTIES PREFIX "")
     set_target_properties(${TARGET} PROPERTIES OUTPUT_NAME "koboldcpp_hipblas")

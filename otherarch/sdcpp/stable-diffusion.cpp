@@ -161,7 +161,7 @@ public:
                         bool diffusion_flash_attn) {
         use_tiny_autoencoder = taesd_path.size() > 0;
         std::string taesd_path_fixed = taesd_path;
-#ifdef SD_USE_CUBLAS
+#ifdef SD_USE_CUDA
         LOG_DEBUG("Using CUDA backend");
         backend = ggml_backend_cuda_init(0);
 #endif
@@ -1639,15 +1639,15 @@ sd_image_t* txt2img(sd_ctx_t* sd_ctx,
     }
 
     struct ggml_init_params params;
-    params.mem_size = static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
+    params.mem_size = static_cast<size_t>(20 * 1024 * 1024);  // 20 MB increased by kcpp
     if (sd_version_is_sd3(sd_ctx->sd->version)) {
-        params.mem_size *= 3;
+        params.mem_size *= 2; //readjust by kcpp as above changed
     }
     if (sd_version_is_flux(sd_ctx->sd->version)) {
-        params.mem_size *= 4;
+        params.mem_size *= 2; //readjust by kcpp as above changed
     }
     if (sd_ctx->sd->stacked_id) {
-        params.mem_size += static_cast<size_t>(10 * 1024 * 1024);  // 10 MB
+        params.mem_size += static_cast<size_t>(15 * 1024 * 1024);  // 10 MB
     }
     params.mem_size += width * height * 3 * sizeof(float);
     params.mem_size *= batch_count;

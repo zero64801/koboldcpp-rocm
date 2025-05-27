@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <filesystem>
 
 #include "model.h"
 #include "stable-diffusion.h"
@@ -191,6 +192,64 @@ std::unordered_map<std::string, std::string> pmid_v2_name_map = {
 std::string convert_open_clip_to_hf_clip(const std::string& name) {
     std::string new_name = name;
     std::string prefix;
+     if (contains(new_name, ".enc.")) {
+        // llama.cpp naming convention for T5
+        size_t pos = new_name.find(".enc.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 5, ".encoder.");
+        }
+        pos = new_name.find("blk.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 4, "block.");
+        }
+        pos = new_name.find("output_norm.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 12, "final_layer_norm.");
+        }
+        pos = new_name.find("attn_k.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 7, "layer.0.SelfAttention.k.");
+        }
+        pos = new_name.find("attn_v.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 7, "layer.0.SelfAttention.v.");
+        }
+        pos = new_name.find("attn_o.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 7, "layer.0.SelfAttention.o.");
+        }
+        pos = new_name.find("attn_q.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 7, "layer.0.SelfAttention.q.");
+        }
+        pos = new_name.find("attn_norm.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 10, "layer.0.layer_norm.");
+        }
+        pos = new_name.find("ffn_norm.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 9, "layer.1.layer_norm.");
+        }
+        pos = new_name.find("ffn_up.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 7, "layer.1.DenseReluDense.wi_1.");
+        }
+        pos = new_name.find("ffn_down.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 9, "layer.1.DenseReluDense.wo.");
+        }
+        pos = new_name.find("ffn_gate.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 9, "layer.1.DenseReluDense.wi_0.");
+        }
+        pos = new_name.find("attn_rel_b.");
+        if (pos != std::string::npos) {
+            new_name.replace(pos, 11, "layer.0.SelfAttention.relative_attention_bias.");
+        }
+    } else if (name == "text_encoders.t5xxl.transformer.token_embd.weight") {
+        new_name = "text_encoders.t5xxl.transformer.shared.weight";
+    }
+
     if (starts_with(new_name, "conditioner.embedders.0.open_clip.")) {
         prefix   = "cond_stage_model.";
         new_name = new_name.substr(strlen("conditioner.embedders.0.open_clip."));
@@ -849,7 +908,12 @@ bool is_zip_file(const std::string& file_path) {
 }
 
 bool is_gguf_file(const std::string& file_path) {
-    std::ifstream file(file_path, std::ios::binary);
+    #ifdef _WIN32
+        std::filesystem::path fpath = std::filesystem::u8path(file_path);
+    #else
+        std::filesystem::path fpath = std::filesystem::path(file_path);
+    #endif
+    std::ifstream file(fpath, std::ios::binary);
     if (!file.is_open()) {
         return false;
     }
@@ -870,7 +934,12 @@ bool is_gguf_file(const std::string& file_path) {
 }
 
 bool is_safetensors_file(const std::string& file_path) {
-    std::ifstream file(file_path, std::ios::binary);
+    #ifdef _WIN32
+        std::filesystem::path fpath = std::filesystem::u8path(file_path);
+    #else
+        std::filesystem::path fpath = std::filesystem::path(file_path);
+    #endif
+    std::ifstream file(fpath, std::ios::binary);
     if (!file.is_open()) {
         return false;
     }
@@ -994,7 +1063,12 @@ bool ModelLoader::init_from_safetensors_file(const std::string& file_path, const
     LOG_DEBUG("init from '%s'", file_path.c_str());
     file_paths_.push_back(file_path);
     size_t file_index = file_paths_.size() - 1;
-    std::ifstream file(file_path, std::ios::binary);
+    #ifdef _WIN32
+        std::filesystem::path fpath = std::filesystem::u8path(file_path);
+    #else
+        std::filesystem::path fpath = std::filesystem::path(file_path);
+    #endif
+    std::ifstream file(fpath, std::ios::binary);
     if (!file.is_open()) {
         LOG_ERROR("failed to open '%s'", file_path.c_str());
         return false;
@@ -1751,7 +1825,12 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb, ggml_backend
         std::string file_path = file_paths_[file_index];
         LOG_DEBUG("loading tensors from %s\n", file_path.c_str());
 
-        std::ifstream file(file_path, std::ios::binary);
+        #ifdef _WIN32
+            std::filesystem::path fpath = std::filesystem::u8path(file_path);
+        #else
+            std::filesystem::path fpath = std::filesystem::path(file_path);
+        #endif
+        std::ifstream file(fpath, std::ios::binary);
         if (!file.is_open()) {
             LOG_ERROR("failed to open '%s'", file_path.c_str());
             return false;

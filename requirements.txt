@@ -7,3 +7,4 @@ packaging>=23.2
 protobuf>=4.21.0
 urllib3
 psutil>=5.9.4
+darkdetect>=0.8.0

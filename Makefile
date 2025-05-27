@@ -85,7 +85,7 @@ CLBLAST_FLAGS = -DGGML_USE_CLBLAST
 FAILSAFE_FLAGS = -DUSE_FAILSAFE
 VULKAN_FLAGS = -DGGML_USE_VULKAN -DSD_USE_VULKAN
 ifdef LLAMA_CUBLAS
-	CUBLAS_FLAGS = -DGGML_USE_CUDA -DSD_USE_CUBLAS
+	CUBLAS_FLAGS = -DGGML_USE_CUDA -DSD_USE_CUDA
 else
 	CUBLAS_FLAGS =
 endif
@@ -179,31 +179,44 @@ OBJS_CUDA_TEMP_INST += $(patsubst %.cu,%.o,$(wildcard ggml/src/ggml-cuda/templat
 OBJS_CUDA_TEMP_INST += $(patsubst %.cu,%.o,$(wildcard ggml/src/ggml-cuda/template-instances/fattn-vec*f16-f16.cu))
 
 ifdef LLAMA_CUBLAS
-	CUBLAS_FLAGS = -DGGML_USE_CUDA -DSD_USE_CUBLAS -I/usr/local/cuda/include -I/opt/cuda/include -I$(CUDA_PATH)/targets/x86_64-linux/include
+	CUBLAS_FLAGS = -DGGML_USE_CUDA -DSD_USE_CUDA -I/usr/local/cuda/include -I/opt/cuda/include -I$(CUDA_PATH)/targets/x86_64-linux/include
 	CUBLASLD_FLAGS = -lcuda -lcublas -lcudart -lcublasLt -lpthread -ldl -lrt -L/usr/local/cuda/lib64 -L/opt/cuda/lib64 -L$(CUDA_PATH)/targets/x86_64-linux/lib -L$(CUDA_PATH)/lib64/stubs -L/usr/local/cuda/targets/aarch64-linux/lib -L/usr/local/cuda/targets/sbsa-linux/lib -L/usr/lib/wsl/lib
 	CUBLAS_OBJS = ggml-cuda.o ggml_v3-cuda.o ggml_v2-cuda.o ggml_v2-cuda-legacy.o
 	CUBLAS_OBJS += $(patsubst %.cu,%.o,$(filter-out ggml/src/ggml-cuda/ggml-cuda.cu, $(wildcard ggml/src/ggml-cuda/*.cu)))
 	CUBLAS_OBJS += $(OBJS_CUDA_TEMP_INST)
 	NVCC      = nvcc
-	NVCCFLAGS = --forward-unknown-to-host-compiler -use_fast_math
+	NVCCFLAGS = --forward-unknown-to-host-compiler -use_fast_math -extended-lambda
 
 ifdef LLAMA_ADD_CONDA_PATHS
 	CUBLASLD_FLAGS += -Lconda/envs/linux/lib -Lconda/envs/linux/lib/stubs
 endif
 
-ifdef CUDA_DOCKER_ARCH
-	NVCCFLAGS += -Wno-deprecated-gpu-targets -arch=$(CUDA_DOCKER_ARCH)
-else
+
 ifdef LLAMA_PORTABLE
-ifdef LLAMA_COLAB #colab does not need all targets, all-major doesnt work correctly with pascal
-	NVCCFLAGS += -Wno-deprecated-gpu-targets -arch=all-major
+
+ifdef LLAMA_ARCHES_CU11
+	NVCCFLAGS += -Wno-deprecated-gpu-targets \
+	             -gencode arch=compute_35,code=compute_35 \
+	             -gencode arch=compute_50,code=compute_50 \
+	             -gencode arch=compute_61,code=compute_61 \
+	             -gencode arch=compute_70,code=compute_70 \
+	             -gencode arch=compute_75,code=compute_75
+
+else ifdef LLAMA_ARCHES_CU12
+	NVCCFLAGS += -Wno-deprecated-gpu-targets \
+	             -gencode arch=compute_50,code=compute_50 \
+	             -gencode arch=compute_61,code=compute_61 \
+	             -gencode arch=compute_70,code=compute_70 \
+	             -gencode arch=compute_75,code=compute_75 \
+	             -gencode arch=compute_80,code=compute_80
+
 else
 	NVCCFLAGS += -Wno-deprecated-gpu-targets -arch=all
-endif #LLAMA_COLAB
+endif
+
 else
 	NVCCFLAGS += -arch=native
-endif #LLAMA_PORTABLE
-endif # CUDA_DOCKER_ARCH
+endif # LLAMA_PORTABLE
 
 ifdef LLAMA_CUDA_F16
 	NVCCFLAGS += -DGGML_CUDA_F16
@@ -265,7 +278,7 @@ ifdef LLAMA_HIPBLAS
 	LLAMA_CUDA_DMMV_X       ?= 32
 	LLAMA_CUDA_MMV_Y        ?= 2
 	LLAMA_CUDA_KQUANTS_ITER ?= 2
-	HIPFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_HIP -DGGML_HIP_NO_VMM -DGGML_USE_CUDA -DSD_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C) 
+	HIPFLAGS   += -DGGML_USE_HIPBLAS -DGGML_USE_HIP -DGGML_HIP_NO_VMM -DGGML_USE_CUDA -DSD_USE_CUDA -DSD_USE_CUBLAS $(shell $(ROCM_PATH)/bin/hipconfig -C) 
 	HIPLDFLAGS    += -L$(ROCM_PATH)/lib -Wl,-rpath=$(ROCM_PATH)/lib
 	HIPLDFLAGS    += -L$(ROCM_PATH)/lib64 -Wl,-rpath=$(ROCM_PATH)/lib64
 	HIPLDFLAGS    += -lhipblas -lamdhip64 -lrocblas
@@ -426,8 +439,9 @@ CXXV := $(shell $(CXX) --version | head -n 1)
 HCCV := $(shell $(HCC) --version | head -n 1)
 HCXXV := $(shell $(HCXX) --version | head -n 1)
 ifdef NO_VULKAN_EXTENSIONS
-	VKGEN_ADD = -DNO_VULKAN_EXTENSIONS
+	VKGEN_NOEXT_ADD = -DNO_VULKAN_EXTENSIONS
 endif
+VKGEN_NOEXT_FORCE = -DNO_VULKAN_EXTENSIONS
 
 #
 # Print build information
@@ -542,7 +556,7 @@ sgemm_failsafe.o: ggml/src/ggml-cpu/llamafile/sgemm.cpp ggml/src/ggml-cpu/llamaf
 #there's no intrinsics or special gpu ops used here, so we can have a universal object
 ggml-alloc.o: ggml/src/ggml-alloc.c ggml/include/ggml.h ggml/include/ggml-alloc.h
 	$(CC)  $(CFLAGS) -c $< -o $@
-llava.o: examples/llava/llava.cpp examples/llava/llava.h
+llava.o: tools/mtmd/llava.cpp tools/mtmd/llava.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 unicode.o: src/unicode.cpp src/unicode.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -572,11 +586,11 @@ ggml-backend-reg_vulkan.o: ggml/src/ggml-backend-reg.cpp ggml/src/ggml-backend-i
 	$(CXX)  $(CXXFLAGS) $(VULKAN_FLAGS) -c $< -o $@
 ggml-backend-reg_cublas.o: ggml/src/ggml-backend-reg.cpp ggml/src/ggml-backend-impl.h ggml/include/ggml.h ggml/include/ggml-backend.h ggml/include/ggml-cpu.h
 	$(CXX)  $(CXXFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
-llavaclip_default.o: examples/llava/clip.cpp examples/llava/clip.h
+llavaclip_default.o: tools/mtmd/clip.cpp tools/mtmd/clip.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-llavaclip_cublas.o: examples/llava/clip.cpp examples/llava/clip.h
+llavaclip_cublas.o: tools/mtmd/clip.cpp tools/mtmd/clip.h
 	$(CXX) $(CXXFLAGS) $(CUBLAS_FLAGS) $(HIPFLAGS) -c $< -o $@
-llavaclip_vulkan.o: examples/llava/clip.cpp examples/llava/clip.h
+llavaclip_vulkan.o: tools/mtmd/clip.cpp tools/mtmd/clip.h
 	$(CXX) $(CXXFLAGS) $(VULKAN_FLAGS) -c $< -o $@
 
 #this is only used for accelerate
@@ -633,7 +647,9 @@ ggml_v3-opencl.o: otherarch/ggml_v3-opencl.cpp otherarch/ggml_v3-opencl.h
 
 #vulkan
 ggml-vulkan.o: ggml/src/ggml-vulkan/ggml-vulkan.cpp ggml/include/ggml-vulkan.h ggml/src/ggml-vulkan-shaders.cpp
-	$(CXX) $(CXXFLAGS) $(VKGEN_ADD) $(VULKAN_FLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(VKGEN_NOEXT_ADD) $(VULKAN_FLAGS) -c $< -o $@
+ggml-vulkan-noext.o: ggml/src/ggml-vulkan/ggml-vulkan.cpp ggml/include/ggml-vulkan.h ggml/src/ggml-vulkan-shaders-noext.cpp
+	$(CXX) $(CXXFLAGS) $(VKGEN_NOEXT_FORCE) $(VULKAN_FLAGS) -c $< -o $@
 
 # intermediate objects
 llama.o: src/llama.cpp ggml/include/ggml.h ggml/include/ggml-alloc.h ggml/include/ggml-backend.h ggml/include/ggml-cuda.h ggml/include/ggml-metal.h include/llama.h otherarch/llama-util.h
@@ -687,41 +703,73 @@ gpttype_adapter_vulkan_noavx2.o: $(GPTTYPE_ADAPTER)
 	$(CXX) $(CXXFLAGS) $(FAILSAFE_FLAGS) $(VULKAN_FLAGS) -c $< -o $@
 
 clean:
-	rm -vf *.o main ttsmain sdmain whispermain quantize_gguf quantize_clip quantize_gpt2 quantize_gptj quantize_neox quantize_mpt vulkan-shaders-gen gguf-split gguf-split.exe vulkan-shaders-gen.exe main.exe ttsmain.exe sdmain.exe whispermain.exe quantize_clip.exe quantize_gguf.exe quantize_gptj.exe quantize_gpt2.exe quantize_neox.exe quantize_mpt.exe koboldcpp_default.dll koboldcpp_failsafe.dll koboldcpp_noavx2.dll koboldcpp_clblast.dll koboldcpp_clblast_noavx2.dll koboldcpp_clblast_failsafe.dll koboldcpp_cublas.dll koboldcpp_hipblas.dll koboldcpp_vulkan.dll koboldcpp_vulkan_noavx2.dll koboldcpp_default.so koboldcpp_failsafe.so koboldcpp_noavx2.so koboldcpp_clblast.so koboldcpp_clblast_noavx2.so koboldcpp_clblast_failsafe.so koboldcpp_cublas.so koboldcpp_hipblas.so koboldcpp_vulkan.so koboldcpp_vulkan_noavx2.so ggml/src/ggml-vulkan-shaders.cpp ggml/src/ggml-vulkan-shaders.hpp
+	rm -vf *.o main ttsmain sdmain whispermain quantize_gguf quantize_clip quantize_gpt2 quantize_gptj quantize_neox quantize_mpt vulkan-shaders-gen vulkan-shaders-gen-noext gguf-split mtmd-cli mainvk mainvk.exe mtmd-cli.exe gguf-split.exe vulkan-shaders-gen.exe vulkan-shaders-gen-noext.exe main.exe ttsmain.exe sdmain.exe whispermain.exe quantize_clip.exe quantize_gguf.exe quantize_gptj.exe quantize_gpt2.exe quantize_neox.exe quantize_mpt.exe koboldcpp_default.dll koboldcpp_failsafe.dll koboldcpp_noavx2.dll koboldcpp_clblast.dll koboldcpp_clblast_noavx2.dll koboldcpp_clblast_failsafe.dll koboldcpp_cublas.dll koboldcpp_hipblas.dll koboldcpp_vulkan.dll koboldcpp_vulkan_noavx2.dll koboldcpp_default.so koboldcpp_failsafe.so koboldcpp_noavx2.so koboldcpp_clblast.so koboldcpp_clblast_noavx2.so koboldcpp_clblast_failsafe.so koboldcpp_cublas.so koboldcpp_hipblas.so koboldcpp_vulkan.so koboldcpp_vulkan_noavx2.so ggml/src/ggml-vulkan-shaders.cpp ggml/src/ggml-vulkan-shaders.hpp ggml/src/ggml-vulkan-shaders-noext.cpp ggml/src/ggml-vulkan-shaders-noext.hpp
 	rm -vrf ggml/src/ggml-cuda/*.o
 	rm -vrf ggml/src/ggml-cuda/template-instances/*.o
 
 # useful tools
-main: examples/main/main.cpp common/arg.cpp build-info.h ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
+main: tools/main/main.cpp common/arg.cpp build-info.h ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
 sdmain: otherarch/sdcpp/util.cpp otherarch/sdcpp/main.cpp otherarch/sdcpp/stable-diffusion.cpp otherarch/sdcpp/upscaler.cpp otherarch/sdcpp/model.cpp otherarch/sdcpp/thirdparty/zip.c build-info.h ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
 whispermain: otherarch/whispercpp/main.cpp otherarch/whispercpp/whisper.cpp build-info.h ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
-ttsmain: examples/tts/tts.cpp common/arg.cpp build-info.h ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
+ttsmain: tools/tts/tts.cpp common/arg.cpp build-info.h ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
-gguf-split: examples/gguf-split/gguf-split.cpp ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o build-info.h llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
+gguf-split: tools/gguf-split/gguf-split.cpp ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o build-info.h llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
-gemma3-cli: examples/llava/gemma3-cli.cpp common/arg.cpp build-info.h ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
+mtmd-cli: tools/mtmd/mtmd-cli.cpp tools/mtmd/mtmd.cpp common/arg.cpp build-info.h ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
-qwen2vl-cli: examples/llava/qwen2vl-cli.cpp common/arg.cpp build-info.h ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL) $(OBJS)
-	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
+mainvk: tools/main/main.cpp common/arg.cpp build-info.h ggml_v4_vulkan.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o console.o llavaclip_vulkan.o llava.o ggml-backend_vulkan.o ggml-backend-reg_vulkan.o ggml-vulkan.o $(OBJS_FULL) $(OBJS) lib/vulkan-1.lib
+	$(CXX) $(CXXFLAGS) -DGGML_USE_VULKAN -DSD_USE_VULKAN $(filter-out %.h,$^) -o $@ $(LDFLAGS)
 
 ggml/src/ggml-vulkan-shaders.cpp:
 ifdef VULKAN_BUILD
 	@$(MAKE) vulkan-shaders-gen
 endif
+ggml/src/ggml-vulkan-shaders-noext.cpp:
+ifdef VULKAN_BUILD
+	@$(MAKE) vulkan-shaders-gen-noext
+endif
 
 vulkan-shaders-gen: ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
 	@echo 'Vulkan shaders need to be regenerated. This can only be done on Windows or Linux. Please stand by...'
-	$(CXX) $(CXXFLAGS) $(VKGEN_ADD) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) $(VKGEN_NOEXT_ADD) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
 ifeq ($(OS),Windows_NT)
 	@echo 'Now rebuilding vulkan shaders for Windows...'
-	$(shell) vulkan-shaders-gen --glslc glslc --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders.hpp --target-cpp ggml/src/ggml-vulkan-shaders.cpp
+	$(shell) vulkan-shaders-gen --glslc glslc --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders.hpp --target-cpp ggml/src/ggml-vulkan-shaders.cpp --output-dir vulkan-spv-tmp
 	@echo 'Vulkan Shaders Rebuilt for Windows...'
 else
 	@echo 'Now rebuilding vulkan shaders for Linux...'
 	@chmod +x vulkan-shaders-gen glslc-linux
+	@echo 'Checking if bundled glslc-linux binary is usable...'
+	@GLSLC_BIN=$$( \
+		if [ -x ./glslc-linux ] && ./glslc-linux --version 2>/dev/null | grep -q "glslang"; then \
+			echo "./glslc-linux"; \
+		elif command -v glslc >/dev/null 2>&1; then \
+			echo "glslc"; \
+		else \
+			echo ""; \
+		fi); \
+	if [ -z "$$GLSLC_BIN" ]; then \
+		echo "Error: No usable glslc found. Vulkan shaders cannot be compiled!"; \
+	else \
+		echo "Using GLSLC: $$GLSLC_BIN"; \
+		./vulkan-shaders-gen --glslc "$$GLSLC_BIN" --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders.hpp --target-cpp ggml/src/ggml-vulkan-shaders.cpp --output-dir vulkan-spv-tmp; \
+	fi
+	@echo 'Vulkan Shaders Rebuilt for Linux...'
+endif
+
+vulkan-shaders-gen-noext: ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
+	@echo 'Vulkan shaders need to be regenerated (no extensions). This can only be done on Windows or Linux. Please stand by...'
+	$(CXX) $(CXXFLAGS) $(VKGEN_NOEXT_FORCE) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
+ifeq ($(OS),Windows_NT)
+	@echo 'Now rebuilding vulkan shaders (no extensions) for Windows...'
+	$(shell) vulkan-shaders-gen-noext --glslc glslc --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders-noext.hpp --target-cpp ggml/src/ggml-vulkan-shaders-noext.cpp --output-dir vulkan-spv-noext-tmp
+	@echo 'Vulkan Shaders (no extensions) Rebuilt for Windows...'
+else
+	@echo 'Now rebuilding vulkan shaders (no extensions) for Linux...'
+	@chmod +x vulkan-shaders-gen-noext glslc-linux
 	@echo 'Checking if bundled glslc-linux binary is usable...'
 	@GLSLC_BIN=$$(if ./glslc-linux --version >/dev/null 2>&1; then \
 		echo "./glslc-linux"; \
@@ -731,12 +779,12 @@ else
 		echo ""; \
 	fi); \
 	if [ -z "$$GLSLC_BIN" ]; then \
-		echo "Error: No usable glslc found. Vulkan shaders cannot be compiled!"; \
+		echo "Error: No usable glslc found. Vulkan shaders (no extensions) cannot be compiled!"; \
 	else \
 		echo "Using GLSLC: $$GLSLC_BIN"; \
-		./vulkan-shaders-gen --glslc "$$GLSLC_BIN" --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders.hpp --target-cpp ggml/src/ggml-vulkan-shaders.cpp; \
+		./vulkan-shaders-gen-noext --glslc "$$GLSLC_BIN" --input-dir ggml/src/ggml-vulkan/vulkan-shaders --target-hpp ggml/src/ggml-vulkan-shaders-noext.hpp --target-cpp ggml/src/ggml-vulkan-shaders-noext.cpp --output-dir vulkan-spv-noext-tmp; \
 	fi
-	@echo 'Vulkan Shaders Rebuilt for Linux...'
+	@echo 'Vulkan Shaders (no extensions) Rebuilt for Linux...'
 endif
 
 #generated libraries
@@ -802,7 +850,7 @@ ifdef VULKAN_BUILD
 koboldcpp_vulkan: ggml_v4_vulkan.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o ggml_v3.o ggml_v2.o ggml_v1.o expose.o gpttype_adapter_vulkan.o ggml-vulkan.o sdcpp_vulkan.o whispercpp_default.o tts_default.o embeddings_default.o llavaclip_vulkan.o llava.o ggml-backend_vulkan.o ggml-backend-reg_vulkan.o $(OBJS_FULL) $(OBJS)
 	$(VULKAN_BUILD)
 ifdef NOAVX2_BUILD
-koboldcpp_vulkan_noavx2: ggml_v4_vulkan_noavx2.o ggml-cpu_v4_noavx2.o ggml-ops-noavx2.o ggml-vec-noavx2.o ggml-binops.o ggml-unops.o ggml_v3_noavx2.o ggml_v2_noavx2.o ggml_v1_failsafe.o expose.o gpttype_adapter_vulkan_noavx2.o ggml-vulkan.o sdcpp_vulkan.o whispercpp_default.o tts_default.o embeddings_default.o llavaclip_vulkan.o llava.o ggml-backend_vulkan.o ggml-backend-reg_vulkan.o $(OBJS_SIMPLE) $(OBJS)
+koboldcpp_vulkan_noavx2: ggml_v4_vulkan_noavx2.o ggml-cpu_v4_noavx2.o ggml-ops-noavx2.o ggml-vec-noavx2.o ggml-binops.o ggml-unops.o ggml_v3_noavx2.o ggml_v2_noavx2.o ggml_v1_failsafe.o expose.o gpttype_adapter_vulkan_noavx2.o ggml-vulkan-noext.o sdcpp_vulkan.o whispercpp_default.o tts_default.o embeddings_default.o llavaclip_vulkan.o llava.o ggml-backend_vulkan.o ggml-backend-reg_vulkan.o $(OBJS_SIMPLE) $(OBJS)
 	$(VULKAN_BUILD)
 else
 koboldcpp_vulkan_noavx2:
@@ -816,7 +864,7 @@ koboldcpp_vulkan_noavx2:
 endif
 
 # tools
-quantize_gguf: examples/quantize/quantize.cpp ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL)
+quantize_gguf: tools/quantize/quantize.cpp ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 quantize_gptj: otherarch/tools/gptj_quantize.cpp otherarch/tools/common-ggml.cpp ggml_v3.o ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
@@ -826,7 +874,7 @@ quantize_neox: otherarch/tools/neox_quantize.cpp otherarch/tools/common-ggml.cpp
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 quantize_mpt: otherarch/tools/mpt_quantize.cpp otherarch/tools/common-ggml.cpp ggml_v3.o ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o llavaclip_default.o llava.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
-quantize_clip: examples/llava/clip.cpp examples/llava/clip.h examples/llava/quantclip.cpp ggml_v3.o ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL)
+quantize_clip: tools/mtmd/clip.cpp tools/mtmd/clip.h tools/quantclip.cpp ggml_v3.o ggml.o ggml-cpu.o ggml-ops.o ggml-vec.o ggml-binops.o ggml-unops.o llama.o ggml-backend_default.o ggml-backend-reg_default.o $(OBJS_FULL)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 perplexity: examples/perplexity/perplexity.cpp                build-info.h ggml_cublas.o ggml_v2_cublas.o ggml_v1.o expose.o common.o gpttype_adapter_cublas.o k_quants.o ggml-alloc.o $(CUBLAS_OBJS) $(HIP_OBJS) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) $(HIPLDFLAGS)

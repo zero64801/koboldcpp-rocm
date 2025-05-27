@@ -61,6 +61,7 @@ enum GGUFArch
     ARCH_RWKV = 6,
     ARCH_QWEN2VL = 7,
     ARCH_GEMMA3 = 8,
+    ARCH_GLM4 = 9,
 };
 
 struct FileFormatExtraMeta
@@ -70,6 +71,7 @@ struct FileFormatExtraMeta
     GGUFArch model_architecture = GGUFArch::ARCH_DEFAULT;
     int n_expert_count = 0;
     std::string model_architecture_str = "";
+    bool explicitly_no_bos = false; //only true if key exists AND is false
 };
 
 struct TopPicksData

@@ -19,6 +19,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <filesystem>
 
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
@@ -27,7 +28,7 @@
 
 #include "model.h"
 
-#ifdef SD_USE_CUBLAS
+#ifdef SD_USE_CUDA
 #include "ggml-cuda.h"
 #endif
 
@@ -218,7 +219,12 @@ __STATIC_INLINE__ void print_ggml_tensor(struct ggml_tensor* tensor, bool shape_
 }
 
 __STATIC_INLINE__ ggml_tensor* load_tensor_from_file(ggml_context* ctx, const std::string& file_path) {
-    std::ifstream file(file_path, std::ios::binary);
+    #ifdef _WIN32
+        std::filesystem::path fpath = std::filesystem::u8path(file_path);
+    #else
+        std::filesystem::path fpath = std::filesystem::path(file_path);
+    #endif
+    std::ifstream file(fpath, std::ios::binary);
     if (!file.is_open()) {
         LOG_ERROR("failed to open '%s'", file_path.c_str());
         return NULL;
@@ -776,7 +782,7 @@ __STATIC_INLINE__ struct ggml_tensor* ggml_nn_attention(struct ggml_context* ctx
                                                         struct ggml_tensor* k,
                                                         struct ggml_tensor* v,
                                                         bool mask = false) {
-#if defined(SD_USE_FLASH_ATTENTION) && !defined(SD_USE_CUBLAS) && !defined(SD_USE_METAL) && !defined(SD_USE_VULKAN) && !defined(SD_USE_SYCL)
+#if defined(SD_USE_FLASH_ATTENTION) && !defined(SD_USE_CUDA) && !defined(SD_USE_METAL) && !defined(SD_USE_VULKAN) && !defined(SD_USE_SYCL)
     struct ggml_tensor* kqv = ggml_flash_attn(ctx, q, k, v, false);  // [N * n_head, n_token, d_head]
 #else
     float d_head           = (float)q->ne[0];
@@ -932,7 +938,7 @@ __STATIC_INLINE__ struct ggml_tensor* ggml_nn_group_norm(struct ggml_context* ct
 }
 
 __STATIC_INLINE__ void ggml_backend_tensor_get_and_sync(ggml_backend_t backend, const struct ggml_tensor* tensor, void* data, size_t offset, size_t size) {
-#if defined(SD_USE_CUBLAS) || defined(SD_USE_SYCL)
+#if defined(SD_USE_CUDA) || defined(SD_USE_SYCL)
     if (!ggml_backend_is_cpu(backend)) {
         ggml_backend_tensor_get_async(backend, tensor, data, offset, size);
         ggml_backend_synchronize(backend);

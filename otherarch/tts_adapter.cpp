@@ -533,7 +533,6 @@ bool ttstype_load_model(const tts_load_model_inputs inputs)
     tts_model_params.n_gpu_layers = inputs.gpulayers; //offload if possible
     tts_model_params.split_mode = llama_split_mode::LLAMA_SPLIT_MODE_LAYER;
     tts_ctx_params.n_ctx = 8192;
-    tts_ctx_params.logits_all = false;
     tts_ctx_params.offload_kqv = true;
     tts_ctx_params.n_batch = 8192;
     tts_ctx_params.n_ubatch = 512;
@@ -552,6 +551,7 @@ bool ttstype_load_model(const tts_load_model_inputs inputs)
     llama_model * ctsmodel = llama_model_load_from_file(modelfile_cts.c_str(), tts_model_params);
 
     tts_ctx_params.embeddings = true; //this requires embeddings instead
+    tts_ctx_params.n_ubatch = tts_ctx_params.n_batch;
     cts_ctx = llama_init_from_model(ctsmodel, tts_ctx_params);
 
     if (cts_ctx == nullptr) {
@@ -560,7 +560,7 @@ bool ttstype_load_model(const tts_load_model_inputs inputs)
     }
 
     std::vector<int> tmp = {1, 2, 3, 4};
-    llama_kv_cache_clear(ttc_ctx);
+    llama_kv_self_clear(ttc_ctx);
     auto er = llama_decode(ttc_ctx, llama_batch_get_one(tmp.data(), tmp.size()));
     if(er!=0)
     {
@@ -619,8 +619,8 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
     const std::string sampletext = (custom_speaker_text=="")?process_text("but that is what it is",ttsver):process_text(custom_speaker_text,ttsver);
 
     // process prompt and generate voice codes
-    llama_kv_cache_clear(ttc_ctx);
-    llama_kv_cache_clear(cts_ctx);
+    llama_kv_self_clear(ttc_ctx);
+    llama_kv_self_clear(cts_ctx);
     std::vector<llama_token> prompt_inp;
     prompt_init(prompt_inp, ttcvocab);
 
@@ -818,7 +818,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
             }
         }
         guide_tokens.clear();
-        llama_kv_cache_clear(ttc_ctx);
+        llama_kv_self_clear(ttc_ctx);
         prompt_init(prompt_inp, ttcvocab);
         next_token_uses_guide_token = true;
     }
@@ -949,7 +949,7 @@ tts_generation_outputs ttstype_generate(const tts_generation_inputs inputs)
     kcpp_embd_batch codebatch = kcpp_embd_batch(codes,0,false,true);
     printf("\nRunning Vocoder (%d AudioTokens)", codes.size());
 
-    if (llama_decode(cts_ctx, codebatch.batch) != 0) {
+    if (llama_encode(cts_ctx, codebatch.batch) != 0) {
         printf("\nError: TTS vocoder generation failed!\n");
         output.data = "";
         output.status = 0;

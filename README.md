@@ -183,14 +183,20 @@ makepkg -si
 You can then run koboldcpp anywhere from the terminal by running `koboldcpp` to spawn the GUI, or `koboldcpp --help` to view the list of commands for commandline execution (in case the GUI does not work).
 
 
-## Android (Termux) Alternative method
-- See https://github.com/ggerganov/llama.cpp/pull/1828/files
-
 ## Compiling on Android (Termux Installation)
-- [Install and run Termux from F-Droid](https://f-droid.org/en/packages/com.termux/)
-- Enter the command `termux-change-repo` and choose `Mirror by BFSU`
-- Install dependencies with `pkg install wget git python` (plus any other missing packages)
-- Install dependencies `apt install openssl` (if needed)
+- [First, Install and run Termux from F-Droid](https://f-droid.org/en/packages/com.termux/)
+## Termux Quick Setup Script (Easy Setup)
+- You can use this auto-installation script to quickly install and build everything and launch KoboldCpp with a model.
+Simply run:
+```
+curl -sSL https://raw.githubusercontent.com/LostRuins/koboldcpp/concedo/android_install.sh | sh
+```
+and it will install everything required. Alternatively, you can download the above `android_install.sh` script to file, then do `chmod +x` and run it interactively.
+## Termux Manual Instructions (DIY Setup)
+- Open termux and run the command `apt update`
+- Install dependency `apt install openssl`
+- Install other dependencies with `pkg install wget git python`
+- Run `pkg upgrade`
 - Clone the repo `git clone https://github.com/LostRuins/koboldcpp.git`
 - Navigate to the koboldcpp folder `cd koboldcpp`
 - Build the project `make`
@@ -198,7 +204,8 @@ You can then run koboldcpp anywhere from the terminal by running `koboldcpp` to 
 - Grab a small GGUF model, such as `wget https://huggingface.co/concedo/KobbleTinyV2-1.1B-GGUF/resolve/main/KobbleTiny-Q4_K.gguf`
 - Start the python server `python koboldcpp.py --model KobbleTiny-Q4_K.gguf`
 - Connect to `http://localhost:5001` on your mobile browser
-- If you encounter any errors, make sure your packages are up-to-date with `pkg up`
+- If you encounter any errors, make sure your packages are up-to-date with `pkg up` and `pkg upgrade`
+- If you have trouble installing an dependency, you can try the command `termux-change-repo` and choose a different repo (e.g. `Mirror by BFSU`)
 - GPU acceleration for Termux may be possible but I have not explored it. If you find a good cross-device solution, do share or PR it.
 
 
@@ -252,9 +259,14 @@ For more information, be sure to run the program with the `--help` flag, or [che
 - Since v1.75, openblas has been deprecated and removed in favor of the native CPU implementation.
 
 ## License
-- The original GGML library and llama.cpp by ggerganov are licensed under the MIT License
+- The original GGML library, stable-diffusion.cpp and llama.cpp by ggerganov are licensed under the MIT License
 - However, KoboldAI Lite is licensed under the AGPL v3.0 License
-- The other files are also under the AGPL v3.0 License unless otherwise stated
+- KoboldCpp code and other files are also under the AGPL v3.0 License unless otherwise stated
+- Llama.cpp source repo is at https://github.com/ggml-org/llama.cpp (MIT)
+- Stable-diffusion.cpp source repo is at https://github.com/leejet/stable-diffusion.cpp (MIT)
+- KoboldCpp source repo is at https://github.com/LostRuins/koboldcpp (AGPL)
+- KoboldAI Lite source repo is at https://github.com/LostRuins/lite.koboldai.net (AGPL)
+- For any further enquiries, contact @concedo on discord, or LostRuins on github.
 
 ## Notes
 - If you wish, after building the koboldcpp libraries with `make`, you can rebuild the exe yourself with pyinstaller by using `make_pyinstaller.bat`
