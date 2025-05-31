@@ -188,11 +188,8 @@ if (LLAMA_HIPBLAS)
         list(APPEND GGML_SOURCES_CUDA "ggml/src/ggml-cuda/ggml-cuda.cu")
         file(GLOB SRCS "ggml/src/ggml-cuda/template-instances/fattn-mma*.cu")
         list(APPEND GGML_SOURCES_CUDA ${SRCS})
-        file(GLOB SRCS "ggml/src/ggml-cuda/template-instances/mmq*.cu")
-        list(APPEND GGML_SOURCES_CUDA ${SRCS})
         add_compile_definitions(GGML_USE_HIP GGML_USE_CUDA SD_USE_CUDA)
-        add_library(ggml-rocm ${GGML_SOURCES_CUDA})
-
+        
         file(GLOB SRCS "ggml/src/ggml-cuda/template-instances/fattn-vec*q4_0-q4_0.cu")
         list(APPEND GGML_SOURCES_CUDA ${SRCS})
         file(GLOB SRCS "ggml/src/ggml-cuda/template-instances/fattn-vec*q8_0-q8_0.cu")
