@@ -52,7 +52,6 @@ const int LLAVA_TOKEN_IDENTIFIER_B = -999;
 //shared
 std::string executable_path = "";
 std::string lora_filename = "";
-std::string lora_base = "";
 std::string mmproj_filename = "";
 std::string draftmodel_filename = "";
 int speculative_chunk_amt = 8; //do it in chunks of this many tokens
@@ -137,10 +136,14 @@ static std::vector<logit_bias> logit_biases;
 static bool add_bos_token = true; // if set to false, mmproj handling breaks. dont disable unless you know what you're doing
 static bool load_guidance = false; //whether to enable cfg for negative prompts
 static bool check_slowness = false; //will display a suggestion to use highpriority if slow
+static bool highpriority = false;
 
 static int delayed_generated_tokens_limit = 0;
 std::deque<std::string> delayed_generated_tokens; //for use with antislop sampling
 static std::map<int,std::vector<int>> antislop_banned_token_ids; //first is the npast position, second is the array of banned ids at that index
+
+const int savestate_limit = 3;
+static savestate_data savestates[savestate_limit];
 
 inline int kcpp_cpu_has_blas(void) {
 #if defined(GGML_USE_BLAS) || defined(GGML_USE_CUDA) || defined(GGML_USE_VULKAN) || defined(GGML_USE_CLBLAST) || defined(GGML_USE_SYCL)
@@ -1949,9 +1952,9 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
             kcpp_data->swa_full = true;  //cannot use SWA
             printf("\nSWA Mode IS DISABLED!\nSWA Mode Cannot be used with Context Shifting!\n");
         } else if (inputs.use_fastforward) {
-            printf("\nSWA Mode is ENABLED!\nNote that using SWA Mode with Fast Forwarding can lead to degraded recall!\n");
+            printf("\nSWA Mode is ENABLED!\nNote that using SWA Mode cannot be used with Context Shifting, and can lead to degraded recall when combined with Fast Forwarding!\n");
         } else {
-            printf("\nSWA Mode IS ENABLED!\n");
+            printf("\nSWA Mode IS ENABLED!\nNote that using SWA Mode cannot be used with Context Shifting\n");
         }
     }
     debugmode = inputs.debugmode;
@@ -1972,6 +1975,7 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
     add_bos_token = !inputs.no_bos_token;
     load_guidance = inputs.load_guidance;
     check_slowness = inputs.check_slowness;
+    highpriority = inputs.highpriority;
 
     if(!add_bos_token)
     {
@@ -2057,15 +2061,9 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         {
             printf("\nAttempting to apply LORA adapter: %s\n", lora_filename.c_str());
 
-            const char * lora_base_arg = NULL;
-            if (lora_base != "") {
-                printf("Using LORA base model: %s\n", lora_base.c_str());
-                lora_base_arg = lora_base.c_str();
-            }
-
             int err = llama_v2_apply_lora_from_file(llama_ctx_v2,
                                                  lora_filename.c_str(),
-                                                 lora_base_arg,
+                                                 nullptr,
                                                  kcpp_data->n_threads);
             if (err != 0)
             {
@@ -2124,15 +2122,9 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         {
             printf("\nAttempting to apply LORA adapter: %s\n", lora_filename.c_str());
 
-            const char * lora_base_arg = NULL;
-            if (lora_base != "") {
-                printf("Using LORA base model: %s\n", lora_base.c_str());
-                lora_base_arg = lora_base.c_str();
-            }
-
             int err = llama_v3_apply_lora_from_file(llama_ctx_v3,
                                                  lora_filename.c_str(),
-                                                 lora_base_arg,
+                                                 nullptr,
                                                  kcpp_data->n_threads);
             if (err != 0)
             {
@@ -2368,6 +2360,11 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         ggml_threadpool_params threadpool1_params, threadpool2_params;
         ggml_threadpool_params_init(&threadpool1_params,kcpp_data->n_threads);
         ggml_threadpool_params_init(&threadpool2_params,kcpp_data->n_blasthreads);
+        if(inputs.highpriority)
+        {
+            threadpool1_params.prio = GGML_SCHED_PRIO_HIGH;
+            threadpool2_params.prio = GGML_SCHED_PRIO_HIGH;
+        }
 
         printf("Threadpool set to %d threads and %d blasthreads...\n", kcpp_data->n_threads,kcpp_data->n_blasthreads);
         struct ggml_threadpool * threadpool1 = ggml_threadpool_new(&threadpool1_params);
@@ -2381,19 +2378,12 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
         if (lora_filename != "")
         {
             printf("\nAttempting to apply LORA adapter: %s\n", lora_filename.c_str());
-
-            const char * lora_base_arg = NULL;
-            if (lora_base != "") {
-                printf("Using LORA base model: %s\n", lora_base.c_str());
-                lora_base_arg = lora_base.c_str();
-            }
-
             auto adapter = llama_adapter_lora_init(llamamodel, lora_filename.c_str());
             if (adapter == nullptr) {
                 fprintf(stderr, "%s: error: failed to apply lora adapter\n", __func__);
                 return ModelLoadResult::FAIL;
             }
-            llama_set_adapter_lora(llama_ctx_v4, adapter, 1.0f);
+            llama_set_adapter_lora(llama_ctx_v4, adapter, inputs.lora_multiplier);
         }
 
         if(mmproj_filename != "" && file_format==FileFormat::GGUF_GENERIC)
@@ -2411,10 +2401,11 @@ ModelLoadResult gpttype_load_model(const load_model_inputs inputs, FileFormat in
                 set_clip_uses_gpu(false);
                 printf("Clip forced to use CPU!\n");
             }
-            clp_ctx = clip_init(mmproj_filename.c_str(), clip_context_params{
+            clip_init_result cres = clip_init(mmproj_filename.c_str(), clip_context_params{
                 /* use_gpu */   true,
                 /* verbosity */ static_cast<ggml_log_level>(1),
             });
+            clp_ctx = cres.ctx_v;
             if(clp_ctx == nullptr) {
                 fprintf(stderr, "%s: error: failed to load mmproj model!\n", __func__);
                 return ModelLoadResult::FAIL;
@@ -4320,4 +4311,110 @@ generation_outputs gpttype_generate(const generation_inputs inputs)
     output.text = concat_output_reader_copy_res.c_str();
     generation_finished = true;
     return output;
+}
+
+size_t gpttype_calc_new_state_kv()
+{
+    if(kcpp_data==nullptr)
+    {
+        return 0;
+    }
+    if(file_format == FileFormat::GGUF_GENERIC)
+    {
+        return llama_state_get_size(llama_ctx_v4);
+    }
+    return 0;
+}
+size_t gpttype_calc_old_state_kv(int slot)
+{
+    return savestates[slot].current_savestate_size;
+}
+size_t gpttype_calc_old_state_tokencount(int slot)
+{
+    return savestates[slot].savestate_context_tokens.size();
+}
+size_t gpttype_calc_new_state_tokencount()
+{
+    return current_context_tokens.size();
+}
+size_t gpttype_save_state_kv(int slot)
+{
+    if(kcpp_data==nullptr)
+    {
+        return 0;
+    }
+    if(file_format == FileFormat::GGUF_GENERIC)
+    {
+        if (!savestates[slot].current_savestate_buffer.empty()) {  //JIT free
+            savestates[slot].current_savestate_buffer.clear();
+            savestates[slot].savestate_context_tokens.clear();
+            savestates[slot].current_savestate_size = 0;
+        }
+        size_t newsize = llama_state_get_size(llama_ctx_v4);
+        try {
+            if (savestates[slot].current_savestate_buffer.capacity() < newsize + 512) {
+                savestates[slot].current_savestate_buffer = std::vector<uint8_t>(newsize + 512);
+            } else {
+                savestates[slot].current_savestate_buffer.resize(newsize + 512);
+            }
+            savestates[slot].current_savestate_buffer.resize(newsize + 512);  // add some padding. May throw std::bad_alloc
+        } catch (const std::bad_alloc&) {
+            fprintf(stderr, "KV Save State: Failed to allocate %zu bytes.\n", newsize + 512);
+            return 0;
+        }
+        auto res = llama_state_get_data(llama_ctx_v4, savestates[slot].current_savestate_buffer.data(), newsize);
+        if (res > 0) {
+            savestates[slot].current_savestate_size   = newsize;
+            savestates[slot].savestate_context_tokens = current_context_tokens;
+            printf("\nKV Save State %d: Created SaveState of %zu tokens, costing %zu MB.\n",slot,current_context_tokens.size(),savestates[slot].current_savestate_size/(1024*1024));
+        }
+        return res;
+    }
+    return 0;
+}
+bool gpttype_load_state_kv(int slot)
+{
+    if(kcpp_data==nullptr)
+    {
+        return false;
+    }
+    if(file_format == FileFormat::GGUF_GENERIC)
+    {
+        if (savestates[slot].current_savestate_buffer.empty()) {
+            return false;
+        }
+        auto res = llama_state_set_data(llama_ctx_v4, savestates[slot].current_savestate_buffer.data(), savestates[slot].current_savestate_size);
+        if(res > 0)
+        {
+            current_context_tokens = savestates[slot].savestate_context_tokens;
+            printf("\nKV Load SaveState %d: Restored KV with %zu tokens.\n", slot,current_context_tokens.size());
+        }
+        return (res > 0);
+    }
+    return false;
+}
+bool gpttype_clear_state_kv(bool shrink)
+{
+    if(kcpp_data==nullptr)
+    {
+        return false;
+    }
+    if(file_format == FileFormat::GGUF_GENERIC)
+    {
+        for(int slot=0;slot<savestate_limit;++slot)
+        {
+            if (!savestates[slot].current_savestate_buffer.empty()) {
+                printf("\nKV Clear SaveState %d: Freed %zu MB.\n",slot, savestates[slot].current_savestate_size / (1024 * 1024));
+                savestates[slot].current_savestate_buffer.clear();
+                if(shrink)
+                {
+                    savestates[slot].current_savestate_buffer.shrink_to_fit();
+                }
+                savestates[slot].savestate_context_tokens.clear();
+                savestates[slot].current_savestate_size = 0;
+            }
+        }
+        return true;
+    }
+    return false;
 }

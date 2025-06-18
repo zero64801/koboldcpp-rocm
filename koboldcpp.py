@@ -28,10 +28,13 @@ import threading
 import html
 import random
 import hashlib
-import urllib.parse as urlparse
+import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Tuple
+import shutil
+import subprocess
 
 # constants
 sampler_order_max = 7
@@ -44,15 +47,16 @@ default_draft_amount = 8
 default_ttsmaxlen = 4096
 default_visionmaxres = 1024
 net_save_slots = 10
+savestate_limit = 3 #3 savestate slots
 
 # abuse prevention
 stop_token_max = 256
-ban_token_max = 512
+ban_token_max = 768
 logit_bias_max = 512
 dry_seq_break_max = 128
 
 # global vars
-KcppVersion = "1.92.1.yr0-ROCm"
+KcppVersion = "1.93.2.yr0-ROCm"
 showdebug = True
 kcpp_instance = None #global running instance
 global_memory = {"tunnel_url": "", "restart_target":"", "input_to_exit":False, "load_complete":False}
@@ -161,7 +165,6 @@ class load_model_inputs(ctypes.Structure):
                 ("executable_path", ctypes.c_char_p),
                 ("model_filename", ctypes.c_char_p),
                 ("lora_filename", ctypes.c_char_p),
-                ("lora_base", ctypes.c_char_p),
                 ("draftmodel_filename", ctypes.c_char_p),
                 ("draft_amount", ctypes.c_int),
                 ("draft_gpulayers", ctypes.c_int),
@@ -192,7 +195,9 @@ class load_model_inputs(ctypes.Structure):
                 ("quant_k", ctypes.c_int),
                 ("quant_v", ctypes.c_int),
                 ("check_slowness", ctypes.c_bool),
+                ("highpriority", ctypes.c_bool),
                 ("swa_support", ctypes.c_bool),
+                ("lora_multiplier", ctypes.c_float),
                 ("quiet", ctypes.c_bool),
                 ("debugmode", ctypes.c_int)]
 
@@ -344,6 +349,8 @@ class embeddings_load_model_inputs(ctypes.Structure):
                 ("vulkan_info", ctypes.c_char_p),
                 ("gpulayers", ctypes.c_int),
                 ("flash_attention", ctypes.c_bool),
+                ("use_mmap", ctypes.c_bool),
+                ("embeddingsmaxctx", ctypes.c_int),
                 ("quiet", ctypes.c_bool),
                 ("debugmode", ctypes.c_int)]
 
@@ -545,6 +552,17 @@ def init_library():
     handle.token_count.restype = token_count_outputs
     handle.get_pending_output.restype = ctypes.c_char_p
     handle.get_chat_template.restype = ctypes.c_char_p
+    handle.calc_new_state_kv.restype = ctypes.c_size_t
+    handle.calc_new_state_tokencount.restype = ctypes.c_size_t
+    handle.calc_old_state_kv.argtypes = [ctypes.c_int]
+    handle.calc_old_state_kv.restype = ctypes.c_size_t
+    handle.calc_old_state_tokencount.argtypes = [ctypes.c_int]
+    handle.calc_old_state_tokencount.restype = ctypes.c_size_t
+    handle.save_state_kv.argtypes = [ctypes.c_int]
+    handle.save_state_kv.restype = ctypes.c_size_t
+    handle.load_state_kv.argtypes = [ctypes.c_int]
+    handle.load_state_kv.restype = ctypes.c_bool
+    handle.clear_state_kv.restype = ctypes.c_bool
     handle.sd_load_model.argtypes = [sd_load_model_inputs]
     handle.sd_load_model.restype = ctypes.c_bool
     handle.sd_generate.argtypes = [sd_generation_inputs]
@@ -651,7 +669,6 @@ def is_incomplete_utf8_sequence(byte_seq): #note, this will only flag INCOMPLETE
         return False #invalid sequence, but not incomplete
 
 def unpack_to_dir(destpath = ""):
-    import shutil
     srcpath = os.path.abspath(os.path.dirname(__file__))
     cliunpack = False if destpath == "" else True
     print("Attempt to unpack KoboldCpp into directory...")
@@ -662,21 +679,45 @@ def unpack_to_dir(destpath = ""):
         if not destpath:
             return
 
+    if not os.path.isdir(destpath):
+        os.makedirs(destpath)
+
     if os.path.isdir(srcpath) and os.path.isdir(destpath) and not os.listdir(destpath):
         try:
             if cliunpack:
                 print(f"KoboldCpp will be extracted to {destpath}\nThis process may take several seconds to complete.")
             else:
                 messagebox.showinfo("Unpack Starting", f"KoboldCpp will be extracted to {destpath}\nThis process may take several seconds to complete.")
+            pyds_dir = os.path.join(destpath, 'pyds')
+            using_pyinstaller_6 = False
+            try:
+                import pkg_resources
+                piver = pkg_resources.get_distribution("pyinstaller").version
+                print(f"PyInstaller Version: {piver}")
+                if piver.startswith("6."):
+                    using_pyinstaller_6 = True
+                    os.makedirs(os.path.join(destpath, "_internal"), exist_ok=True)
+                    pyds_dir = os.path.join(os.path.join(destpath, "_internal"), 'pyds')
+            except Exception:
+                pass
+            os.makedirs(pyds_dir, exist_ok=True)
             for item in os.listdir(srcpath):
                 s = os.path.join(srcpath, item)
                 d = os.path.join(destpath, item)
-                if item.endswith('.pyd'):  # Skip .pyd files
+                d2 = d  #this will be modified for pyinstaller 6 and unmodified for pyinstaller 5
+                if using_pyinstaller_6:
+                    d2 = os.path.join(os.path.join(destpath, "_internal"), item)
+                if using_pyinstaller_6 and item.startswith('koboldcpp-launcher'):  # Move koboldcpp-launcher to its intended location
+                    shutil.copy2(s, d)
+                    continue
+                if item.endswith('.pyd'):  # relocate pyds files to subdirectory
+                    pyd = os.path.join(pyds_dir, item)
+                    shutil.copy2(s, pyd)
                     continue
                 if os.path.isdir(s):
-                    shutil.copytree(s, d, False, None)
+                    shutil.copytree(s, d2, False, None)
                 else:
-                    shutil.copy2(s, d)
+                    shutil.copy2(s, d2)
             if cliunpack:
                 print(f"KoboldCpp successfully extracted to {destpath}")
             else:
@@ -1047,8 +1088,6 @@ def autoset_gpu_layers(ctxsize, sdquanted, bbs, qkv_level): #shitty algo to dete
         return 0
 
 def fetch_gpu_properties(testCL,testCU,testVK):
-    import subprocess
-
     gpumem_ignore_limit_min = 1024*1024*600 #600 mb min
     gpumem_ignore_limit_max = 1024*1024*1024*300 #300 gb max
 
@@ -1223,12 +1262,9 @@ def load_model(model_filename):
     inputs.use_mmap = args.usemmap
     inputs.use_mlock = args.usemlock
     inputs.lora_filename = "".encode("UTF-8")
-    inputs.lora_base = "".encode("UTF-8")
+    inputs.lora_multiplier = args.loramult
     if args.lora:
         inputs.lora_filename = args.lora[0].encode("UTF-8")
-        inputs.use_mmap = False
-        if len(args.lora) > 1:
-            inputs.lora_base = args.lora[1].encode("UTF-8")
 
     inputs.draftmodel_filename = args.draftmodel.encode("UTF-8") if args.draftmodel else "".encode("UTF-8")
     inputs.draft_amount = args.draftamount
@@ -1275,6 +1311,7 @@ def load_model(model_filename):
     inputs.override_kv = args.overridekv.encode("UTF-8") if args.overridekv else "".encode("UTF-8")
     inputs.override_tensors = args.overridetensors.encode("UTF-8") if args.overridetensors else "".encode("UTF-8")
     inputs.check_slowness = (not args.highpriority and os.name == 'nt' and 'Intel' in platform.processor())
+    inputs.highpriority = args.highpriority
     inputs.swa_support = args.useswa
     inputs = set_backend_props(inputs)
     ret = handle.load_model(inputs)
@@ -1570,6 +1607,7 @@ def sd_generate(genparams):
     adapter_obj = genparams.get('adapter', default_adapter)
     forced_negprompt = adapter_obj.get("add_sd_negative_prompt", "")
     forced_posprompt = adapter_obj.get("add_sd_prompt", "")
+    forced_steplimit = adapter_obj.get("add_sd_step_limit", 80)
 
     prompt = genparams.get("prompt", "high quality")
     negative_prompt = genparams.get("negative_prompt", "")
@@ -1602,7 +1640,7 @@ def sd_generate(genparams):
     width = width - (width%64)
     height = height - (height%64)
     cfg_scale = (1 if cfg_scale < 1 else (25 if cfg_scale > 25 else cfg_scale))
-    sample_steps = (1 if sample_steps < 1 else (80 if sample_steps > 80 else sample_steps))
+    sample_steps = (1 if sample_steps < 1 else (forced_steplimit if sample_steps > forced_steplimit else sample_steps))
     reslimit = 1024
     width = (64 if width < 64 else width)
     height = (64 if height < 64 else height)
@@ -1716,10 +1754,13 @@ def tts_generate(genparams):
     voice = 1
     speaker_json = tts_prepare_voice_json(genparams.get("speaker_json","")) #handle custom cloned voices
     voicestr = genparams.get("voice", genparams.get("speaker_wav", ""))
+    oai_voicemap = ["alloy","onyx","echo","nova","shimmer"] # map to kcpp defaults
     voice_mapping = ["kobo","cheery","sleepy","shouty","chatty"]
     normalized_voice = voicestr.strip().lower() if voicestr else ""
     if normalized_voice in voice_mapping:
         voice = voice_mapping.index(normalized_voice) + 1
+    elif normalized_voice in oai_voicemap:
+        voice = oai_voicemap.index(normalized_voice) + 1
     else:
         voice = simple_lcg_hash(voicestr.strip()) if voicestr else 1
     inputs = tts_generation_inputs()
@@ -1751,6 +1792,8 @@ def embeddings_load_model(model_filename):
     inputs.gpulayers = 0
     inputs.flash_attention = False
     inputs.threads = args.threads
+    inputs.use_mmap = args.usemmap
+    inputs.embeddingsmaxctx = args.embeddingsmaxctx
     inputs = set_backend_props(inputs)
     ret = handle.embeddings_load_model(inputs)
     return ret
@@ -1821,11 +1864,8 @@ def websearch(query):
     if query==websearch_lastquery:
         print("Returning cached websearch...")
         return websearch_lastresponse
-    import urllib.parse
-    import urllib.request
     import difflib
     from html.parser import HTMLParser
-    from concurrent.futures import ThreadPoolExecutor
     num_results = 3
     searchresults = []
     utfprint("Performing new websearch...",1)
@@ -1986,7 +2026,6 @@ def websearch(query):
 
 def is_port_in_use(portNum):
     try:
-        import socket
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             return s.connect_ex(('localhost', portNum)) == 0
     except Exception:
@@ -2292,8 +2331,8 @@ ws ::= | " " | "\n" [ \t]{0,20}
                             if used_tool_json:
                                 toolparamjson = None
                                 toolname = None
-                                # Set temperature low automatically if function calling
-                                genparams["temperature"] = 0.1
+                                # Set temperature lower automatically if function calling, cannot exceed 0.5
+                                genparams["temperature"] = (1.0 if genparams.get("temperature", 0.5) > 1.0 else genparams.get("temperature", 0.5))
                                 genparams["using_openai_tools"] = True
                                 # Set grammar to llamacpp example grammar to force json response (see https://github.com/ggerganov/llama.cpp/blob/master/grammars/json_arr.gbnf)
                                 genparams["grammar"] = jsongrammar
@@ -2435,7 +2474,6 @@ ws ::= | " " | "\n" [ \t]{0,20}
 def LaunchWebbrowser(target_url, failedmsg):
     try:
         if os.name == "posix" and "DISPLAY" in os.environ:  # UNIX-like systems
-            import subprocess
             clean_env = os.environ.copy()
             clean_env.pop("LD_LIBRARY_PATH", None)
             clean_env["PATH"] = "/usr/bin:/bin"
@@ -2753,8 +2791,8 @@ class KcppServerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def noscript_webui(self):
         global modelbusy, sslvalid
-        parsed_url = urlparse.urlparse(self.path)
-        parsed_dict = urlparse.parse_qs(parsed_url.query)
+        parsed_url = urllib.parse.urlparse(self.path)
+        parsed_dict = urllib.parse.parse_qs(parsed_url.query)
         reply = ""
         status = str(parsed_dict['status'][0]) if 'status' in parsed_dict else "Ready To Generate"
         prompt = str(parsed_dict['prompt'][0]) if 'prompt' in parsed_dict else ""
@@ -2825,7 +2863,7 @@ class KcppServerRequestHandler(http.server.SimpleHTTPRequestHandler):
             parsed_dict["status"] = status
             parsed_dict["chatmode"] = ("1" if chatmode else "0")
             parsed_dict["imgmode"] = ("1" if imgmode else "0")
-            updated_query_string = urlparse.urlencode(parsed_dict, doseq=True)
+            updated_query_string = urllib.parse.urlencode(parsed_dict, doseq=True)
             updated_path = parsed_url._replace(query=updated_query_string).geturl()
             self.path = updated_path
             time.sleep(0.5) #short delay
@@ -2969,6 +3007,7 @@ Change Mode<br>
             if args.admin and args.admindir and os.path.exists(args.admindir) and self.check_header_password(args.adminpassword):
                 dirpath = os.path.abspath(args.admindir)
                 opts = [f for f in sorted(os.listdir(dirpath)) if (f.endswith(".kcpps") or f.endswith(".kcppt") or f.endswith(".gguf")) and os.path.isfile(os.path.join(dirpath, f))]
+                opts.append("unload_model")
             response_body = (json.dumps(opts).encode())
 
         elif self.path.endswith(('/api/extra/perf')):
@@ -3026,15 +3065,18 @@ Change Mode<br>
         elif self.path.endswith('/sdapi/v1/upscalers'):
            response_body = (json.dumps([]).encode())
 
-        elif self.path.endswith(('/speakers_list')): #xtts compatible
+        elif self.path.endswith('/speakers_list'): #xtts compatible
             response_body = (json.dumps(["kobo","cheery","sleepy","shouty","chatty"]).encode()) #some random voices for them to enjoy
-        elif self.path.endswith(('/speakers')): #xtts compatible
+        elif self.path.endswith('/speakers'): #xtts compatible
             response_body = (json.dumps([{"name":"kobo","voice_id":"kobo","preview_url":""},{"name":"cheery","voice_id":"cheery","preview_url":""},{"name":"sleepy","voice_id":"sleepy","preview_url":""},{"name":"shouty","voice_id":"shouty","preview_url":""},{"name":"chatty","voice_id":"chatty","preview_url":""}]).encode()) #some random voices for them to enjoy
-        elif self.path.endswith(('/get_tts_settings')): #xtts compatible
+        elif self.path.endswith('/get_tts_settings'): #xtts compatible
             response_body = (json.dumps({"temperature":0.75,"speed":1,"length_penalty":1,"repetition_penalty":1,"top_p":1,"top_k":4,"enable_text_splitting":True,"stream_chunk_size":100}).encode()) #some random voices for them to enjoy
 
-        elif self.path.endswith(('/api/tags')): #ollama compatible
-            response_body = (json.dumps({"models":[{"name":"koboldcpp","model":friendlymodelname,"modified_at":"2024-07-19T15:26:55.6122841+08:00","size":394998579,"digest":"b5dc5e784f2a3ee1582373093acf69a2f4e2ac1710b253a001712b86a61f88bb","details":{"parent_model":"","format":"gguf","family":"koboldcpp","families":["koboldcpp"],"parameter_size":"128M","quantization_level":"Q4_0"}}]}).encode())
+        elif self.path.endswith('/api/tags') or self.path.endswith('/api/ps'): #ollama compatible
+            response_body = (json.dumps({"models":[{"name":"koboldcpp","model":friendlymodelname,"modified_at":"2024-07-19T15:26:55.6122841+08:00","expires_at": "2055-06-04T19:06:25.5433636+08:00","size":394998579,"size_vram":394998579,"digest":"b5dc5e784f2a3ee1582373093acf69a2f4e2ac1710b253a001712b86a61f88bb","details":{"parent_model":"","format":"gguf","family":"koboldcpp","families":["koboldcpp"],"parameter_size":"128M","quantization_level":"Q4_0"}}]}).encode())
+        elif self.path.endswith('/api/version'): #ollama compatible, NOT the kcpp version
+            response_body = (json.dumps({"version":"0.7.0"}).encode())
+
 
         #comfyui compatible
         elif self.path=='/system_stats':
@@ -3107,7 +3149,7 @@ Change Mode<br>
 
         elif self.path=="/v1":
             content_type = 'text/html'
-            response_body = ("KoboldCpp OpenAI compatible endpoint is running!\n\nFor usage reference, see https://platform.openai.com/docs/api-reference").encode()
+            response_body = ("KoboldCpp OpenAI compatible endpoint is running!<br>For usage reference, see <a href='https://platform.openai.com/docs/api-reference'>https://platform.openai.com/docs/api-reference</a><br>For other endpoints, see <a href='/api'>KoboldCpp API Documentation</a>").encode()
 
         elif self.path=="/api/extra/preloadstory":
             if preloaded_story is None:
@@ -3460,17 +3502,41 @@ Change Mode<br>
                 except Exception:
                     targetfile = ""
                 if targetfile and targetfile!="":
-                    dirpath = os.path.abspath(args.admindir)
-                    targetfilepath = os.path.join(dirpath, targetfile)
-                    opts = [f for f in os.listdir(dirpath) if (f.lower().endswith(".kcpps") or f.lower().endswith(".kcppt") or f.lower().endswith(".gguf")) and os.path.isfile(os.path.join(dirpath, f))]
-                    if targetfile in opts and os.path.exists(targetfilepath):
-                        print(f"Admin: Received request to reload config to {targetfile}")
-                        global_memory["restart_target"] = targetfile
+                    if targetfile=="unload_model": #special request to simply unload model
+                        print("Admin: Received request to unload model")
+                        global_memory["restart_target"] = "unload_model"
                         resp = {"success": True}
+                    else:
+                        dirpath = os.path.abspath(args.admindir)
+                        targetfilepath = os.path.join(dirpath, targetfile)
+                        opts = [f for f in os.listdir(dirpath) if (f.lower().endswith(".kcpps") or f.lower().endswith(".kcppt") or f.lower().endswith(".gguf")) and os.path.isfile(os.path.join(dirpath, f))]
+                        if targetfile in opts and os.path.exists(targetfilepath):
+                            print(f"Admin: Received request to reload config to {targetfile}")
+                            global_memory["restart_target"] = targetfile
+                            resp = {"success": True}
             response_body = (json.dumps(resp).encode())
 
         elif self.path.endswith('/set_tts_settings'): #return dummy response
             response_body = (json.dumps({"message": "Settings successfully applied"}).encode())
+
+        elif self.path=="/api/extra/shutdown":
+            # if args.singleinstance:
+            client_ip = self.client_address[0]
+            is_local = client_ip in ('127.0.0.1', '::1', 'localhost')
+            if is_local and args.singleinstance:
+                response_body = (json.dumps({"success": True}).encode())
+                self.send_response(response_code)
+                self.send_header('content-length', str(len(response_body)))
+                self.end_headers(content_type='application/json')
+                self.wfile.write(response_body)
+                print("\nReceived Shutdown Command! Shutting down...\n")
+                time.sleep(1)
+                global exitcounter
+                exitcounter = 999
+                sys.exit(0)
+                return
+            else:
+                response_body = (json.dumps({"success": False}).encode())
 
         if response_body is not None:
             self.send_response(response_code)
@@ -3499,33 +3565,77 @@ Change Mode<br>
         if reqblocking:
             requestsinqueue = (requestsinqueue - 1) if requestsinqueue > 0 else 0
 
+        # handle endpoints that require mutex locking and handle actual gens
         try:
             sse_stream_flag = False
-
             api_format = 0 #1=basic,2=kai,3=oai,4=oai-chat,5=interrogate,6=ollama,7=ollamachat
             is_imggen = False
             is_comfyui_imggen = False
             is_transcribe = False
             is_tts = False
             is_embeddings = False
+            response_body = None
 
-            if self.path.endswith('/request'):
+            if self.path.endswith('/api/admin/check_state'):
+                if global_memory and args.admin and args.admindir and os.path.exists(args.admindir) and self.check_header_password(args.adminpassword):
+                    cur_states = []
+                    for sl in range(savestate_limit): #0,1,2
+                        oldstate = handle.calc_old_state_kv(sl)
+                        oldtokencnt = handle.calc_old_state_tokencount(sl)
+                        cur_states.append({"tokens":oldtokencnt,"size":oldstate})
+                    newstate = handle.calc_new_state_kv()
+                    newtokencnt = handle.calc_new_state_tokencount()
+                    response_body = (json.dumps({"success": True, "old_states":cur_states, "new_state_size":newstate, "new_tokens":newtokencnt}).encode())
+                else:
+                    response_body = (json.dumps({"success": False, "old_states":[], "new_state_size":0, "new_tokens":0}).encode())
+            elif self.path.endswith('/api/admin/load_state'):
+                if global_memory and args.admin and args.admindir and os.path.exists(args.admindir) and self.check_header_password(args.adminpassword):
+                    targetslot = 0
+                    try:
+                        tempbody = json.loads(body)
+                        if isinstance(tempbody, dict):
+                            targetslot = tempbody.get('slot', 0)
+                    except Exception:
+                        pass
+                    targetslot = (targetslot if targetslot<savestate_limit else 0)
+                    result = handle.load_state_kv(targetslot)
+                    tokencnt = handle.calc_new_state_tokencount()
+                    response_body = (json.dumps({"success": result, "new_tokens":tokencnt}).encode())
+                else:
+                    response_body = (json.dumps({"success": False, "new_tokens":0}).encode())
+            elif self.path.endswith('/api/admin/save_state'):
+                if global_memory and args.admin and args.admindir and os.path.exists(args.admindir) and self.check_header_password(args.adminpassword):
+                    targetslot = 0
+                    try:
+                        tempbody = json.loads(body)
+                        if isinstance(tempbody, dict):
+                            targetslot = tempbody.get('slot', 0)
+                    except Exception:
+                        pass
+                    targetslot = (targetslot if targetslot<savestate_limit else 0)
+                    result = handle.save_state_kv(targetslot)
+                    tokencnt = handle.calc_new_state_tokencount()
+                    response_body = (json.dumps({"success": (result>0), "new_state_size":result, "new_tokens":tokencnt}).encode())
+                else:
+                    response_body = (json.dumps({"success": False, "new_state_size":0, "new_tokens":0}).encode())
+            elif self.path.endswith('/api/admin/clear_state'):
+                if global_memory and args.admin and args.admindir and os.path.exists(args.admindir) and self.check_header_password(args.adminpassword):
+                    result = handle.clear_state_kv()
+                    response_body = (json.dumps({"success": result}).encode())
+                else:
+                    response_body = (json.dumps({"success": False}).encode())
+            elif self.path.endswith('/request'):
                 api_format = 1
-
-            if self.path.endswith(('/api/v1/generate', '/api/latest/generate')):
+            elif self.path.endswith(('/api/v1/generate', '/api/latest/generate')):
                 api_format = 2
-
-            if self.path.endswith('/api/extra/generate/stream'):
+            elif self.path.endswith('/api/extra/generate/stream'):
                 api_format = 2
                 sse_stream_flag = True
-
-            if self.path.endswith('/v1/completions') or self.path.endswith('/v1/completion'):
+            elif self.path.endswith('/v1/completions') or self.path.endswith('/v1/completion'):
                 api_format = 3
-
-            if self.path.endswith('/v1/chat/completions'):
+            elif self.path.endswith('/v1/chat/completions'):
                 api_format = 4
-
-            if self.path.endswith('/sdapi/v1/interrogate'):
+            elif self.path.endswith('/sdapi/v1/interrogate'):
                 has_vision = (mmprojpath!="")
                 if not has_vision:
                     self.send_response(503)
@@ -3536,27 +3646,27 @@ Change Mode<br>
                         }}).encode())
                     return
                 api_format = 5
-
-            if self.path.endswith('/api/generate'):
+            elif self.path.endswith('/api/generate'): #ollama
                 api_format = 6
-            if self.path.endswith('/api/chat'):
+            elif self.path.endswith('/api/chat'): #ollama
                 api_format = 7
-
-            if self.path=="/prompt" or self.path.endswith('/sdapi/v1/txt2img') or self.path.endswith('/sdapi/v1/img2img'):
+            elif self.path=="/prompt" or self.path.endswith('/sdapi/v1/txt2img') or self.path.endswith('/sdapi/v1/img2img'):
                 is_imggen = True
                 if self.path=="/prompt":
                     is_comfyui_imggen = True
-
-            if self.path.endswith('/api/extra/transcribe') or self.path.endswith('/v1/audio/transcriptions'):
+            elif self.path.endswith('/api/extra/transcribe') or self.path.endswith('/v1/audio/transcriptions'):
                 is_transcribe = True
-
-            if self.path.endswith('/api/extra/tts') or self.path.endswith('/v1/audio/speech') or self.path.endswith('/tts_to_audio'):
+            elif self.path.endswith('/api/extra/tts') or self.path.endswith('/v1/audio/speech') or self.path.endswith('/tts_to_audio'):
                 is_tts = True
-
-            if self.path.endswith('/api/extra/embeddings') or self.path.endswith('/v1/embeddings'):
+            elif self.path.endswith('/api/extra/embeddings') or self.path.endswith('/v1/embeddings'):
                 is_embeddings = True
 
-            if is_imggen or is_transcribe or is_tts or is_embeddings or api_format > 0:
+            if response_body is not None:
+                self.send_response(response_code)
+                self.send_header('content-length', str(len(response_body)))
+                self.end_headers(content_type='application/json')
+                self.wfile.write(response_body)
+            elif is_imggen or is_transcribe or is_tts or is_embeddings or api_format > 0:
                 global last_req_time
                 last_req_time = time.time()
 
@@ -3707,7 +3817,12 @@ Change Mode<br>
                         outdatas = []
                         odidx = 0
                         for od in gen["data"]:
-                            outdatas.append({"object":"embedding","index":odidx,"embedding":od})
+                            if genparams.get("encoding_format", "")=="base64":
+                                binary_data = struct.pack('<' + 'f' * len(od), *od)
+                                b64_string = base64.b64encode(binary_data).decode('utf-8')
+                                outdatas.append({"object":"embedding","index":odidx,"embedding":b64_string})
+                            else:
+                                outdatas.append({"object":"embedding","index":odidx,"embedding":od})
                             odidx += 1
                         genresp = (json.dumps({"object":"list","data":outdatas,"model":friendlyembeddingsmodelname,"usage":{"prompt_tokens":gen["count"],"total_tokens":gen["count"]}}).encode())
                         self.send_response(200)
@@ -3750,6 +3865,7 @@ def RunServerMultiThreaded(addr, port, server_handler):
     global embedded_kailite, embedded_kcpp_docs, embedded_kcpp_sdui, global_memory
     if is_port_in_use(port):
         print(f"Warning: Port {port} already appears to be in use by another program.")
+
     ipv4_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     ipv4_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     ipv6_sock = None
@@ -3835,8 +3951,6 @@ def RunServerMultiThreaded(addr, port, server_handler):
 
 # Based on https://github.com/mathgeniuszach/xdialog/blob/main/xdialog/zenity_dialogs.py - MIT license | - Expanded version by Henk717
 def zenity(filetypes=None, initialdir="", initialfile="", **kwargs) -> Tuple[int, str]:
-    import shutil
-    import subprocess
     global zenity_recent_dir, zenity_permitted
 
     if not zenity_permitted:
@@ -4149,7 +4263,7 @@ def show_gui():
 
     model_var = ctk.StringVar()
     lora_var = ctk.StringVar()
-    lora_base_var = ctk.StringVar()
+    loramult_var = ctk.StringVar(value="1.0")
     preloadstory_var = ctk.StringVar()
     savedatafile_var = ctk.StringVar()
     mmproj_var = ctk.StringVar()
@@ -4198,10 +4312,12 @@ def show_gui():
     ttsmaxlen_var = ctk.StringVar(value=str(default_ttsmaxlen))
 
     embeddings_model_var = ctk.StringVar()
+    embeddings_ctx_var = ctk.StringVar(value=str(""))
 
     admin_var = ctk.IntVar(value=0)
     admin_dir_var = ctk.StringVar()
     admin_password_var = ctk.StringVar()
+    singleinstance_var = ctk.IntVar(value=0)
 
     nozenity_var = ctk.IntVar(value=0)
 
@@ -4299,18 +4415,18 @@ def show_gui():
         button = ctk.CTkButton(parent, 50, text="Browse", command= lambda a=var,b=searchtext:getfilename(a,b))
         if singlerow:
             if singlecol:
-                entry.grid(row=row, column=0, padx=(94+8), stick="w")
-                button.grid(row=row, column=0, padx=(94+width+12), stick="nw")
+                entry.grid(row=row, column=0, padx=(94+8), pady=2, stick="w")
+                button.grid(row=row, column=0, padx=(94+width+12), pady=2, stick="w")
             else:
-                entry.grid(row=row, column=1, padx=8, stick="w")
-                button.grid(row=row, column=1, padx=(width+12), stick="nw")
+                entry.grid(row=row, column=1, padx=8, pady=2, stick="w")
+                button.grid(row=row, column=1, padx=(width+12), pady=2, stick="w")
         else:
             if singlecol:
-                entry.grid(row=row+1, column=0, columnspan=3, padx=8, stick="nw")
-                button.grid(row=row+1, column=0, columnspan=3, padx=(width+12), stick="nw")
+                entry.grid(row=row+1, column=0, columnspan=3, padx=8, pady=2, stick="w")
+                button.grid(row=row+1, column=0, columnspan=3, padx=(width+12), pady=2, stick="w")
             else:
-                entry.grid(row=row+1, column=0, columnspan=1, padx=8, stick="nw")
-                button.grid(row=row+1, column=1, columnspan=1, padx=8, stick="nw")
+                entry.grid(row=row+1, column=0, columnspan=1, padx=8, pady=2, stick="w")
+                button.grid(row=row+1, column=1, columnspan=1, padx=8, pady=2, stick="w")
         return label, entry, button
 
     # from subprocess import run, CalledProcessError
@@ -4435,8 +4551,8 @@ def show_gui():
                 searchbase = model_search.get()
                 if searchbase.strip()=="":
                     return
-                urlcode = urlparse.urlencode({"search":( "GGUF " + searchbase),"limit":10}, doseq=True)
-                urlcode2 = urlparse.urlencode({"search":searchbase,"limit":6}, doseq=True)
+                urlcode = urllib.parse.urlencode({"search":( "GGUF " + searchbase),"limit":10}, doseq=True)
+                urlcode2 = urllib.parse.urlencode({"search":searchbase,"limit":6}, doseq=True)
                 resp = make_url_request(f"https://huggingface.co/api/models?{urlcode}",None,'GET',{},10)
                 for m in resp:
                     searchedmodels.append(m["id"])
@@ -4906,7 +5022,7 @@ def show_gui():
     # load model
     makefileentry(quick_tab, "GGUF Text Model:", "Select GGUF or GGML Model File", model_var, 40, 280, onchoosefile=on_picked_model_file,tooltiptxt="Select a GGUF or GGML model file on disk to be loaded.")
     model_var.trace("w", gui_changed_modelfile)
-    ctk.CTkButton(quick_tab, width=70, text = "HF Search", command = model_searcher ).grid(row=41,column=1, stick="sw", padx= 202)
+    ctk.CTkButton(quick_tab, width=70, text = "HF Search", command = model_searcher ).grid(row=41,column=1, stick="sw", padx= 202, pady=2)
 
     # Hardware Tab
     hardware_tab = tabcontent["Hardware"]
@@ -5002,9 +5118,9 @@ def show_gui():
     model_tab = tabcontent["Loaded Files"]
 
     makefileentry(model_tab, "Text Model:", "Select GGUF or GGML Model File", model_var, 1,width=205,singlerow=True, onchoosefile=on_picked_model_file,tooltiptxt="Select a GGUF or GGML model file on disk to be loaded.")
-    ctk.CTkButton(model_tab, width=70, text = "HF Search", command = model_searcher ).grid(row=1,column=0, stick="nw", padx=370)
-    makefileentry(model_tab, "Text Lora:", "Select Lora File",lora_var, 3,width=280,singlerow=True,tooltiptxt="Select an optional GGML Text LoRA adapter to use.\nLeave blank to skip.")
-    makefileentry(model_tab, "Lora Base:", "Select Lora Base File", lora_base_var, 5,width=280,singlerow=True,tooltiptxt="Select an optional F16 GGML Text LoRA base file to use.\nLeave blank to skip.")
+    ctk.CTkButton(model_tab, width=70, text = "HF Search", command = model_searcher ).grid(row=1,column=0, stick="nw", padx=370, pady=2)
+    makefileentry(model_tab, "Text Lora:", "Select Lora File",lora_var, 3,width=160,singlerow=True,tooltiptxt="Select an optional GGML Text LoRA adapter to use.\nLeave blank to skip.")
+    makelabelentry(model_tab, "Multiplier: ", loramult_var, 3, 50,padx=390,singleline=True,tooltip="Scale multiplier for Text LoRA Strength. Default is 1.0", labelpadx=330)
     makefileentry(model_tab, "Vision mmproj:", "Select Vision mmproj File", mmproj_var, 7,width=280,singlerow=True,tooltiptxt="Select a mmproj file to use for vision models like LLaVA.\nLeave blank to skip.")
     makecheckbox(model_tab, "Vision Force CPU", mmprojcpu_var, 9, tooltiptxt="Force CLIP for Vision mmproj always on CPU.")
     makelabelentry(model_tab, "Vision MaxRes:", visionmaxres_var, 9, padx=320, singleline=True, tooltip=f"Clamp MMProj vision maximum allowed resolution. Allowed values are between 512 to 2048 px (default {default_visionmaxres}).", labelpadx=220)
@@ -5012,7 +5128,8 @@ def show_gui():
     makelabelentry(model_tab, "Draft Amount: ", draftamount_var, 13, 50,padx=100,singleline=True,tooltip="How many tokens to draft per chunk before verifying results")
     makelabelentry(model_tab, "Splits: ", draftgpusplit_str_vars, 13, 50,padx=210,singleline=True,tooltip="Distribution of draft model layers. Leave blank to follow main model's gpu split. Only works if multi-gpu (All) selected in main model.", labelpadx=160)
     makelabelentry(model_tab, "Layers: ", draftgpulayers_var, 13, 50,padx=320,singleline=True,tooltip="How many layers to GPU offload for the draft model", labelpadx=270)
-    makefileentry(model_tab, "Embeds Model:", "Select Embeddings Model File", embeddings_model_var, 15, width=280,singlerow=True, filetypes=[("*.gguf","*.gguf")], tooltiptxt="Select an embeddings GGUF model that can be used to generate embedding vectors.")
+    makefileentry(model_tab, "Embeds Model:", "Select Embeddings Model File", embeddings_model_var, 15, width=160,singlerow=True, filetypes=[("*.gguf","*.gguf")], tooltiptxt="Select an embeddings GGUF model that can be used to generate embedding vectors.")
+    makelabelentry(model_tab, "EmbdCtx: ", embeddings_ctx_var, 15, 50,padx=390,singleline=True,tooltip="If set above 0, limits max context for embedding model to save memory.", labelpadx=330)
     makefileentry(model_tab, "Preload Story:", "Select Preloaded Story File", preloadstory_var, 17,width=280,singlerow=True,tooltiptxt="Select an optional KoboldAI JSON savefile \nto be served on launch to any client.")
     makefileentry(model_tab, "SaveData File:", "Select or Create New SaveData Database File", savedatafile_var, 19,width=280,filetypes=[("KoboldCpp SaveDB", "*.jsondb")],singlerow=True,dialog_type=1,tooltiptxt="Selecting a file will allow data to be loaded and saved persistently to this KoboldCpp server remotely. File is created if it does not exist.")
     makefileentry(model_tab, "ChatCompletions Adapter:", "Select ChatCompletions Adapter File", chatcompletionsadapter_var, 24, width=250, filetypes=[("JSON Adapter", "*.json")], tooltiptxt="Select an optional ChatCompletions Adapter JSON file to force custom instruct tags.")
@@ -5022,7 +5139,7 @@ def show_gui():
         fnam = zentk_askopenfilename(title="Pick Premade ChatCompletions Adapter",filetypes=[("JSON Adapter", "*.json")], initialdir=initialDir)
         if fnam:
             chatcompletionsadapter_var.set(fnam)
-    ctk.CTkButton(model_tab, 64, text="Pick Premade", command=pickpremadetemplate).grid(row=25, column=0, padx=322, stick="nw")
+    ctk.CTkButton(model_tab, 64, text="Pick Premade", command=pickpremadetemplate).grid(row=25, column=0, padx=322, pady=2, stick="nw")
 
     mmproj_var.trace("w", gui_changed_modelfile)
     draftmodel_var.trace("w", gui_changed_modelfile)
@@ -5113,19 +5230,27 @@ def show_gui():
     audio_tab = tabcontent["Audio"]
     makefileentry(audio_tab, "Whisper Model (Speech-To-Text):", "Select Whisper .bin Model File", whisper_model_var, 1, width=280, filetypes=[("*.bin","*.bin")], tooltiptxt="Select a Whisper .bin model file on disk to be loaded for Voice Recognition.")
     whisper_model_var.trace("w", gui_changed_modelfile)
-    makelabelentry(audio_tab, "OuteTTS Threads:" , tts_threads_var, 3, 50,padx=290,singleline=True,tooltip="How many threads to use during TTS generation.\nIf left blank, uses same value as threads.")
-    makefileentry(audio_tab, "OuteTTS Model (Text-To-Speech):", "Select OuteTTS GGUF Model File", tts_model_var, 5, width=280, filetypes=[("*.gguf","*.gguf")], tooltiptxt="Select a OuteTTS GGUF model file on disk to be loaded for Narration.")
+    makefileentry(audio_tab, "OuteTTS Model (Text-To-Speech Required):", "Select OuteTTS GGUF Model File", tts_model_var, 3, width=280, filetypes=[("*.gguf","*.gguf")], tooltiptxt="Select a OuteTTS GGUF model file on disk to be loaded for Narration.")
     tts_model_var.trace("w", gui_changed_modelfile)
-    makefileentry(audio_tab, "WavTokenizer Model (Text-To-Speech):", "Select WavTokenizer GGUF Model File", wavtokenizer_var, 7, width=280, filetypes=[("*.gguf","*.gguf")], tooltiptxt="Select a WavTokenizer GGUF model file on disk to be loaded for Narration.")
-    wavtokenizer_var.trace("w", gui_changed_modelfile)
+    makelabelentry(audio_tab, "OuteTTS Threads:" , tts_threads_var, 5, 50,padx=290,singleline=True,tooltip="How many threads to use during TTS generation.\nIf left blank, uses same value as threads.")
+    makelabelentry(audio_tab, "OuteTTS Max Tokens:" , ttsmaxlen_var, 7, 50,padx=290,singleline=True,tooltip="Max allowed audiotokens to generate per TTS request.")
     makecheckbox(audio_tab, "TTS Use GPU", ttsgpu_var, 9, 0,tooltiptxt="Uses the GPU for TTS.")
-    makelabelentry(audio_tab, "OuteTTS Max Tokens:" , ttsmaxlen_var, 11, 50,padx=290,singleline=True,tooltip="Max allowed audiotokens to generate per TTS request.")
     ttsgpu_var.trace("w", gui_changed_modelfile)
+    makefileentry(audio_tab, "WavTokenizer Model (Text-To-Speech Required):", "Select WavTokenizer GGUF Model File", wavtokenizer_var, 11, width=280, filetypes=[("*.gguf","*.gguf")], tooltiptxt="Select a WavTokenizer GGUF model file on disk to be loaded for Narration.")
+    wavtokenizer_var.trace("w", gui_changed_modelfile)
 
     admin_tab = tabcontent["Admin"]
-    makecheckbox(admin_tab, "Enable Model Administration", admin_var, 1, 0,tooltiptxt="Enable a admin server, allowing you to remotely relaunch and swap models and configs.")
+    def toggleadmin(a,b,c):
+        if admin_var.get()==1 and admin_dir_var.get()=="":
+            autopath = os.path.realpath(__file__)
+            if getattr(sys, 'frozen', False):
+                autopath = sys.executable
+            autopath = os.path.dirname(autopath)
+            admin_dir_var.set(autopath)
+    makecheckbox(admin_tab, "Enable Model Administration", admin_var, 1, 0, command=toggleadmin,tooltiptxt="Enable a admin server, allowing you to remotely relaunch and swap models and configs.")
     makelabelentry(admin_tab, "Admin Password:" , admin_password_var, 3, 150,padx=120,singleline=True,tooltip="Require a password to access admin functions. You are strongly advised to use one for publically accessible instances!")
-    makefileentry(admin_tab, "Config Directory:", "Select directory containing .kcpps files to relaunch from", admin_dir_var, 5, width=280, dialog_type=2, tooltiptxt="Specify a directory to look for .kcpps configs in, which can be used to swap models.")
+    makefileentry(admin_tab, "Config Directory (Required):", "Select directory containing .gguf or .kcpps files to relaunch from", admin_dir_var, 5, width=280, dialog_type=2, tooltiptxt="Specify a directory to look for .kcpps configs in, which can be used to swap models.")
+    makecheckbox(admin_tab, "SingleInstance Mode", singleinstance_var, 10, 0,tooltiptxt="Allows this server to be shut down by another KoboldCpp instance with singleinstance starting on the same port.")
 
     def kcpp_export_template():
         nonlocal kcpp_exporting_template
@@ -5155,6 +5280,10 @@ def show_gui():
     ctk.CTkButton(extra_tab , text = "Generate LaunchTemplate", command = kcpp_export_template ).grid(row=4,column=0, stick="w", padx= 170, pady=2)
     makelabel(extra_tab, "Analyze GGUF Metadata", 6, 0,tooltiptxt="Reads the metadata, weight types and tensor names in any GGUF file.")
     ctk.CTkButton(extra_tab , text = "Analyze GGUF", command = analyze_gguf_model_wrapper ).grid(row=6,column=0, stick="w", padx= 170, pady=2)
+    if os.name == 'nt':
+        makelabel(extra_tab, "File Extensions Handler", 10, 0,tooltiptxt="Makes KoboldCpp the default handler for .kcpps, .kcppt, .ggml and .gguf files.")
+        ctk.CTkButton(extra_tab , text = "Register", width=90, command = register_koboldcpp ).grid(row=10,column=0, stick="w", padx= 170, pady=2)
+        ctk.CTkButton(extra_tab , text = "Unregister", width=90, command = unregister_koboldcpp ).grid(row=10,column=0, stick="w", padx= 264, pady=2)
     if sys.platform == "linux":
         def togglezenity(a,b,c):
             global zenity_permitted
@@ -5293,7 +5422,8 @@ def show_gui():
             pass
 
         args.model_param = None if model_var.get() == "" else model_var.get()
-        args.lora = None if lora_var.get() == "" else ([lora_var.get()] if lora_base_var.get()=="" else [lora_var.get(), lora_base_var.get()])
+        args.lora = None if lora_var.get() == "" else ([lora_var.get()])
+        args.loramult = (float(loramult_var.get()) if loramult_var.get()!="" else 1.0)
         args.preloadstory = None if preloadstory_var.get() == "" else preloadstory_var.get()
         args.savedatafile = None if savedatafile_var.get() == "" else savedatafile_var.get()
         try:
@@ -5362,6 +5492,9 @@ def show_gui():
         if embeddings_model_var.get() != "":
             args.embeddingsmodel = embeddings_model_var.get()
 
+        if embeddings_ctx_var.get() != "":
+            args.embeddingsmaxctx = (0 if embeddings_ctx_var.get()=="" else int(embeddings_ctx_var.get()))
+
         if tts_model_var.get() != "" and wavtokenizer_var.get() != "":
             args.ttsthreads = (0 if tts_threads_var.get()=="" else int(tts_threads_var.get()))
             args.ttsmodel = tts_model_var.get()
@@ -5372,6 +5505,7 @@ def show_gui():
         args.admin = (admin_var.get()==1 and not args.cli)
         args.admindir = admin_dir_var.get()
         args.adminpassword = admin_password_var.get()
+        args.singleinstance = (singleinstance_var.get()==1)
 
     def import_vars(dict):
         global importvars_in_progress
@@ -5491,13 +5625,12 @@ def show_gui():
         model_var.set(dict["model_param"] if ("model_param" in dict and dict["model_param"]) else "")
 
         lora_var.set("")
-        lora_base_var.set("")
         if "lora" in dict and dict["lora"]:
             if len(dict["lora"]) > 1:
                 lora_var.set(dict["lora"][0])
-                lora_base_var.set(dict["lora"][1])
             else:
                 lora_var.set(dict["lora"][0])
+        loramult_var.set(str(dict["loramult"]) if ("loramult" in dict and dict["loramult"]) else "1.0")
 
         mmproj_var.set(dict["mmproj"] if ("mmproj" in dict and dict["mmproj"]) else "")
         mmprojcpu_var.set(1 if ("mmprojcpu" in dict and dict["mmprojcpu"]) else 0)
@@ -5557,10 +5690,12 @@ def show_gui():
         ttsmaxlen_var.set(str(dict["ttsmaxlen"]) if ("ttsmaxlen" in dict and dict["ttsmaxlen"]) else str(default_ttsmaxlen))
 
         embeddings_model_var.set(dict["embeddingsmodel"] if ("embeddingsmodel" in dict and dict["embeddingsmodel"]) else "")
+        embeddings_ctx_var.set(str(dict["embeddingsmaxctx"]) if ("embeddingsmaxctx" in dict and dict["embeddingsmaxctx"]) else "")
 
         admin_var.set(dict["admin"] if ("admin" in dict) else 0)
         admin_dir_var.set(dict["admindir"] if ("admindir" in dict and dict["admindir"]) else "")
         admin_password_var.set(dict["adminpassword"] if ("adminpassword" in dict and dict["adminpassword"]) else "")
+        singleinstance_var.set(dict["singleinstance"] if ("singleinstance" in dict) else 0)
 
         importvars_in_progress = False
         gui_changed_modelfile()
@@ -5613,9 +5748,9 @@ def show_gui():
     ctk.CTkButton(tabs , text = "Launch", fg_color="#2f8d3c", hover_color="#2faa3c", command = guilaunch, width=80, height = 35 ).grid(row=1,column=1, stick="se", padx= 25, pady=5)
 
     ctk.CTkButton(tabs , text = "Update", fg_color="#9900cc", hover_color="#aa11dd", command = display_updates, width=90, height = 35 ).grid(row=1,column=0, stick="sw", padx= 5, pady=5)
-    ctk.CTkButton(tabs , text = "Save", fg_color="#084a66", hover_color="#085a88", command = save_config_gui, width=60, height = 35 ).grid(row=1,column=1, stick="sw", padx= 5, pady=5)
-    ctk.CTkButton(tabs , text = "Load", fg_color="#084a66", hover_color="#085a88", command = load_config_gui, width=60, height = 35 ).grid(row=1,column=1, stick="sw", padx= 70, pady=5)
-    ctk.CTkButton(tabs , text = "Help (Find Models)", fg_color="#992222", hover_color="#bb3333", command = display_help, width=100, height = 35 ).grid(row=1,column=1, stick="sw", padx= 135, pady=5)
+    ctk.CTkButton(tabs , text = "Save Config", fg_color="#084a66", hover_color="#085a88", command = save_config_gui, width=60, height = 35 ).grid(row=1,column=1, stick="sw", padx= 5, pady=5)
+    ctk.CTkButton(tabs , text = "Load Config", fg_color="#084a66", hover_color="#085a88", command = load_config_gui, width=60, height = 35 ).grid(row=1,column=1, stick="sw", padx= 92, pady=5)
+    ctk.CTkButton(tabs , text = "Help (Find Models)", fg_color="#992222", hover_color="#bb3333", command = display_help, width=100, height = 35 ).grid(row=1,column=1, stick="sw", padx= 180, pady=5)
 
     # start a thread that tries to get actual gpu names and layer counts
     gpuinfo_thread = threading.Thread(target=auto_set_backend_gui)
@@ -5800,24 +5935,24 @@ def show_gui_msgbox(title,message):
     try:
         from tkinter import messagebox
         import tkinter as tk
-        root = tk.Tk()
-        root.attributes("-alpha", 0)
+        root2 = tk.Tk()
+        root2.attributes("-alpha", 0)
         messagebox.showerror(title=title, message=message)
-        root.withdraw()
-        root.quit()
+        root2.withdraw()
+        root2.destroy()
     except Exception:
         pass
 
-def show_gui_yesnobox(title,message):
+def show_gui_yesnobox(title,message,icon='error'):
     print(title + ": " + message, flush=True)
     try:
         from tkinter import messagebox
         import tkinter as tk
-        root = tk.Tk()
-        root.attributes("-alpha", 0)
-        result = messagebox.askquestion(title=title, message=message,icon='error')
-        root.withdraw()
-        root.quit()
+        root2 = tk.Tk()
+        root2.attributes("-alpha", 0)
+        result = messagebox.askquestion(title=title, message=message,icon=icon)
+        root2.withdraw()
+        root2.destroy()
         return result
     except Exception:
         return False
@@ -5827,7 +5962,6 @@ def print_with_time(txt):
     print(f"{datetime.now().strftime('[%H:%M:%S]')} " + txt, flush=True)
 
 def make_url_request(url, data, method='POST', headers={}, timeout=300):
-    import urllib.request
     global nocertify
     try:
         request = None
@@ -5858,7 +5992,6 @@ def make_url_request(url, data, method='POST', headers={}, timeout=300):
 
 #A very simple and stripped down embedded horde worker with no dependencies
 def run_horde_worker(args, api_key, worker_name):
-    import random
     global friendlymodelname, maxhordectx, maxhordelen, exitcounter, punishcounter, modelbusy, session_starttime, sslvalid
     httpsaffix = ("https" if sslvalid else "http")
     epurl = f"{httpsaffix}://localhost:{args.port}"
@@ -6041,6 +6174,8 @@ def convert_invalid_args(args):
         dict["noavx2"] = True
     if "skiplauncher" in dict and dict["skiplauncher"]:
         dict["showgui"] = False
+    if "useswa" in dict and dict["useswa"]:
+        dict["noshift"] = True
     if ("model_param" not in dict or not dict["model_param"]) and ("model" in dict):
         model_value = dict["model"] #may be null, empty/non-empty string, empty/non empty array
         if isinstance(model_value, str) and model_value:  # Non-empty string
@@ -6053,8 +6188,6 @@ def setuptunnel(global_memory, has_sd):
     # This script will help setup a cloudflared tunnel for accessing KoboldCpp over the internet
     # It should work out of the box on both linux and windows
     try:
-        import subprocess
-        import re
         global sslvalid
         httpsaffix = ("https" if sslvalid else "http")
         ssladd = (" --no-tls-verify" if sslvalid else "")
@@ -6219,9 +6352,6 @@ def delete_old_pyinstaller():
     if not base_path:
         return
 
-    import time
-    import os
-    import shutil
     selfdirpath = os.path.abspath(base_path)
     temp_parentdir_path = os.path.abspath(os.path.join(base_path, '..'))
     for dirname in os.listdir(temp_parentdir_path):
@@ -6243,7 +6373,6 @@ def delete_old_pyinstaller():
 
 def sanitize_string(input_string):
     # alphanumeric characters, dots, dashes, and underscores
-    import re
     sanitized_string = re.sub( r'[^\w\d\.\-_]', '', input_string)
     return sanitized_string
 
@@ -6284,10 +6413,6 @@ def check_latest_version():
     if os.name == "nt":
         deinit()
 def downloader_internal(input_url, output_filename, capture_output, min_file_size=64): # 64 bytes required by default
-    import shutil
-    import subprocess
-    import os
-
     if "https://huggingface.co/" in input_url and "/blob/main/" in input_url:
         input_url = input_url.replace("/blob/main/", "/resolve/main/")
     if output_filename == "auto":
@@ -6304,7 +6429,7 @@ def downloader_internal(input_url, output_filename, capture_output, min_file_siz
             a2cexe = (os.path.join(basepath, "aria2c-win.exe"))
             if os.path.exists(a2cexe): #on windows try using embedded a2cexe
                 rc = subprocess.run([
-                        a2cexe, "-x", "16", "-s", "16", "--summary-interval=30", "--console-log-level=error", "--log-level=error",
+                        a2cexe, "-x", "16", "-s", "16", "--summary-interval=15", "--console-log-level=error", "--log-level=error",
                         "--download-result=default", "--allow-overwrite=true", "--file-allocation=none", "--max-tries=3", "-o", output_filename, input_url
                     ], capture_output=capture_output, text=True, check=True, encoding='utf-8')
                 dl_success = (rc.returncode == 0 and os.path.exists(output_filename) and os.path.getsize(output_filename) > min_file_size)
@@ -6314,7 +6439,7 @@ def downloader_internal(input_url, output_filename, capture_output, min_file_siz
     try:
         if not dl_success and shutil.which("aria2c") is not None:
             rc = subprocess.run([
-                    "aria2c", "-x", "16", "-s", "16", "--summary-interval=30", "--console-log-level=error", "--log-level=error",
+                    "aria2c", "-x", "16", "-s", "16", "--summary-interval=15", "--console-log-level=error", "--log-level=error",
                     "--download-result=default", "--allow-overwrite=true", "--file-allocation=none", "--max-tries=3", "-o", output_filename, input_url
                 ], capture_output=capture_output, text=True, check=True, encoding='utf-8')
             dl_success = (rc.returncode == 0 and os.path.exists(output_filename) and os.path.getsize(output_filename) > min_file_size)
@@ -6392,6 +6517,65 @@ def analyze_gguf_model_wrapper(filename=""):
     print(f"Analyzing {filename}, please wait...\n---",flush=True)
     dumpthread = threading.Thread(target=analyze_gguf_model, args=(args,filename))
     dumpthread.start()
+
+
+def register_koboldcpp():
+    try:
+        exe_path = ""
+        if getattr(sys, 'frozen', False):
+            exe_path = sys.executable
+        if os.name == 'nt' and exe_path!="":
+            confirmyes = show_gui_yesnobox("Confirm Add File Extensions","Do you want to register KoboldCpp as the default file associations for .gguf, .kcpps, .kcppt and .ggml files?",icon="question")
+            if confirmyes == 'yes':
+                import winreg
+                print(f"Registering file associations to {exe_path}")
+                entries = [
+                    (r"Software\Classes\KoboldCpp\DefaultIcon", "", f"{exe_path},0"),
+                    (r"Software\Classes\KoboldCpp\shell\Open\command", "", f'"{exe_path}" "%1" --singleinstance'),
+                    (r"Software\Classes\KoboldCpp\shell\Edit\command", "", f'"{exe_path}" "%1" --singleinstance --showgui'),
+                    (r"Software\Classes\.gguf", "", "KoboldCpp"),
+                    (r"Software\Classes\.kcpps", "", "KoboldCpp"),
+                    (r"Software\Classes\.kcppt", "", "KoboldCpp"),
+                    (r"Software\Classes\.ggml", "", "KoboldCpp"),
+                ]
+                for key_path, value_name, value_data in entries:
+                    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                        winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, value_data)
+                print("KoboldCpp file associations registered successfully.")
+        else:
+            show_gui_msgbox("Cannot Set File Association","File Associations only available for Windows standalone executables.")
+    except Exception as e:
+        print(f"Register Extensions: An error occurred: {e}")
+
+def unregister_koboldcpp():
+    try:
+        if os.name == 'nt':
+            confirmyes = show_gui_yesnobox("Confirm Remove File Extensions","Do you want to unregister KoboldCpp as the default file associations for .gguf, .kcpps, .kcppt and .ggml files?",icon="question")
+            if confirmyes == 'yes':
+                import winreg
+                keys_to_delete = [
+                    r"Software\Classes\KoboldCpp\shell\Edit\command",
+                    r"Software\Classes\KoboldCpp\shell\Edit",
+                    r"Software\Classes\KoboldCpp\shell\Open\command",
+                    r"Software\Classes\KoboldCpp\shell\Open",
+                    r"Software\Classes\KoboldCpp\shell",
+                    r"Software\Classes\KoboldCpp\DefaultIcon",
+                    r"Software\Classes\KoboldCpp",
+                    r"Software\Classes\.gguf",
+                    r"Software\Classes\.kcpps",
+                    r"Software\Classes\.kcppt",
+                    r"Software\Classes\.ggml",
+                ]
+                for key_path in keys_to_delete:
+                    try:
+                        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+                    except Exception:
+                        print(f"Failed to delete registry key: {key_path}")
+                print("KoboldCpp file associations unregistered.")
+        else:
+            show_gui_msgbox("Cannot Set File Association","File Associations only available for Windows standalone executables.")
+    except Exception as e:
+        print(f"Unregister Extensions: An error occurred: {e}")
 
 def main(launch_args, default_args):
     global args, showdebug, kcpp_instance, exitcounter, using_gui_launcher, sslvalid, global_memory
@@ -6547,7 +6731,7 @@ def main(launch_args, default_args):
                         if args.admin and args.admindir:
                             dirpath = os.path.abspath(args.admindir)
                             targetfilepath = os.path.join(dirpath, restart_target)
-                            if os.path.exists(targetfilepath):
+                            if os.path.exists(targetfilepath) or restart_target=="unload_model":
                                 print("Terminating old process...")
                                 global_memory["load_complete"] = False
                                 kcpp_instance.terminate()
@@ -6555,7 +6739,12 @@ def main(launch_args, default_args):
                                 kcpp_instance = None
                                 print("Restarting KoboldCpp...")
                                 fault_recovery_mode = True
-                                if targetfilepath.endswith(".gguf"):
+                                if restart_target=="unload_model":
+                                    reload_from_new_args(vars(default_args))
+                                    args.model_param = None
+                                    args.model = None
+                                    args.nomodel = True
+                                elif targetfilepath.endswith(".gguf"):
                                     reload_from_new_args(vars(default_args))
                                     args.model_param = targetfilepath
                                 else:
@@ -6801,6 +6990,21 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
     args.defaultgenamt = max(128, min(args.defaultgenamt, 4096))
     args.defaultgenamt = min(args.defaultgenamt, maxctx / 2)
 
+    if args.port_param!=defaultport:
+        args.port = args.port_param
+
+    if start_server and args.singleinstance and is_port_in_use(args.port):
+        try:
+            print(f"Warning: Port {args.port} already appears to be in use by another program.")
+            print(f"Attempting to request shutdown of previous instance on port {args.port}...")
+            shutdownreq = make_url_request(f'http://localhost:{args.port}/api/extra/shutdown',{},timeout=5)
+            shutdownok = (shutdownreq and "success" in shutdownreq and shutdownreq["success"] is True)
+            time.sleep(2)
+            print("Shutdown existing successful!" if shutdownok else "Shutdown existing failed!")
+            time.sleep(1)
+        except Exception:
+            pass
+
     if args.nocertify:
         import ssl
         global nocertify
@@ -6834,7 +7038,7 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
                     print("No GPU backend found, or could not automatically determine GPU layers. Please set it manually.")
                     args.gpulayers = 0
 
-    if args.threads == -1:
+    if args.threads <= 0:
         args.threads = get_default_threads()
         print(f"Auto Set Threads: {args.threads}")
 
@@ -7104,9 +7308,6 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
     print(f"Inactive Modules: {' '.join(disabledmlist)}")
     print(f"Enabled APIs: {' '.join(apimlist)}")
 
-    if args.port_param!=defaultport:
-        args.port = args.port_param
-
     global sslvalid
     if args.ssl:
         if len(args.ssl)==2 and isinstance(args.ssl[0], str) and os.path.exists(args.ssl[0]) and isinstance(args.ssl[1], str) and os.path.exists(args.ssl[1]):
@@ -7155,7 +7356,6 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
     #if post-ready script specified, execute it
     if args.onready:
         def onready_subprocess():
-            import subprocess
             print("Starting Post-Load subprocess...")
             subprocess.run(args.onready[0], shell=True)
         timer_thread = threading.Timer(1, onready_subprocess) #1 second delay
@@ -7282,7 +7482,6 @@ def kcpp_main_process(launch_args, g_memory=None, gui_launcher=False):
             print("Server was not started, main function complete. Idling.", flush=True)
 
 if __name__ == '__main__':
-    import multiprocessing
     multiprocessing.freeze_support()
 
     def check_range(value_type, min_value, max_value):
@@ -7325,7 +7524,8 @@ if __name__ == '__main__':
     advparser.add_argument("--ropeconfig", help="If set, uses customized RoPE scaling from configured frequency scale and frequency base (e.g. --ropeconfig 0.25 10000). Otherwise, uses NTK-Aware scaling set automatically based on context size. For linear rope, simply set the freq-scale and ignore the freq-base",metavar=('[rope-freq-scale]', '[rope-freq-base]'), default=[0.0, 10000.0], type=float, nargs='+')
     advparser.add_argument("--blasbatchsize", help="Sets the batch size used in BLAS processing (default 512). Setting it to -1 disables BLAS mode, but keeps other benefits like GPU offload.", type=int,choices=[-1,16,32,64,128,256,512,1024,2048], default=512)
     advparser.add_argument("--blasthreads", help="Use a different number of threads during BLAS if specified. Otherwise, has the same value as --threads",metavar=('[threads]'), type=int, default=0)
-    advparser.add_argument("--lora", help="LLAMA models only, applies a lora file on top of model. Experimental.", metavar=('[lora_filename]', '[lora_base]'), nargs='+')
+    advparser.add_argument("--lora", help="GGUF models only, applies a lora file on top of model.", metavar=('[lora_filename]'), nargs='+')
+    advparser.add_argument("--loramult", metavar=('[amount]'), help="Multiplier for the Text LORA model to be applied.", type=float, default=1.0)
     advparser.add_argument("--noshift", help="If set, do not attempt to Trim and Shift the GGUF context.", action='store_true')
     advparser.add_argument("--nofastforward", help="If set, do not attempt to fast forward GGUF context (always reprocess). Will also enable noshift", action='store_true')
     advparser.add_argument("--useswa", help="If set, allows Sliding Window Attention (SWA) KV Cache, which saves memory but cannot be used with context shifting.", action='store_true')
@@ -7379,6 +7579,7 @@ if __name__ == '__main__':
     compatgroup2 = parser.add_mutually_exclusive_group()
     compatgroup2.add_argument("--showgui", help="Always show the GUI instead of launching the model right away when loading settings from a .kcpps file.", action='store_true')
     compatgroup2.add_argument("--skiplauncher", help="Doesn't display or use the GUI launcher. Overrides showgui.", action='store_true')
+    advparser.add_argument("--singleinstance", help="Allows this KoboldCpp instance to be shut down by any new instance requesting the same port, preventing duplicate servers from clashing on a port.", action='store_true')
 
     hordeparsergroup = parser.add_argument_group('Horde Worker Commands')
     hordeparsergroup.add_argument("--hordemodelname", metavar=('[name]'), help="Sets your AI Horde display model name.", default="")
@@ -7400,7 +7601,7 @@ if __name__ == '__main__':
     sdparsergrouplora = sdparsergroup.add_mutually_exclusive_group()
     sdparsergrouplora.add_argument("--sdquant", help="If specified, loads the model quantized to save memory.", action='store_true')
     sdparsergrouplora.add_argument("--sdlora", metavar=('[filename]'), help="Specify an image generation LORA safetensors model to be applied.", default="")
-    sdparsergroup.add_argument("--sdloramult", metavar=('[amount]'), help="Multiplier for the LORA model to be applied.", type=float, default=1.0)
+    sdparsergroup.add_argument("--sdloramult", metavar=('[amount]'), help="Multiplier for the image LORA model to be applied.", type=float, default=1.0)
     sdparsergroup.add_argument("--sdnotile", help="Disables VAE tiling, may not work for large images.", action='store_true')
 
     whisperparsergroup = parser.add_argument_group('Whisper Transcription Commands')
@@ -7415,6 +7616,7 @@ if __name__ == '__main__':
 
     embeddingsparsergroup = parser.add_argument_group('Embeddings Model Commands')
     embeddingsparsergroup.add_argument("--embeddingsmodel", metavar=('[filename]'), help="Specify an embeddings model to be loaded for generating embedding vectors.", default="")
+    embeddingsparsergroup.add_argument("--embeddingsmaxctx", metavar=('[amount]'), help="Overrides the default maximum supported context of an embeddings model (defaults to trained context).", type=int, default=0)
 
     admingroup = parser.add_argument_group('Administration Commands')
     admingroup.add_argument("--admin", help="Enables admin mode, allowing you to unload and reload different configurations or models.", action='store_true')
