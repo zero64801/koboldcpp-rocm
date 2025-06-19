@@ -5,14 +5,14 @@ on:
     inputs:
       version:
         description: 'Version tag of koboldcpp-rocm to build: v1.86.2.yr0-ROCm'
-        default: v1.86.2.yr0-ROCm
+        default: v1.93.2.yr0-ROCm
         required: false
         type: string
   workflow_call:
     inputs:
       version:
         description: 'Version tag of koboldcpp-rocm to build: v1.86.2.yr0-ROCm'
-        default: v1.86.2.yr0-ROCm
+        default: v1.93.2.yr0-ROCm
         required: false
         type: string
 
@@ -44,7 +44,7 @@ jobs:
 
       - name: Build CLBLAST & Others with make
         run: |
-          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'
+          Set-Location 'C:\a\koboldcpp-rocm\koboldcpp-rocm'
           Get-Location
           ls
           make CC=gcc LLAMA_CLBLAST=1 LLAMA_OPENBLAS=1 LLAMA_VULKAN=1 LLAMA_PORTABLE=1 -j
@@ -88,14 +88,14 @@ jobs:
           7z x rocblasDec02.7z -aoa
           Set-Location 'C:\Program Files\AMD\ROCm\6.1\bin\rocblas\library'
           ls
-          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'
+          Set-Location 'C:\a\koboldcpp-rocm\koboldcpp-rocm'
           $env:CC = 'C:\Program Files\AMD\ROCm\6.1\bin\clang.exe'
           $env:CXX = 'C:\Program Files\AMD\ROCm\6.1\bin\clang++.exe'
           $env:CMAKE_PREFIX_PATH = 'C:\Program Files\AMD\ROCm\6.1'
           $env:VERBOSE = '1'
-          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'
+          Set-Location 'C:\a\koboldcpp-rocm\koboldcpp-rocm'
           mkdir 'build'
-          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm\build'
+          Set-Location 'C:\a\koboldcpp-rocm\koboldcpp-rocm\build'
           Get-Location
           cmake --version
           clang --version
@@ -104,36 +104,36 @@ jobs:
 # -DCMAKE_C_COMPILER="C:\Program Files\AMD\ROCm\6.1\bin\clang.exe" -DCMAKE_CXX_COMPILER="C:\Program Files\AMD\ROCm\6.1\bin\clang++.exe"
       - name: Copy ROCm DLLs and Run PyInstaller
         run: |
-          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'
+          Set-Location 'C:\a\koboldcpp-rocm\koboldcpp-rocm'
           Get-Location
           curl -LO https://github.com/YellowRoseCx/koboldcpp-rocm/releases/download/deps-v6.2.0/rocblas-6.2.0.dll.7z
           7z x rocblas-6.2.0.dll.7z -aoa
           robocopy "C:\Program Files\AMD\ROCm\6.1\bin\rocblas" .\rocblas /MIR 
           python -m pip install customtkinter
-          PyInstaller --noconfirm --onefile --collect-all customtkinter --clean --console --icon ".\niko.ico" --add-data "./OpenCL.dll;." --add-data "./klite.embd;." --add-data "./kcpp_docs.embd;." --add-data="./kcpp_sdui.embd;." --add-data="./taesd.embd;." --add-data="./taesd_xl.embd;." --add-data "./koboldcpp_default.dll;." --add-data "./koboldcpp_failsafe.dll;." --add-data "./koboldcpp_noavx2.dll;." --add-data "./koboldcpp_clblast.dll;." --add-data "./koboldcpp_clblast_noavx2.dll;." --add-data "./koboldcpp_vulkan_noavx2.dll;." --add-data "./clblast.dll;." --add-data "./koboldcpp_vulkan.dll;." --add-data "./vulkan-1.dll;." --add-data "./rwkv_vocab.embd;." --add-data "./rwkv_world_vocab.embd;." --add-data "D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll;." --add-data "./rocblas.dll;." --add-data "./rocblas;." --add-data "C:/Windows/System32/msvcp140.dll;." --add-data "C:/Windows/System32/vcruntime140_1.dll;." "./koboldcpp.py" -n "koboldcpp_rocm_b2.exe"
+          PyInstaller --noconfirm --onefile --collect-all customtkinter --clean --console --icon ".\niko.ico" --add-data "./OpenCL.dll;." --add-data "./klite.embd;." --add-data "./kcpp_docs.embd;." --add-data="./kcpp_sdui.embd;." --add-data="./taesd.embd;." --add-data="./taesd_xl.embd;." --add-data "./koboldcpp_default.dll;." --add-data "./koboldcpp_failsafe.dll;." --add-data "./koboldcpp_noavx2.dll;." --add-data "./koboldcpp_clblast.dll;." --add-data "./koboldcpp_clblast_noavx2.dll;." --add-data "./koboldcpp_vulkan_noavx2.dll;." --add-data "./clblast.dll;." --add-data "./koboldcpp_vulkan.dll;." --add-data "./rwkv_vocab.embd;." --add-data "./rwkv_world_vocab.embd;." --add-data "C:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll;." --add-data "./rocblas.dll;." --add-data "./rocblas;." --add-data "C:/Windows/System32/msvcp140.dll;." --add-data "C:/Windows/System32/vcruntime140_1.dll;." "./koboldcpp.py" -n "koboldcpp_rocm_b2.exe"
 
 
       - name: Create ZIP archive
         run: |
-          Set-Location 'D:\a\koboldcpp-rocm\koboldcpp-rocm'
-          Compress-Archive -Path D:\a\koboldcpp-rocm\koboldcpp-rocm\niko.ico, D:\a\koboldcpp-rocm\koboldcpp-rocm\OpenCL.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\klite.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\kcpp_docs.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\kcpp_sdui.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\taesd.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\taesd_xl.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_default.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_failsafe.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_noavx2.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_clblast.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_clblast_noavx2.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_vulkan_noavx2.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\clblast.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_vulkan.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\vulkan-1.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\rwkv_vocab.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\rwkv_world_vocab.embd, D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas, D:\a\koboldcpp-rocm\koboldcpp-rocm\msvcp140.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\vcruntime140_1.dll, D:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp.py -DestinationPath koboldcpp_rocm_b2_files.zip
-          copy "koboldcpp_rocm_b2_files.zip" D:\a\koboldcpp-rocm\koboldcpp-rocm\dist
+          Set-Location 'C:\a\koboldcpp-rocm\koboldcpp-rocm'
+          Compress-Archive -Path C:\a\koboldcpp-rocm\koboldcpp-rocm\niko.ico, C:\a\koboldcpp-rocm\koboldcpp-rocm\OpenCL.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\klite.embd, C:\a\koboldcpp-rocm\koboldcpp-rocm\kcpp_docs.embd, C:\a\koboldcpp-rocm\koboldcpp-rocm\kcpp_sdui.embd, C:\a\koboldcpp-rocm\koboldcpp-rocm\taesd.embd, C:\a\koboldcpp-rocm\koboldcpp-rocm\taesd_xl.embd, C:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_default.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_failsafe.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_noavx2.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_clblast.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_clblast_noavx2.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_vulkan_noavx2.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\clblast.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp_vulkan.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\rwkv_vocab.embd, C:\a\koboldcpp-rocm\koboldcpp-rocm\rwkv_world_vocab.embd, C:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\rocblas, C:\a\koboldcpp-rocm\koboldcpp-rocm\msvcp140.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\vcruntime140_1.dll, C:\a\koboldcpp-rocm\koboldcpp-rocm\koboldcpp.py -DestinationPath koboldcpp_rocm_b2_files.zip
+          copy "koboldcpp_rocm_b2_files.zip" C:\a\koboldcpp-rocm\koboldcpp-rocm\dist
 
 
       # - uses: actions/upload-artifact@v4.3.3
       #   with:
       #     name: koboldcpp_hipblas-${{ inputs.version }}
-      #     path: D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll
+      #     path: C:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll
 
       - uses: actions/upload-artifact@v4.3.3
         with:
           name: koboldcpp_rocm_only-${{ inputs.version }}
-          path: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_b2.exe
+          path: C:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_b2.exe
 
       - uses: actions/upload-artifact@v4.3.3
         with:
           name: koboldcpp_rocm_zip-${{ inputs.version }}
-          path: D:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_b2_files.zip
+          path: C:\a\koboldcpp-rocm\koboldcpp-rocm\dist\koboldcpp_rocm_b2_files.zip
 
       - name: Upload files to a GitHub release
         id: upload-release
@@ -151,7 +151,7 @@ jobs:
 
 
 
-#          Copy-Item 'D:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll' '..\..\build'
+#          Copy-Item 'C:\a\koboldcpp-rocm\koboldcpp-rocm\build\bin\koboldcpp_hipblas.dll' '..\..\build'
 #  build_wheel:
 #    name: Build ROCm
 #    runs-on: windows-latest
